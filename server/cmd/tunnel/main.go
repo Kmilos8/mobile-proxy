@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/songgao/water"
@@ -32,19 +33,29 @@ const (
 	tunIP            = "192.168.255.1"
 	tunSubnet        = "192.168.255.0/24"
 	tunMTU           = 1400
-	maxPacketSize    = 1500
+	maxPacketSize    = tunMTU + 100 // headroom for encapsulation
 	keepaliveTimeout = 60 * time.Second
 	cleanupInterval  = 10 * time.Second
 	ipPoolStart      = 2
 	ipPoolEnd        = 254
 	deviceIDLen      = 16
+	udpRecvBufSize   = 4 * 1024 * 1024 // 4MB UDP socket buffer
+	udpSendBufSize   = 4 * 1024 * 1024
 )
 
 type client struct {
 	udpAddr  *net.UDPAddr
 	deviceID string
 	vpnIP    net.IP
-	lastSeen time.Time
+	lastSeen atomic.Int64 // unix timestamp — lock-free updates
+}
+
+func (c *client) touch() {
+	c.lastSeen.Store(time.Now().Unix())
+}
+
+func (c *client) idleSince(now time.Time) time.Duration {
+	return now.Sub(time.Unix(c.lastSeen.Load(), 0))
 }
 
 type tunnelServer struct {
@@ -58,6 +69,9 @@ type tunnelServer struct {
 
 	ipPool   []bool // true = in use, index 0 = .2
 	ipPoolMu sync.Mutex
+
+	// Pre-allocated send buffer for tunToUdp (single goroutine, no lock needed)
+	tunBuf []byte
 }
 
 func main() {
@@ -91,7 +105,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to listen on UDP port %d: %v", port, err)
 	}
-	log.Printf("Listening on UDP port %d", port)
+
+	// Increase UDP socket buffers for throughput
+	conn.SetReadBuffer(udpRecvBufSize)
+	conn.SetWriteBuffer(udpSendBufSize)
+
+	log.Printf("Listening on UDP port %d (buffers: recv=%dKB, send=%dKB)",
+		port, udpRecvBufSize/1024, udpSendBufSize/1024)
 
 	srv := &tunnelServer{
 		udpConn:  conn,
@@ -100,6 +120,7 @@ func main() {
 		clients:  make(map[string]*client),
 		addrMap:  make(map[string]string),
 		ipPool:   make([]bool, ipPoolEnd-ipPoolStart+1),
+		tunBuf:   make([]byte, maxPacketSize+1), // +1 for type prefix
 	}
 
 	// Start goroutines
@@ -124,6 +145,11 @@ func configureTUN(name string) {
 	// Set MTU and bring interface up
 	if out, err := runCmd("ip", "link", "set", "dev", name, "mtu", strconv.Itoa(tunMTU), "up"); err != nil {
 		log.Printf("Warning: ip link set: %s: %v", string(out), err)
+	}
+
+	// Increase TUN queue length for throughput
+	if out, err := runCmd("ip", "link", "set", "dev", name, "txqueuelen", "1000"); err != nil {
+		log.Printf("Warning: txqueuelen: %s: %v", string(out), err)
 	}
 
 	// Enable IP forwarding
@@ -182,7 +208,7 @@ func (s *tunnelServer) releaseIP(ip net.IP) {
 }
 
 func (s *tunnelServer) udpToTun() {
-	buf := make([]byte, maxPacketSize)
+	buf := make([]byte, maxPacketSize+1)
 	for {
 		n, remoteAddr, err := s.udpConn.ReadFromUDP(buf)
 		if err != nil {
@@ -196,14 +222,28 @@ func (s *tunnelServer) udpToTun() {
 		pktType := buf[0]
 
 		switch pktType {
+		case TypeData:
+			// Hot path — inline for performance
+			if n < 21 { // 1 type + 20 min IP header
+				continue
+			}
+			s.mu.RLock()
+			ipStr, ok := s.addrMap[remoteAddr.String()]
+			if ok {
+				if c, exists := s.clients[ipStr]; exists {
+					c.touch()
+				}
+			}
+			s.mu.RUnlock()
+			if ok {
+				s.tunIface.Write(buf[1:n])
+			}
 		case TypeAuth:
 			s.handleAuth(buf[1:n], remoteAddr)
-		case TypeData:
-			s.handleData(buf[1:n], remoteAddr)
 		case TypePing:
 			s.handlePing(remoteAddr)
 		default:
-			log.Printf("Unknown packet type 0x%02x from %s", pktType, remoteAddr)
+			// Silently drop — don't log every scanner packet
 		}
 	}
 }
@@ -247,8 +287,8 @@ func (s *tunnelServer) handleAuth(data []byte, addr *net.UDPAddr) {
 		udpAddr:  addr,
 		deviceID: deviceID,
 		vpnIP:    ip.To4(),
-		lastSeen: time.Now(),
 	}
+	c.touch()
 
 	s.mu.Lock()
 	s.clients[ipStr] = c
@@ -267,46 +307,23 @@ func (s *tunnelServer) handleAuth(data []byte, addr *net.UDPAddr) {
 	go s.notifyConnected(deviceID, ipStr)
 }
 
-func (s *tunnelServer) handleData(data []byte, addr *net.UDPAddr) {
-	if len(data) < 20 { // minimum IP header
-		return
-	}
-
-	s.mu.RLock()
-	ipStr, ok := s.addrMap[addr.String()]
-	if ok {
-		if c, exists := s.clients[ipStr]; exists {
-			c.lastSeen = time.Now()
-		}
-	}
-	s.mu.RUnlock()
-
-	if !ok {
-		return
-	}
-
-	// Write raw IP packet to TUN
-	s.tunIface.Write(data)
-}
-
 func (s *tunnelServer) handlePing(addr *net.UDPAddr) {
 	s.mu.RLock()
 	ipStr, ok := s.addrMap[addr.String()]
 	if ok {
 		if c, exists := s.clients[ipStr]; exists {
-			c.lastSeen = time.Now()
+			c.touch()
 		}
 	}
 	s.mu.RUnlock()
 
-	// Send PONG
 	s.udpConn.WriteToUDP([]byte{TypePong}, addr)
 }
 
 func (s *tunnelServer) tunToUdp() {
-	buf := make([]byte, maxPacketSize)
+	buf := s.tunBuf
 	for {
-		n, err := s.tunIface.Read(buf)
+		n, err := s.tunIface.Read(buf[1:]) // leave room for type prefix
 		if err != nil {
 			log.Printf("TUN read error: %v", err)
 			continue
@@ -315,8 +332,8 @@ func (s *tunnelServer) tunToUdp() {
 			continue
 		}
 
-		// Extract destination IP from IP header (bytes 16-19)
-		dstIP := net.IPv4(buf[16], buf[17], buf[18], buf[19]).String()
+		// Extract destination IP from IP header (bytes 16-19 of IP packet = buf[17:21])
+		dstIP := net.IPv4(buf[17], buf[18], buf[19], buf[20]).String()
 
 		s.mu.RLock()
 		c, ok := s.clients[dstIP]
@@ -326,11 +343,9 @@ func (s *tunnelServer) tunToUdp() {
 			continue
 		}
 
-		// Send DATA packet: [0x02][raw IP packet]
-		pkt := make([]byte, 1+n)
-		pkt[0] = TypeData
-		copy(pkt[1:], buf[:n])
-		s.udpConn.WriteToUDP(pkt, c.udpAddr)
+		// Send DATA packet: [0x02][raw IP packet] — zero-copy from pre-allocated buffer
+		buf[0] = TypeData
+		s.udpConn.WriteToUDP(buf[:1+n], c.udpAddr)
 	}
 }
 
@@ -344,7 +359,7 @@ func (s *tunnelServer) cleanupLoop() {
 
 		s.mu.RLock()
 		for ipStr, c := range s.clients {
-			if now.Sub(c.lastSeen) > keepaliveTimeout {
+			if c.idleSince(now) > keepaliveTimeout {
 				toRemove = append(toRemove, ipStr)
 			}
 		}
@@ -355,7 +370,7 @@ func (s *tunnelServer) cleanupLoop() {
 			c, ok := s.clients[ipStr]
 			if ok {
 				log.Printf("Client timeout: device=%s ip=%s (idle %v)",
-					c.deviceID, ipStr, now.Sub(c.lastSeen))
+					c.deviceID, ipStr, c.idleSince(now))
 				delete(s.addrMap, c.udpAddr.String())
 				delete(s.clients, ipStr)
 				s.releaseIP(c.vpnIP)

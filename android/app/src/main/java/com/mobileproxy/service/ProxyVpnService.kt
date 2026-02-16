@@ -32,6 +32,15 @@ class ProxyVpnService : VpnService() {
 
         private val _vpnState = MutableStateFlow(false)
         val vpnState: StateFlow<Boolean> = _vpnState
+
+        /**
+         * Called by VpnTunnelManager after a successful reconnect.
+         * Updates the VPN state flow so observers know we're back online.
+         */
+        fun onReconnected() {
+            Log.i(TAG, "VPN tunnel reconnected")
+            _vpnState.value = true
+        }
     }
 
     private var tunnelManager: VpnTunnelManager? = null

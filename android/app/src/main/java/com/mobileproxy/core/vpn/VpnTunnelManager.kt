@@ -10,6 +10,7 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicLong
 
 class VpnTunnelManager(
     private val vpnService: ProxyVpnService,
@@ -21,6 +22,11 @@ class VpnTunnelManager(
         private const val TAG = "VpnTunnelManager"
         const val MTU = 1400
         const val KEEPALIVE_MS = 25_000L
+        private const val RECV_BUF_SIZE = 2 * 1024 * 1024 // 2MB socket receive buffer
+        private const val SEND_BUF_SIZE = 2 * 1024 * 1024 // 2MB socket send buffer
+        private const val RECONNECT_DELAY_MS = 3_000L
+        private const val MAX_RECONNECT_DELAY_MS = 30_000L
+        private const val PONG_TIMEOUT_MS = 45_000L // if no PONG in 45s, reconnect
 
         // Packet type prefixes
         private const val TYPE_AUTH: Byte = 0x01
@@ -35,6 +41,9 @@ class VpnTunnelManager(
     private var udpSocket: DatagramSocket? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    // Track last PONG for dead-tunnel detection
+    private val lastPongTime = AtomicLong(0L)
+
     @Volatile
     var vpnIP: String = ""
         private set
@@ -43,17 +52,30 @@ class VpnTunnelManager(
     var isConnected = false
         private set
 
+    // Whether the manager should keep trying to stay connected
+    @Volatile
+    var shouldRun = false
+        private set
+
     suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
+        shouldRun = true
+        connectInternal()
+    }
+
+    private suspend fun connectInternal(): Boolean {
         try {
             // Create UDP socket and protect it from VPN routing
             val socket = DatagramSocket()
+            socket.receiveBufferSize = RECV_BUF_SIZE
+            socket.sendBufferSize = SEND_BUF_SIZE
             vpnService.protect(socket)
             socket.connect(InetSocketAddress(serverAddress, serverPort))
             udpSocket = socket
-            Log.i(TAG, "UDP socket created and protected, connecting to $serverAddress:$serverPort")
+            Log.i(TAG, "UDP socket created and protected, connecting to $serverAddress:$serverPort" +
+                " (recv=${socket.receiveBufferSize/1024}KB, send=${socket.sendBufferSize/1024}KB)")
 
             // Authenticate
-            val assignedIP = authenticate(socket) ?: return@withContext false
+            val assignedIP = authenticate(socket) ?: return false
 
             vpnIP = assignedIP
             Log.i(TAG, "Authenticated, assigned VPN IP: $vpnIP")
@@ -62,36 +84,65 @@ class VpnTunnelManager(
             tunFd = createTun(vpnIP)
             if (tunFd == null) {
                 Log.e(TAG, "Failed to create TUN interface")
-                return@withContext false
+                return false
             }
 
             isConnected = true
+            lastPongTime.set(System.currentTimeMillis())
 
             // Start packet relay coroutines
             scope.launch { tunToUdp() }
             scope.launch { udpToTun() }
             scope.launch { keepalive() }
+            scope.launch { watchdog() }
 
             Log.i(TAG, "VPN tunnel connected successfully")
-            true
+            return true
         } catch (e: Exception) {
             Log.e(TAG, "Connection failed", e)
-            disconnect()
-            false
+            teardownConnection()
+            return false
         }
     }
 
     fun disconnect() {
         Log.i(TAG, "Disconnecting VPN tunnel")
+        shouldRun = false
         isConnected = false
         scope.cancel()
+        teardownConnection()
+        vpnIP = ""
+    }
 
+    private fun teardownConnection() {
+        isConnected = false
         try { tunFd?.close() } catch (_: Exception) {}
         try { udpSocket?.close() } catch (_: Exception) {}
-
         tunFd = null
         udpSocket = null
-        vpnIP = ""
+    }
+
+    private suspend fun reconnect() {
+        if (!shouldRun) return
+        Log.w(TAG, "Initiating reconnect...")
+        teardownConnection()
+
+        var delayMs = RECONNECT_DELAY_MS
+        while (shouldRun) {
+            Log.i(TAG, "Reconnecting in ${delayMs}ms...")
+            delay(delayMs)
+            if (!shouldRun) return
+
+            if (connectInternal()) {
+                Log.i(TAG, "Reconnected successfully")
+                // Notify ProxyVpnService of reconnection
+                ProxyVpnService.onReconnected()
+                return
+            }
+
+            // Exponential backoff
+            delayMs = (delayMs * 2).coerceAtMost(MAX_RECONNECT_DELAY_MS)
+        }
     }
 
     fun protectSocket(socket: Socket): Boolean {
@@ -108,6 +159,7 @@ class VpnTunnelManager(
             .addAddress(assignedIP, 24)
             .addRoute("0.0.0.0", 0)
             .addDnsServer("8.8.8.8")
+            .addDnsServer("8.8.4.4")
             .setMtu(MTU)
             .setBlocking(true)
             .establish()
@@ -178,7 +230,10 @@ class VpnTunnelManager(
                 socket.send(DatagramPacket(buffer, 0, n + 1))
             }
         } catch (e: Exception) {
-            if (isConnected) Log.e(TAG, "tunToUdp error", e)
+            if (isConnected) {
+                Log.e(TAG, "tunToUdp error, triggering reconnect", e)
+                scope.launch { reconnect() }
+            }
         }
         Log.i(TAG, "tunToUdp stopped")
     }
@@ -187,7 +242,7 @@ class VpnTunnelManager(
         val fd = tunFd ?: return
         val socket = udpSocket ?: return
         val output = FileOutputStream(fd.fileDescriptor)
-        val buffer = ByteArray(MTU + 1)
+        val buffer = ByteArray(MTU + 100) // extra headroom for encapsulation
 
         Log.i(TAG, "udpToTun started")
         try {
@@ -203,12 +258,15 @@ class VpnTunnelManager(
                         output.write(buffer, 1, packet.length - 1)
                     }
                     TYPE_PONG -> {
-                        // Keepalive response, nothing to do
+                        lastPongTime.set(System.currentTimeMillis())
                     }
                 }
             }
         } catch (e: Exception) {
-            if (isConnected) Log.e(TAG, "udpToTun error", e)
+            if (isConnected) {
+                Log.e(TAG, "udpToTun error, triggering reconnect", e)
+                scope.launch { reconnect() }
+            }
         }
         Log.i(TAG, "udpToTun stopped")
     }
@@ -228,6 +286,30 @@ class VpnTunnelManager(
             if (isConnected) Log.e(TAG, "Keepalive error", e)
         }
         Log.i(TAG, "Keepalive stopped")
+    }
+
+    /**
+     * Watchdog: detects dead tunnels by monitoring PONG responses.
+     * If no PONG received within PONG_TIMEOUT_MS, triggers reconnect.
+     */
+    private suspend fun watchdog() {
+        Log.i(TAG, "Watchdog started")
+        try {
+            while (isConnected && shouldRun) {
+                delay(KEEPALIVE_MS)
+                if (!isConnected) break
+
+                val elapsed = System.currentTimeMillis() - lastPongTime.get()
+                if (elapsed > PONG_TIMEOUT_MS) {
+                    Log.w(TAG, "No PONG received in ${elapsed}ms, tunnel appears dead")
+                    reconnect()
+                    return
+                }
+            }
+        } catch (e: Exception) {
+            if (isConnected) Log.e(TAG, "Watchdog error", e)
+        }
+        Log.i(TAG, "Watchdog stopped")
     }
 
     private fun uuidToBytes(uuid: String): ByteArray? {
