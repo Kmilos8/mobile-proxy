@@ -134,16 +134,29 @@ class NetworkManager @Inject constructor(
 
     /**
      * Bind a socket to the cellular network explicitly.
+     * Throws if cellular is not available — caller must not fall back to WiFi.
      */
-    fun bindSocketToCellular(socket: Socket): Boolean {
-        val network = cellularNetwork ?: return false
-        return try {
+    fun bindSocketToCellular(socket: Socket) {
+        val network = cellularNetwork
+            ?: throw IllegalStateException("Cellular network not available - is Mobile Data enabled?")
+        try {
             network.bindSocket(socket)
-            true
+            Log.d(TAG, "Socket bound to cellular network successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to bind socket to cellular", e)
-            false
+            throw e
         }
+    }
+
+    /**
+     * Create a socket connected through the cellular network using SocketFactory.
+     * More reliable than bindSocket when a VPN is active.
+     */
+    fun createCellularSocket(address: InetAddress, port: Int): Socket {
+        val network = cellularNetwork
+            ?: throw IllegalStateException("Cellular network not available - is Mobile Data enabled?")
+        Log.d(TAG, "Creating cellular socket to ${address.hostAddress}:$port")
+        return network.socketFactory.createSocket(address, port)
     }
 
     /**

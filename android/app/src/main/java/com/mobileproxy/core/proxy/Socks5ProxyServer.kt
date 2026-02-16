@@ -5,7 +5,6 @@ import com.mobileproxy.core.network.NetworkManager
 import kotlinx.coroutines.*
 import java.io.DataInputStream
 import java.io.DataOutputStream
-import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicLong
@@ -115,15 +114,14 @@ class Socks5ProxyServer @Inject constructor(
             }
             val port = input.readUnsignedShort()
 
-            // Connect through cellular
-            val targetSocket = Socket()
+            // Connect through cellular using SocketFactory
+            val targetSocket: Socket
             try {
-                networkManager.bindSocketToCellular(targetSocket)
                 val addr = networkManager.resolveDnsCellular(host)
-                targetSocket.connect(InetSocketAddress(addr, port), 10000)
+                targetSocket = networkManager.createCellularSocket(addr, port)
             } catch (e: Exception) {
+                Log.e(TAG, "Failed to connect through cellular: ${e.message}")
                 sendReply(output, 0x05) // Connection refused
-                targetSocket.close()
                 return
             }
 

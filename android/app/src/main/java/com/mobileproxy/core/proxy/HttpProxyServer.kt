@@ -5,7 +5,6 @@ import com.mobileproxy.core.network.NetworkManager
 import kotlinx.coroutines.*
 import java.io.BufferedReader
 import java.io.InputStreamReader
-import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.atomic.AtomicLong
@@ -94,17 +93,16 @@ class HttpProxyServer @Inject constructor(
             if (line.isNullOrEmpty()) break
         }
 
-        // Connect to target through cellular network
-        val targetSocket = Socket()
+        // Connect to target through cellular network using SocketFactory
+        val targetSocket: Socket
         try {
-            networkManager.bindSocketToCellular(targetSocket)
             val addr = networkManager.resolveDnsCellular(host)
-            targetSocket.connect(InetSocketAddress(addr, port), 10000)
+            targetSocket = networkManager.createCellularSocket(addr, port)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to connect through cellular: ${e.message}")
             clientSocket.getOutputStream().write(
                 "HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray()
             )
-            targetSocket.close()
             return
         }
 
@@ -141,17 +139,16 @@ class HttpProxyServer @Inject constructor(
         }
         headers.appendLine()
 
-        // Connect through cellular
-        val targetSocket = Socket()
+        // Connect through cellular using SocketFactory
+        val targetSocket: Socket
         try {
-            networkManager.bindSocketToCellular(targetSocket)
             val addr = networkManager.resolveDnsCellular(host)
-            targetSocket.connect(InetSocketAddress(addr, port), 10000)
+            targetSocket = networkManager.createCellularSocket(addr, port)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to connect through cellular: ${e.message}")
             clientSocket.getOutputStream().write(
                 "HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray()
             )
-            targetSocket.close()
             return
         }
 
