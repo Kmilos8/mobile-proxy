@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Called by OpenVPN when a client connects
 # Environment variables from OpenVPN:
 # - common_name: client certificate CN (device name)
@@ -10,12 +10,8 @@ API_URL="http://api:8080/api"
 echo "Client connected: $common_name at $ifconfig_pool_remote_ip (from $trusted_ip)"
 
 # Notify the API about the connection
-curl -s -X POST "$API_URL/internal/vpn/connected" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"common_name\": \"$common_name\",
-    \"vpn_ip\": \"$ifconfig_pool_remote_ip\",
-    \"real_ip\": \"$trusted_ip\"
-  }"
+wget -q -O - --post-data="{\"common_name\":\"$common_name\",\"vpn_ip\":\"$ifconfig_pool_remote_ip\"}" \
+  --header="Content-Type: application/json" \
+  "$API_URL/internal/vpn/connected" || true
 
 exit 0

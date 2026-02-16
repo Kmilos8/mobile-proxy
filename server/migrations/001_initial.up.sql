@@ -119,4 +119,4 @@ CREATE INDEX idx_device_commands_pending ON device_commands(device_id) WHERE sta
 -- Seed admin user (password: admin123 - change in production!)
 -- bcrypt hash of 'admin123' generated with cost 10
 INSERT INTO users (email, password_hash, name, role) VALUES
-('admin@mobileproxy.local', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'Admin', 'admin');
+('admin@mobileproxy.local', '$2a$10$1w9tEy1RmVNQArX212T/9O0fD1YCarTIGnZlqtbh1JpR6eD2iUBhC', 'Admin', 'admin');
