@@ -102,8 +102,7 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, ProxyForegroundService::class.java).apply {
             action = ProxyForegroundService.ACTION_START
             putExtra(ProxyForegroundService.EXTRA_SERVER_URL, serverUrl)
-            // Device ID and auth token will come from registration
-            putExtra(ProxyForegroundService.EXTRA_DEVICE_ID, "")
+            putExtra(ProxyForegroundService.EXTRA_DEVICE_ID, "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
             putExtra(ProxyForegroundService.EXTRA_AUTH_TOKEN, "")
         }
         startForegroundService(intent)
