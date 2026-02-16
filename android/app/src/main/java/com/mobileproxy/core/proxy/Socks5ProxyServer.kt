@@ -4,6 +4,7 @@ import android.util.Log
 import com.mobileproxy.core.network.NetworkManager
 import kotlinx.coroutines.*
 import java.io.DataInputStream
+import java.net.InetAddress
 import java.io.DataOutputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -115,16 +116,13 @@ class Socks5ProxyServer @Inject constructor(
             }
             val port = input.readUnsignedShort()
 
-            // Connect through cellular
-            val targetSocket = Socket()
+            // Connect through cellular, fall back to default network
+            val targetSocket: Socket
             try {
-                networkManager.bindSocketToCellular(targetSocket)
-                val addr = networkManager.resolveDnsCellular(host)
-                targetSocket.connect(InetSocketAddress(addr, port), 10000)
+                targetSocket = connectToTarget(host, port)
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to connect to $host:$port: ${e.message}")
+                Log.e(TAG, "All connect methods failed for $host:$port: ${e.message}")
                 sendReply(output, 0x05) // Connection refused
-                targetSocket.close()
                 return
             }
 
@@ -138,6 +136,28 @@ class Socks5ProxyServer @Inject constructor(
         } finally {
             clientSocket.close()
         }
+    }
+
+    private fun connectToTarget(host: String, port: Int): Socket {
+        // Try cellular first
+        try {
+            val cellularNet = networkManager.getCellularNetwork()
+            if (cellularNet != null) {
+                val addr = cellularNet.getAllByName(host).firstOrNull()
+                    ?: throw Exception("cellular DNS failed")
+                val socket = cellularNet.socketFactory.createSocket()
+                socket.connect(InetSocketAddress(addr, port), 10000)
+                Log.i(TAG, "Connected to $host:$port via CELLULAR")
+                return socket
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Cellular failed for $host:$port: ${e.message}")
+        }
+        // Fallback to default network
+        Log.i(TAG, "Connecting to $host:$port via DEFAULT network")
+        val socket = Socket()
+        socket.connect(InetSocketAddress(InetAddress.getByName(host), port), 10000)
+        return socket
     }
 
     private fun sendReply(output: DataOutputStream, status: Byte) {

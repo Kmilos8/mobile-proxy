@@ -5,6 +5,7 @@ import com.mobileproxy.core.network.NetworkManager
 import kotlinx.coroutines.*
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -76,6 +77,33 @@ class HttpProxyServer @Inject constructor(
         }
     }
 
+    /**
+     * Connect to target host, trying cellular first then falling back to plain socket.
+     */
+    private suspend fun connectToTarget(host: String, port: Int): Socket {
+        // Try cellular-bound socket first
+        try {
+            val cellularNet = networkManager.getCellularNetwork()
+            if (cellularNet != null) {
+                val addr = cellularNet.getAllByName(host).firstOrNull()
+                    ?: throw Exception("cellular DNS failed")
+                val socket = cellularNet.socketFactory.createSocket()
+                socket.connect(InetSocketAddress(addr, port), 10000)
+                Log.i(TAG, "Connected to $host:$port via CELLULAR")
+                return socket
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Cellular connect failed for $host:$port: ${e.message}")
+        }
+
+        // Fallback: plain socket (uses default network - WiFi or VPN)
+        Log.i(TAG, "Connecting to $host:$port via DEFAULT network")
+        val socket = Socket()
+        val addr = InetAddress.getByName(host)
+        socket.connect(InetSocketAddress(addr, port), 10000)
+        return socket
+    }
+
     private suspend fun handleConnect(
         clientSocket: Socket,
         requestLine: String,
@@ -94,18 +122,15 @@ class HttpProxyServer @Inject constructor(
             if (line.isNullOrEmpty()) break
         }
 
-        // Connect to target through cellular network
-        val targetSocket = Socket()
+        // Connect to target
+        val targetSocket: Socket
         try {
-            networkManager.bindSocketToCellular(targetSocket)
-            val addr = networkManager.resolveDnsCellular(host)
-            targetSocket.connect(InetSocketAddress(addr, port), 10000)
+            targetSocket = connectToTarget(host, port)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to connect to $host:$port: ${e.message}")
+            Log.e(TAG, "All connect methods failed for $host:$port: ${e.message}")
             clientSocket.getOutputStream().write(
                 "HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray()
             )
-            targetSocket.close()
             return
         }
 
@@ -142,18 +167,15 @@ class HttpProxyServer @Inject constructor(
         }
         headers.appendLine()
 
-        // Connect through cellular
-        val targetSocket = Socket()
+        // Connect to target
+        val targetSocket: Socket
         try {
-            networkManager.bindSocketToCellular(targetSocket)
-            val addr = networkManager.resolveDnsCellular(host)
-            targetSocket.connect(InetSocketAddress(addr, port), 10000)
+            targetSocket = connectToTarget(host, port)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to connect to $host:$port: ${e.message}")
+            Log.e(TAG, "All connect methods failed for $host:$port: ${e.message}")
             clientSocket.getOutputStream().write(
                 "HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray()
             )
-            targetSocket.close()
             return
         }
 
