@@ -156,40 +156,56 @@ class NetworkManager @Inject constructor(
 
     /**
      * Get the cellular network, using scan fallback if callback hasn't fired.
+     * Returns null if cellular is genuinely unavailable.
      */
-    private fun getOrFindCellular(): Network {
+    private fun getOrFindCellular(): Network? {
         cellularNetwork?.let { return it }
-        findCellularNetwork()?.let { return it }
-        throw IllegalStateException("Cellular network not available - is Mobile Data enabled?")
+        return findCellularNetwork()
     }
 
     /**
      * Create a socket connected through the cellular network using SocketFactory.
-     * Uses scan fallback if requestNetwork callback hasn't fired yet.
+     * Falls back to default network if cellular is unavailable.
      */
     fun createCellularSocket(address: InetAddress, port: Int): Socket {
         val network = getOrFindCellular()
-        Log.d(TAG, "Creating cellular socket to ${address.hostAddress}:$port via network $network")
-        return network.socketFactory.createSocket(address, port)
+        if (network != null) {
+            Log.i(TAG, "Creating socket via CELLULAR to ${address.hostAddress}:$port")
+            return network.socketFactory.createSocket(address, port)
+        }
+        Log.w(TAG, "Cellular unavailable, using DEFAULT network to ${address.hostAddress}:$port")
+        return Socket(address, port)
     }
 
     /**
      * Bind a socket to the cellular network explicitly.
+     * Returns true if bound to cellular, false if falling back to default.
      */
-    fun bindSocketToCellular(socket: Socket) {
+    fun bindSocketToCellular(socket: Socket): Boolean {
         val network = getOrFindCellular()
-        network.bindSocket(socket)
-        Log.d(TAG, "Socket bound to cellular network $network")
+        if (network != null) {
+            network.bindSocket(socket)
+            Log.i(TAG, "Socket bound to CELLULAR network $network")
+            return true
+        }
+        Log.w(TAG, "Cellular unavailable, socket will use DEFAULT network")
+        return false
     }
 
     /**
-     * Resolve DNS through cellular network to prevent DNS leaks.
+     * Resolve DNS, preferring cellular network. Falls back to system DNS.
      */
     suspend fun resolveDnsCellular(hostname: String): InetAddress {
         val network = getOrFindCellular()
         return suspendCancellableCoroutine { cont ->
             try {
-                val addresses = network.getAllByName(hostname)
+                val addresses = if (network != null) {
+                    Log.d(TAG, "Resolving $hostname via cellular DNS")
+                    network.getAllByName(hostname)
+                } else {
+                    Log.w(TAG, "Resolving $hostname via system DNS (cellular unavailable)")
+                    InetAddress.getAllByName(hostname)
+                }
                 if (addresses.isNotEmpty()) {
                     cont.resume(addresses[0])
                 } else {
