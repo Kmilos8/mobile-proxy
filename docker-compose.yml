@@ -34,6 +34,8 @@ services:
       dockerfile: deployments/docker/Dockerfile.tunnel
     cap_add:
       - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
     network_mode: host
     environment:
       TUNNEL_PORT: "1194"
