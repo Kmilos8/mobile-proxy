@@ -8,6 +8,7 @@ import java.io.DataOutputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,10 +35,10 @@ class Socks5ProxyServer @Inject constructor(
     private var running = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    var bytesIn: Long = 0
-        private set
-    var bytesOut: Long = 0
-        private set
+    private val _bytesIn = AtomicLong(0)
+    private val _bytesOut = AtomicLong(0)
+    val bytesIn: Long get() = _bytesIn.get()
+    val bytesOut: Long get() = _bytesOut.get()
 
     fun start(port: Int = 1080) {
         if (running) return
@@ -158,7 +159,7 @@ class Socks5ProxyServer @Inject constructor(
                     if (read == -1) break
                     output.write(buffer, 0, read)
                     output.flush()
-                    bytesOut += read
+                    _bytesOut.addAndGet(read.toLong())
                 }
             } catch (_: Exception) {}
             finally { try { target.shutdownOutput() } catch (_: Exception) {} }
@@ -173,7 +174,7 @@ class Socks5ProxyServer @Inject constructor(
                     if (read == -1) break
                     output.write(buffer, 0, read)
                     output.flush()
-                    bytesIn += read
+                    _bytesIn.addAndGet(read.toLong())
                 }
             } catch (_: Exception) {}
             finally { try { client.shutdownOutput() } catch (_: Exception) {} }

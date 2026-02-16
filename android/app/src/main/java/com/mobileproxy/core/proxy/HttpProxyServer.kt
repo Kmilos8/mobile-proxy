@@ -8,6 +8,7 @@ import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,10 +29,10 @@ class HttpProxyServer @Inject constructor(
     private var running = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    var bytesIn: Long = 0
-        private set
-    var bytesOut: Long = 0
-        private set
+    private val _bytesIn = AtomicLong(0)
+    private val _bytesOut = AtomicLong(0)
+    val bytesIn: Long get() = _bytesIn.get()
+    val bytesOut: Long get() = _bytesOut.get()
 
     fun start(port: Int = 8080) {
         if (running) return
@@ -172,9 +173,10 @@ class HttpProxyServer @Inject constructor(
                     if (read == -1) break
                     output.write(buffer, 0, read)
                     output.flush()
-                    bytesOut += read
+                    _bytesOut.addAndGet(read.toLong())
                 }
             } catch (_: Exception) {}
+            finally { try { target.shutdownOutput() } catch (_: Exception) {} }
         }
         val job2 = launch {
             try {
@@ -186,24 +188,11 @@ class HttpProxyServer @Inject constructor(
                     if (read == -1) break
                     output.write(buffer, 0, read)
                     output.flush()
-                    bytesIn += read
+                    _bytesIn.addAndGet(read.toLong())
                 }
             } catch (_: Exception) {}
+            finally { try { client.shutdownOutput() } catch (_: Exception) {} }
         }
-
-        // When one direction ends, cancel the other
-        select(job1, job2)
-    }
-
-    private suspend fun select(job1: Job, job2: Job) {
-        try {
-            // Wait for either job to complete
-            while (job1.isActive && job2.isActive) {
-                delay(100)
-            }
-        } finally {
-            job1.cancel()
-            job2.cancel()
-        }
+        listOf(job1, job2).joinAll()
     }
 }

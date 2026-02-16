@@ -54,6 +54,19 @@ func (r *DeviceRepository) GetByAndroidID(ctx context.Context, androidID string)
 	return r.scanDevice(r.db.Pool.QueryRow(ctx, query, androidID))
 }
 
+func (r *DeviceRepository) GetByName(ctx context.Context, name string) (*domain.Device, error) {
+	query := `SELECT id, name, android_id, status,
+		COALESCE(host(cellular_ip),'') as cellular_ip,
+		COALESCE(host(wifi_ip),'') as wifi_ip,
+		COALESCE(host(vpn_ip),'') as vpn_ip,
+		carrier, network_type, battery_level, battery_charging, signal_strength,
+		base_port, http_port, socks5_port, udp_relay_port, ovpn_port,
+		last_heartbeat, app_version, device_model, android_version,
+		created_at, updated_at
+		FROM devices WHERE name = $1`
+	return r.scanDevice(r.db.Pool.QueryRow(ctx, query, name))
+}
+
 func (r *DeviceRepository) List(ctx context.Context) ([]domain.Device, error) {
 	query := `SELECT id, name, android_id, status,
 		COALESCE(host(cellular_ip),'') as cellular_ip,

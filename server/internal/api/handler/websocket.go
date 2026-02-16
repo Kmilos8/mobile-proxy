@@ -68,14 +68,22 @@ func (h *WSHub) Broadcast(msg domain.WSMessage) {
 	}
 
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
+	var failed []*websocket.Conn
 	for conn := range h.clients {
 		err := conn.WriteMessage(websocket.TextMessage, data)
 		if err != nil {
 			log.Printf("WebSocket write error: %v", err)
 			conn.Close()
+			failed = append(failed, conn)
+		}
+	}
+	h.mu.RUnlock()
+
+	if len(failed) > 0 {
+		h.mu.Lock()
+		for _, conn := range failed {
 			delete(h.clients, conn)
 		}
+		h.mu.Unlock()
 	}
 }

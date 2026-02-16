@@ -11,6 +11,7 @@ func SetupRouter(
 	deviceService *service.DeviceService,
 	connService *service.ConnectionService,
 	customerHandler *CustomerHandler,
+	vpnHandler *VPNHandler,
 	wsHub *WSHub,
 ) *gin.Engine {
 	r := gin.Default()
@@ -19,6 +20,11 @@ func SetupRouter(
 	authHandler := NewAuthHandler(authService)
 	deviceHandler := NewDeviceHandler(deviceService, wsHub)
 	connHandler := NewConnectionHandler(connService)
+
+	// Health check
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
 
 	// Public routes
 	r.POST("/api/auth/login", authHandler.Login)
@@ -50,6 +56,15 @@ func SetupRouter(
 		dashboard.POST("/customers", customerHandler.Create)
 		dashboard.GET("/customers/:id", customerHandler.GetByID)
 		dashboard.PUT("/customers/:id", customerHandler.Update)
+	}
+
+	// Internal VPN routes (called by OpenVPN scripts)
+	if vpnHandler != nil {
+		internal := r.Group("/api/internal")
+		{
+			internal.POST("/vpn/connected", vpnHandler.Connected)
+			internal.POST("/vpn/disconnected", vpnHandler.Disconnected)
+		}
 	}
 
 	// WebSocket

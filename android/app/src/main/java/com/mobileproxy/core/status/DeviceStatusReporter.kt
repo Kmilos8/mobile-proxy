@@ -86,20 +86,21 @@ class DeviceStatusReporter @Inject constructor(
             )
 
             val url = URL("$serverUrl/api/devices/$deviceId/heartbeat")
-            val connection = (url.openConnection() as HttpURLConnection).apply {
+
+            // Bind to WiFi for API communication (through VPN tunnel)
+            val wifiNetwork = networkManager.getWifiNetwork()
+            val connection = if (wifiNetwork != null) {
+                wifiNetwork.openConnection(url) as HttpURLConnection
+            } else {
+                url.openConnection() as HttpURLConnection
+            }
+            connection.apply {
                 requestMethod = "POST"
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Authorization", "Bearer $authToken")
                 doOutput = true
                 connectTimeout = 10000
                 readTimeout = 10000
-            }
-
-            // Bind to WiFi for API communication (through VPN tunnel)
-            networkManager.getWifiNetwork()?.let { wifi ->
-                wifi.bindSocket(java.net.Socket().apply {
-                    connect(java.net.InetSocketAddress(url.host, url.port.let { if (it == -1) 443 else it }))
-                })
             }
 
             OutputStreamWriter(connection.outputStream).use { writer ->

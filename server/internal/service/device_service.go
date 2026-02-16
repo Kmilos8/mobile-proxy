@@ -15,6 +15,7 @@ type DeviceService struct {
 	ipHistRepo  *repository.IPHistoryRepository
 	commandRepo *repository.CommandRepository
 	portService *PortService
+	vpnService  *VPNService
 }
 
 func NewDeviceService(
@@ -22,12 +23,14 @@ func NewDeviceService(
 	ipHistRepo *repository.IPHistoryRepository,
 	commandRepo *repository.CommandRepository,
 	portService *PortService,
+	vpnService *VPNService,
 ) *DeviceService {
 	return &DeviceService{
 		deviceRepo:  deviceRepo,
 		ipHistRepo:  ipHistRepo,
 		commandRepo: commandRepo,
 		portService: portService,
+		vpnService:  vpnService,
 	}
 }
 
@@ -69,9 +72,23 @@ func (s *DeviceService) Register(ctx context.Context, req *domain.DeviceRegistra
 		return nil, fmt.Errorf("create device: %w", err)
 	}
 
+	// Generate VPN config if VPN service is available
+	var vpnConfig string
+	if s.vpnService != nil {
+		// Assign VPN IP based on port offset (unique per device)
+		deviceIndex := (basePort - 30000) / 4
+		vpnIP, err := s.vpnService.AssignVPNIP(device.Name, deviceIndex)
+		if err != nil {
+			return nil, fmt.Errorf("assign vpn ip: %w", err)
+		}
+		_ = s.deviceRepo.SetVpnIP(ctx, device.ID, vpnIP)
+		vpnConfig = s.vpnService.GenerateClientConfig(s.vpnService.ServerIP(), device.Name)
+	}
+
 	return &domain.DeviceRegistrationResponse{
-		DeviceID: device.ID,
-		BasePort: basePort,
+		DeviceID:  device.ID,
+		VpnConfig: vpnConfig,
+		BasePort:  basePort,
 	}, nil
 }
 
@@ -151,6 +168,14 @@ func (s *DeviceService) GetIPHistory(ctx context.Context, deviceID uuid.UUID, li
 		limit = 50
 	}
 	return s.ipHistRepo.ListByDevice(ctx, deviceID, limit)
+}
+
+func (s *DeviceService) GetByName(ctx context.Context, name string) (*domain.Device, error) {
+	return s.deviceRepo.GetByName(ctx, name)
+}
+
+func (s *DeviceService) SetVpnIP(ctx context.Context, id uuid.UUID, vpnIP string) error {
+	return s.deviceRepo.SetVpnIP(ctx, id, vpnIP)
 }
 
 func (s *DeviceService) MarkStaleOffline(ctx context.Context) (int64, error) {

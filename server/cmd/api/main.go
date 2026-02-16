@@ -29,12 +29,13 @@ func main() {
 	commandRepo := repository.NewCommandRepository(db)
 	ipHistRepo := repository.NewIPHistoryRepository(db)
 	customerRepo := repository.NewCustomerRepository(db)
-	_ = repository.NewBandwidthRepository(db) // Used by worker
 
 	// Services
+	iptablesService := service.NewIPTablesService()
+	vpnService := service.NewVPNService(cfg.VPN, iptablesService)
 	portService := service.NewPortService(deviceRepo, cfg.Ports)
 	authService := service.NewAuthService(userRepo, cfg.JWT)
-	deviceService := service.NewDeviceService(deviceRepo, ipHistRepo, commandRepo, portService)
+	deviceService := service.NewDeviceService(deviceRepo, ipHistRepo, commandRepo, portService, vpnService)
 	connService := service.NewConnectionService(connRepo, deviceRepo)
 
 	// WebSocket hub
@@ -42,9 +43,10 @@ func main() {
 
 	// Handlers
 	customerHandler := handler.NewCustomerHandler(customerRepo)
+	vpnHandler := handler.NewVPNHandler(deviceService, vpnService)
 
 	// Router
-	router := handler.SetupRouter(authService, deviceService, connService, customerHandler, wsHub)
+	router := handler.SetupRouter(authService, deviceService, connService, customerHandler, vpnHandler, wsHub)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -78,6 +80,12 @@ func loadConfig() domain.Config {
 	}
 	if v := os.Getenv("SERVER_PORT"); v != "" {
 		fmt.Sscanf(v, "%d", &cfg.Server.Port)
+	}
+	if v := os.Getenv("VPN_SERVER_IP"); v != "" {
+		cfg.VPN.ServerIP = v
+	}
+	if v := os.Getenv("VPN_CCD_DIR"); v != "" {
+		cfg.VPN.CCDDir = v
 	}
 
 	return cfg

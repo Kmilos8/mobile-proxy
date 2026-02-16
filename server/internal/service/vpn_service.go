@@ -22,6 +22,11 @@ func NewVPNService(config domain.VPNConfig, iptables *IPTablesService) *VPNServi
 	}
 }
 
+// ServerIP returns the configured VPN server public IP
+func (s *VPNService) ServerIP() string {
+	return s.config.ServerIP
+}
+
 // AssignVPNIP assigns a static VPN IP to a device via CCD file.
 // VPN IPs are assigned based on device index: 10.8.0.2, 10.8.0.3, etc.
 func (s *VPNService) AssignVPNIP(deviceName string, deviceIndex int) (string, error) {

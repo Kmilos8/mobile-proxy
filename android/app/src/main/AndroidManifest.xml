@@ -47,7 +47,7 @@
         </service>
 
         <service
-            android:name=".rotation.AirplaneModeAccessibilityService"
+            android:name=".core.rotation.AirplaneModeAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="false">
             <intent-filter>

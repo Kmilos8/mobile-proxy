@@ -30,7 +30,7 @@ func main() {
 	bwRepo := repository.NewBandwidthRepository(db)
 
 	portService := service.NewPortService(deviceRepo, cfg.Ports)
-	deviceService := service.NewDeviceService(deviceRepo, ipHistRepo, commandRepo, portService)
+	deviceService := service.NewDeviceService(deviceRepo, ipHistRepo, commandRepo, portService, nil)
 	bwService := service.NewBandwidthService(bwRepo)
 
 	ctx, cancel := context.WithCancel(context.Background())
