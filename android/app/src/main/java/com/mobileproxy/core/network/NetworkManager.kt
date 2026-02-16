@@ -126,9 +126,12 @@ class NetworkManager @Inject constructor(
     }
 
     /**
-     * Get the cellular Network object for binding sockets directly.
+     * Get the cellular Network object, using scan fallback if callback hasn't fired.
      */
-    fun getCellularNetwork(): Network? = cellularNetwork
+    fun getCellularNetwork(): Network? {
+        cellularNetwork?.let { return it }
+        return findCellularNetwork()
+    }
 
     /**
      * Get the WiFi Network object (used for VPN tunnel).
