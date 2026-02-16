@@ -5,6 +5,8 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,8 +30,8 @@ class NetworkManager @Inject constructor(
 
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-    private var cellularNetwork: Network? = null
-    private var wifiNetwork: Network? = null
+    @Volatile private var cellularNetwork: Network? = null
+    @Volatile private var wifiNetwork: Network? = null
 
     private val _cellularState = MutableStateFlow<NetworkState>(NetworkState.Disconnected)
     val cellularState: StateFlow<NetworkState> = _cellularState
@@ -68,7 +70,7 @@ class NetworkManager @Inject constructor(
 
         cellularCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                Log.i(TAG, "Cellular network available: $network")
+                Log.i(TAG, "Cellular network available via callback: $network")
                 cellularNetwork = network
                 _cellularState.value = NetworkState.Connected(network)
             }
@@ -84,7 +86,8 @@ class NetworkManager @Inject constructor(
                 _cellularState.value = NetworkState.Connected(network)
             }
         }
-        connectivityManager.requestNetwork(request, cellularCallback!!)
+        // Use main looper handler to ensure callbacks fire reliably
+        connectivityManager.requestNetwork(request, cellularCallback!!, Handler(Looper.getMainLooper()))
     }
 
     private fun acquireWifi() {
@@ -111,7 +114,7 @@ class NetworkManager @Inject constructor(
                 _wifiState.value = NetworkState.Connected(network)
             }
         }
-        connectivityManager.requestNetwork(request, wifiCallback!!)
+        connectivityManager.requestNetwork(request, wifiCallback!!, Handler(Looper.getMainLooper()))
     }
 
     /**
@@ -133,38 +136,57 @@ class NetworkManager @Inject constructor(
     fun getWifiNetwork(): Network? = wifiNetwork
 
     /**
-     * Bind a socket to the cellular network explicitly.
-     * Throws if cellular is not available — caller must not fall back to WiFi.
+     * Find cellular network by scanning all available networks.
+     * Fallback when requestNetwork callback hasn't fired.
      */
-    fun bindSocketToCellular(socket: Socket) {
-        val network = cellularNetwork
-            ?: throw IllegalStateException("Cellular network not available - is Mobile Data enabled?")
-        try {
-            network.bindSocket(socket)
-            Log.d(TAG, "Socket bound to cellular network successfully")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to bind socket to cellular", e)
-            throw e
+    private fun findCellularNetwork(): Network? {
+        val networks = connectivityManager.allNetworks
+        for (network in networks) {
+            val caps = connectivityManager.getNetworkCapabilities(network) ?: continue
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                Log.i(TAG, "Found cellular network via scan: $network")
+                cellularNetwork = network
+                _cellularState.value = NetworkState.Connected(network)
+                return network
+            }
         }
+        return null
+    }
+
+    /**
+     * Get the cellular network, using scan fallback if callback hasn't fired.
+     */
+    private fun getOrFindCellular(): Network {
+        cellularNetwork?.let { return it }
+        findCellularNetwork()?.let { return it }
+        throw IllegalStateException("Cellular network not available - is Mobile Data enabled?")
     }
 
     /**
      * Create a socket connected through the cellular network using SocketFactory.
-     * More reliable than bindSocket when a VPN is active.
+     * Uses scan fallback if requestNetwork callback hasn't fired yet.
      */
     fun createCellularSocket(address: InetAddress, port: Int): Socket {
-        val network = cellularNetwork
-            ?: throw IllegalStateException("Cellular network not available - is Mobile Data enabled?")
-        Log.d(TAG, "Creating cellular socket to ${address.hostAddress}:$port")
+        val network = getOrFindCellular()
+        Log.d(TAG, "Creating cellular socket to ${address.hostAddress}:$port via network $network")
         return network.socketFactory.createSocket(address, port)
+    }
+
+    /**
+     * Bind a socket to the cellular network explicitly.
+     */
+    fun bindSocketToCellular(socket: Socket) {
+        val network = getOrFindCellular()
+        network.bindSocket(socket)
+        Log.d(TAG, "Socket bound to cellular network $network")
     }
 
     /**
      * Resolve DNS through cellular network to prevent DNS leaks.
      */
     suspend fun resolveDnsCellular(hostname: String): InetAddress {
-        val network = cellularNetwork
-            ?: throw IllegalStateException("Cellular network not available")
+        val network = getOrFindCellular()
         return suspendCancellableCoroutine { cont ->
             try {
                 val addresses = network.getAllByName(hostname)
