@@ -18,14 +18,26 @@ services:
       timeout: 5s
       retries: 5
 
-  openvpn:
-    image: kylemanna/openvpn:2.4
+  # openvpn:
+  #   image: kylemanna/openvpn:2.4
+  #   cap_add:
+  #     - NET_ADMIN
+  #   network_mode: host
+  #   volumes:
+  #     - openvpn_data:/etc/openvpn
+  #     - ./server/deployments/openvpn:/etc/openvpn/custom
+  #   restart: unless-stopped
+
+  tunnel:
+    build:
+      context: ./server
+      dockerfile: deployments/docker/Dockerfile.tunnel
     cap_add:
       - NET_ADMIN
     network_mode: host
-    volumes:
-      - openvpn_data:/etc/openvpn
-      - ./server/deployments/openvpn:/etc/openvpn/custom
+    environment:
+      TUNNEL_PORT: "1194"
+      API_URL: "http://127.0.0.1:8080"
     restart: unless-stopped
 
   api:

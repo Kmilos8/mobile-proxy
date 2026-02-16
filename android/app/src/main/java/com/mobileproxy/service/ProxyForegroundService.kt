@@ -16,6 +16,7 @@ import com.mobileproxy.core.proxy.Socks5ProxyServer
 import com.mobileproxy.core.status.DeviceStatusReporter
 import com.mobileproxy.ui.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.*
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -36,6 +37,7 @@ class ProxyForegroundService : Service() {
     @Inject lateinit var statusReporter: DeviceStatusReporter
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -65,15 +67,30 @@ class ProxyForegroundService : Service() {
         // Start foreground notification
         startForeground(MobileProxyApp.NOTIFICATION_ID, createNotification())
 
-        // Acquire both networks (WiFi Split)
-        networkManager.acquireNetworks()
+        // Start VPN tunnel first
+        val vpnIntent = Intent(this, ProxyVpnService::class.java).apply {
+            action = ProxyVpnService.ACTION_START
+            putExtra(ProxyVpnService.EXTRA_SERVER_IP, "178.156.210.156")
+            putExtra(ProxyVpnService.EXTRA_DEVICE_ID, deviceId)
+        }
+        startService(vpnIntent)
 
-        // Start proxy servers
-        httpProxy.start(8080)
-        socks5Proxy.start(1080)
+        // Wait for VPN to connect, then start proxies
+        scope.launch {
+            delay(5000)
 
-        // Start heartbeat reporting
-        statusReporter.start(serverUrl, deviceId, authToken)
+            // Acquire both networks (WiFi Split)
+            networkManager.acquireNetworks()
+
+            // Start proxy servers
+            httpProxy.start(8080)
+            socks5Proxy.start(1080)
+
+            // Start heartbeat reporting
+            statusReporter.start(serverUrl, deviceId, authToken)
+
+            Log.i(TAG, "Proxy service fully started (VPN + proxies)")
+        }
     }
 
     private fun stopProxy() {
@@ -82,7 +99,15 @@ class ProxyForegroundService : Service() {
         httpProxy.stop()
         socks5Proxy.stop()
         networkManager.releaseNetworks()
+
+        // Stop VPN tunnel
+        val vpnIntent = Intent(this, ProxyVpnService::class.java).apply {
+            action = ProxyVpnService.ACTION_STOP
+        }
+        startService(vpnIntent)
+
         wakeLock?.release()
+        scope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

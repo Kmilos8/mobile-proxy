@@ -1,0 +1,246 @@
+package com.mobileproxy.core.vpn
+
+import android.os.ParcelFileDescriptor
+import android.util.Log
+import com.mobileproxy.service.ProxyVpnService
+import kotlinx.coroutines.*
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetSocketAddress
+import java.net.Socket
+
+class VpnTunnelManager(
+    private val vpnService: ProxyVpnService,
+    private val serverAddress: String,
+    private val serverPort: Int,
+    private val deviceId: String
+) {
+    companion object {
+        private const val TAG = "VpnTunnelManager"
+        const val MTU = 1400
+        const val KEEPALIVE_MS = 25_000L
+
+        // Packet type prefixes
+        private const val TYPE_AUTH: Byte = 0x01
+        private const val TYPE_DATA: Byte = 0x02
+        private const val TYPE_PING: Byte = 0x03
+        private const val TYPE_AUTH_OK: Byte = 0x01
+        private const val TYPE_AUTH_FAIL: Byte = 0x03
+        private const val TYPE_PONG: Byte = 0x04
+    }
+
+    private var tunFd: ParcelFileDescriptor? = null
+    private var udpSocket: DatagramSocket? = null
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    @Volatile
+    var vpnIP: String = ""
+        private set
+
+    @Volatile
+    var isConnected = false
+        private set
+
+    suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            // Create UDP socket and protect it from VPN routing
+            val socket = DatagramSocket()
+            vpnService.protect(socket)
+            socket.connect(InetSocketAddress(serverAddress, serverPort))
+            udpSocket = socket
+            Log.i(TAG, "UDP socket created and protected, connecting to $serverAddress:$serverPort")
+
+            // Authenticate
+            val assignedIP = authenticate(socket) ?: return@withContext false
+
+            vpnIP = assignedIP
+            Log.i(TAG, "Authenticated, assigned VPN IP: $vpnIP")
+
+            // Create TUN interface
+            tunFd = createTun(vpnIP)
+            if (tunFd == null) {
+                Log.e(TAG, "Failed to create TUN interface")
+                return@withContext false
+            }
+
+            isConnected = true
+
+            // Start packet relay coroutines
+            scope.launch { tunToUdp() }
+            scope.launch { udpToTun() }
+            scope.launch { keepalive() }
+
+            Log.i(TAG, "VPN tunnel connected successfully")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Connection failed", e)
+            disconnect()
+            false
+        }
+    }
+
+    fun disconnect() {
+        Log.i(TAG, "Disconnecting VPN tunnel")
+        isConnected = false
+        scope.cancel()
+
+        try { tunFd?.close() } catch (_: Exception) {}
+        try { udpSocket?.close() } catch (_: Exception) {}
+
+        tunFd = null
+        udpSocket = null
+        vpnIP = ""
+    }
+
+    fun protectSocket(socket: Socket): Boolean {
+        return vpnService.protect(socket)
+    }
+
+    fun protectSocket(socket: DatagramSocket): Boolean {
+        return vpnService.protect(socket)
+    }
+
+    private fun createTun(assignedIP: String): ParcelFileDescriptor? {
+        return vpnService.Builder()
+            .setSession("MobileProxy")
+            .addAddress(assignedIP, 24)
+            .addRoute("0.0.0.0", 0)
+            .addDnsServer("8.8.8.8")
+            .setMtu(MTU)
+            .setBlocking(true)
+            .establish()
+    }
+
+    private fun authenticate(socket: DatagramSocket): String? {
+        // Parse device ID UUID to 16 bytes
+        val uuidBytes = uuidToBytes(deviceId)
+        if (uuidBytes == null) {
+            Log.e(TAG, "Invalid device ID UUID: $deviceId")
+            return null
+        }
+
+        // Send AUTH: [0x01][16-byte device_id]
+        val authPacket = ByteArray(17)
+        authPacket[0] = TYPE_AUTH
+        System.arraycopy(uuidBytes, 0, authPacket, 1, 16)
+
+        socket.send(DatagramPacket(authPacket, authPacket.size))
+        Log.i(TAG, "AUTH sent, waiting for response...")
+
+        // Receive response
+        val recvBuf = ByteArray(64)
+        val recvPacket = DatagramPacket(recvBuf, recvBuf.size)
+        socket.soTimeout = 10000 // 10s timeout for auth
+        socket.receive(recvPacket)
+
+        if (recvPacket.length < 1) {
+            Log.e(TAG, "Empty auth response")
+            return null
+        }
+
+        return when (recvBuf[0]) {
+            TYPE_AUTH_OK -> {
+                if (recvPacket.length < 5) {
+                    Log.e(TAG, "AUTH_OK too short")
+                    return null
+                }
+                // Parse 4-byte IPv4
+                val ip = "${recvBuf[1].toInt() and 0xFF}.${recvBuf[2].toInt() and 0xFF}.${recvBuf[3].toInt() and 0xFF}.${recvBuf[4].toInt() and 0xFF}"
+                socket.soTimeout = 0 // Remove timeout for data
+                ip
+            }
+            TYPE_AUTH_FAIL -> {
+                Log.e(TAG, "Authentication failed")
+                null
+            }
+            else -> {
+                Log.e(TAG, "Unknown auth response type: ${recvBuf[0]}")
+                null
+            }
+        }
+    }
+
+    private fun tunToUdp() {
+        val fd = tunFd ?: return
+        val socket = udpSocket ?: return
+        val input = FileInputStream(fd.fileDescriptor)
+        val buffer = ByteArray(MTU + 1) // +1 for type prefix
+
+        Log.i(TAG, "tunToUdp started")
+        try {
+            while (isConnected) {
+                val n = input.read(buffer, 1, MTU)
+                if (n <= 0) continue
+
+                buffer[0] = TYPE_DATA
+                socket.send(DatagramPacket(buffer, 0, n + 1))
+            }
+        } catch (e: Exception) {
+            if (isConnected) Log.e(TAG, "tunToUdp error", e)
+        }
+        Log.i(TAG, "tunToUdp stopped")
+    }
+
+    private fun udpToTun() {
+        val fd = tunFd ?: return
+        val socket = udpSocket ?: return
+        val output = FileOutputStream(fd.fileDescriptor)
+        val buffer = ByteArray(MTU + 1)
+
+        Log.i(TAG, "udpToTun started")
+        try {
+            while (isConnected) {
+                val packet = DatagramPacket(buffer, buffer.size)
+                socket.receive(packet)
+
+                if (packet.length < 2) continue
+
+                when (buffer[0]) {
+                    TYPE_DATA -> {
+                        // Write raw IP packet to TUN (skip type byte)
+                        output.write(buffer, 1, packet.length - 1)
+                    }
+                    TYPE_PONG -> {
+                        // Keepalive response, nothing to do
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            if (isConnected) Log.e(TAG, "udpToTun error", e)
+        }
+        Log.i(TAG, "udpToTun stopped")
+    }
+
+    private suspend fun keepalive() {
+        val socket = udpSocket ?: return
+        val pingPacket = DatagramPacket(byteArrayOf(TYPE_PING), 1)
+
+        Log.i(TAG, "Keepalive started")
+        try {
+            while (isConnected) {
+                delay(KEEPALIVE_MS)
+                if (!isConnected) break
+                socket.send(pingPacket)
+            }
+        } catch (e: Exception) {
+            if (isConnected) Log.e(TAG, "Keepalive error", e)
+        }
+        Log.i(TAG, "Keepalive stopped")
+    }
+
+    private fun uuidToBytes(uuid: String): ByteArray? {
+        return try {
+            val hex = uuid.replace("-", "")
+            if (hex.length != 32) return null
+            val bytes = ByteArray(16)
+            for (i in 0 until 16) {
+                bytes[i] = hex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+            }
+            bytes
+        } catch (e: Exception) {
+            null
+        }
+    }
+}

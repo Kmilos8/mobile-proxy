@@ -48,7 +48,7 @@ func (s *IPTablesService) RemoveDNAT(externalPort int, vpnIP string, devicePort 
 	return nil
 }
 
-// SetupForDevice creates all 4 DNAT rules for a device
+// SetupForDevice creates DNAT rules for a device (HTTP, SOCKS5, UDP relay)
 func (s *IPTablesService) SetupForDevice(basePort int, vpnIP string) error {
 	// HTTP proxy: basePort -> vpnIP:8080
 	if err := s.AddDNAT(basePort, vpnIP, 8080); err != nil {
@@ -62,19 +62,14 @@ func (s *IPTablesService) SetupForDevice(basePort int, vpnIP string) error {
 	if err := s.AddDNAT(basePort+2, vpnIP, 1081); err != nil {
 		return err
 	}
-	// OpenVPN: basePort+3 -> vpnIP:1194
-	if err := s.AddDNAT(basePort+3, vpnIP, 1194); err != nil {
-		return err
-	}
 	return nil
 }
 
-// TeardownForDevice removes all 4 DNAT rules for a device
+// TeardownForDevice removes DNAT rules for a device
 func (s *IPTablesService) TeardownForDevice(basePort int, vpnIP string) error {
 	_ = s.RemoveDNAT(basePort, vpnIP, 8080)
 	_ = s.RemoveDNAT(basePort+1, vpnIP, 1080)
 	_ = s.RemoveDNAT(basePort+2, vpnIP, 1081)
-	_ = s.RemoveDNAT(basePort+3, vpnIP, 1194)
 	return nil
 }
 

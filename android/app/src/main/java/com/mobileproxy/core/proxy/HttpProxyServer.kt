@@ -2,6 +2,7 @@ package com.mobileproxy.core.proxy
 
 import android.util.Log
 import com.mobileproxy.core.network.NetworkManager
+import com.mobileproxy.service.ProxyVpnService
 import kotlinx.coroutines.*
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -78,29 +79,30 @@ class HttpProxyServer @Inject constructor(
     }
 
     /**
-     * Connect to target host, trying cellular first then falling back to plain socket.
+     * Connect to target host via cellular network.
+     * Socket is protected from VPN routing and bound to cellular.
      */
-    private suspend fun connectToTarget(host: String, port: Int): Socket {
-        // Try cellular-bound socket first
-        try {
-            val cellularNet = networkManager.getCellularNetwork()
-            if (cellularNet != null) {
-                val addr = cellularNet.getAllByName(host).firstOrNull()
-                    ?: throw Exception("cellular DNS failed")
-                val socket = cellularNet.socketFactory.createSocket()
-                socket.connect(InetSocketAddress(addr, port), 10000)
-                Log.i(TAG, "Connected to $host:$port via CELLULAR")
-                return socket
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Cellular connect failed for $host:$port: ${e.message}")
+    private fun connectToTarget(host: String, port: Int): Socket {
+        val cellularNet = networkManager.getCellularNetwork()
+
+        // Resolve DNS via cellular if available, else system DNS
+        val addr = if (cellularNet != null) {
+            cellularNet.getAllByName(host).firstOrNull()
+                ?: InetAddress.getByName(host)
+        } else {
+            InetAddress.getByName(host)
         }
 
-        // Fallback: plain socket (uses default network - WiFi or VPN)
-        Log.i(TAG, "Connecting to $host:$port via DEFAULT network")
         val socket = Socket()
-        val addr = InetAddress.getByName(host)
+
+        // Protect from VPN routing (so it doesn't go through tunnel)
+        ProxyVpnService.protectSocket(socket)
+
+        // Bind to cellular network
+        cellularNet?.bindSocket(socket)
+
         socket.connect(InetSocketAddress(addr, port), 10000)
+        Log.i(TAG, "Connected to $host:$port via CELLULAR (protected+bound)")
         return socket
     }
 
