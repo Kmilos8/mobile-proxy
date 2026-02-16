@@ -5,7 +5,7 @@
 # - ifconfig_pool_remote_ip: assigned VPN IP
 # - trusted_ip: client's real IP (WiFi IP)
 
-API_URL="http://api:8080/api"
+API_URL="http://127.0.0.1:8080/api"
 
 echo "Client connected: $common_name at $ifconfig_pool_remote_ip (from $trusted_ip)"
 

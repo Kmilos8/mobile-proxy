@@ -22,18 +22,10 @@ services:
     image: kylemanna/openvpn:2.4
     cap_add:
       - NET_ADMIN
-    ports:
-      - "1194:1194/udp"
-      - "30000-30799:30000-30799/tcp"
-      - "30000-30799:30000-30799/udp"
+    network_mode: host
     volumes:
       - openvpn_data:/etc/openvpn
       - ./server/deployments/openvpn:/etc/openvpn/custom
-    sysctls:
-      - net.ipv4.ip_forward=1
-    depends_on:
-      api:
-        condition: service_healthy
     restart: unless-stopped
 
   api:

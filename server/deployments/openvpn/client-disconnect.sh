@@ -1,7 +1,7 @@
 #!/bin/sh
 # Called by OpenVPN when a client disconnects
 
-API_URL="http://api:8080/api"
+API_URL="http://127.0.0.1:8080/api"
 
 echo "Client disconnected: $common_name at $ifconfig_pool_remote_ip"
 
