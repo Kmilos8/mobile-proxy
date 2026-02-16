@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MobileProxy</string>
+    <string name="accessibility_description">Required for IP rotation via airplane mode toggle</string>
+    <string name="notification_channel_name">Proxy Service</string>
+    <string name="notification_channel_description">Shows proxy service status</string>
+</resources>

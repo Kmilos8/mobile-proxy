@@ -1,0 +1,80 @@
+package com.mobileproxy.ui
+
+import android.content.Intent
+import android.os.Bundle
+import android.widget.Button
+import android.widget.EditText
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import com.mobileproxy.R
+import com.mobileproxy.core.network.NetworkManager
+import com.mobileproxy.core.network.NetworkState
+import com.mobileproxy.service.ProxyForegroundService
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
+import javax.inject.Inject
+
+@AndroidEntryPoint
+class MainActivity : AppCompatActivity() {
+
+    @Inject lateinit var networkManager: NetworkManager
+
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        val serverUrlEdit = findViewById<EditText>(R.id.editServerUrl)
+        val statusText = findViewById<TextView>(R.id.textStatus)
+        val cellularText = findViewById<TextView>(R.id.textCellular)
+        val wifiText = findViewById<TextView>(R.id.textWifi)
+        val startButton = findViewById<Button>(R.id.buttonStart)
+        val stopButton = findViewById<Button>(R.id.buttonStop)
+
+        startButton.setOnClickListener {
+            val serverUrl = serverUrlEdit.text.toString()
+            val intent = Intent(this, ProxyForegroundService::class.java).apply {
+                action = ProxyForegroundService.ACTION_START
+                putExtra(ProxyForegroundService.EXTRA_SERVER_URL, serverUrl)
+                // Device ID and auth token will come from registration
+                putExtra(ProxyForegroundService.EXTRA_DEVICE_ID, "")
+                putExtra(ProxyForegroundService.EXTRA_AUTH_TOKEN, "")
+            }
+            startForegroundService(intent)
+            statusText.text = "Status: Running"
+        }
+
+        stopButton.setOnClickListener {
+            val intent = Intent(this, ProxyForegroundService::class.java).apply {
+                action = ProxyForegroundService.ACTION_STOP
+            }
+            startService(intent)
+            statusText.text = "Status: Stopped"
+        }
+
+        // Observe network states
+        scope.launch {
+            networkManager.cellularState.collectLatest { state ->
+                cellularText.text = when (state) {
+                    is NetworkState.Connected -> "Cellular: Connected"
+                    is NetworkState.Disconnected -> "Cellular: Disconnected"
+                }
+            }
+        }
+        scope.launch {
+            networkManager.wifiState.collectLatest { state ->
+                wifiText.text = when (state) {
+                    is NetworkState.Connected -> "WiFi: Connected"
+                    is NetworkState.Disconnected -> "WiFi: Disconnected"
+                }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
+}

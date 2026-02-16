@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS device_commands;
+DROP TABLE IF EXISTS bandwidth_logs_2026_02;
+DROP TABLE IF EXISTS bandwidth_logs_2026_03;
+DROP TABLE IF EXISTS bandwidth_logs;
+DROP TABLE IF EXISTS ip_history;
+DROP TABLE IF EXISTS proxy_connections;
+DROP TABLE IF EXISTS customers;
+DROP TABLE IF EXISTS devices;
+DROP TABLE IF EXISTS users;
+DROP EXTENSION IF EXISTS "uuid-ossp";
