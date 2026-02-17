@@ -39,7 +39,7 @@ class VpnTunnelManager(
 
     private var tunFd: ParcelFileDescriptor? = null
     private var udpSocket: DatagramSocket? = null
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Track last PONG for dead-tunnel detection
     private val lastPongTime = AtomicLong(0L)
@@ -59,26 +59,46 @@ class VpnTunnelManager(
 
     suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
         shouldRun = true
-        connectInternal()
+        // Ensure we have a fresh scope (previous disconnect may have cancelled it)
+        if (!scope.isActive) {
+            scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        }
+
+        // Retry initial connect with exponential backoff
+        var delayMs = RECONNECT_DELAY_MS
+        while (shouldRun) {
+            if (connectInternal()) return@withContext true
+            Log.w(TAG, "Initial connect failed, retrying in ${delayMs}ms...")
+            delay(delayMs)
+            delayMs = (delayMs * 2).coerceAtMost(MAX_RECONNECT_DELAY_MS)
+        }
+        false
     }
 
     private suspend fun connectInternal(): Boolean {
         try {
-            // Create UDP socket and protect it from VPN routing
+            // Create UDP socket — do NOT protect() yet.
+            // protect() sets SO_MARK which can break UDP receive on Samsung
+            // when no VPN is active. We protect after auth, before TUN establish.
             val socket = DatagramSocket()
             socket.receiveBufferSize = RECV_BUF_SIZE
             socket.sendBufferSize = SEND_BUF_SIZE
-            vpnService.protect(socket)
             socket.connect(InetSocketAddress(serverAddress, serverPort))
             udpSocket = socket
-            Log.i(TAG, "UDP socket created and protected, connecting to $serverAddress:$serverPort" +
+            Log.i(TAG, "UDP socket created, connecting to $serverAddress:$serverPort" +
                 " (recv=${socket.receiveBufferSize/1024}KB, send=${socket.sendBufferSize/1024}KB)")
 
-            // Authenticate
+            // Authenticate (no VPN active yet, so normal routing works fine)
             val assignedIP = authenticate(socket) ?: return false
 
             vpnIP = assignedIP
             Log.i(TAG, "Authenticated, assigned VPN IP: $vpnIP")
+
+            // NOW protect the socket before establishing TUN.
+            // Once TUN is active, all traffic routes through VPN —
+            // protect() ensures our tunnel socket bypasses VPN routing.
+            vpnService.protect(socket)
+            Log.i(TAG, "Socket protected from VPN routing")
 
             // Create TUN interface
             tunFd = createTun(vpnIP)
@@ -99,7 +119,7 @@ class VpnTunnelManager(
             Log.i(TAG, "VPN tunnel connected successfully")
             return true
         } catch (e: Exception) {
-            Log.e(TAG, "Connection failed", e)
+            Log.e(TAG, "Connection failed: ${e.message}", e)
             teardownConnection()
             return false
         }
@@ -109,7 +129,7 @@ class VpnTunnelManager(
         Log.i(TAG, "Disconnecting VPN tunnel")
         shouldRun = false
         isConnected = false
-        scope.cancel()
+        try { scope.cancel() } catch (_: Exception) {}
         teardownConnection()
         vpnIP = ""
     }

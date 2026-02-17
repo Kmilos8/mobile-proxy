@@ -260,16 +260,25 @@ func (s *tunnelServer) handleAuth(data []byte, addr *net.UDPAddr) {
 
 	log.Printf("AUTH request from %s, device_id=%s", addr, deviceID)
 
-	// Check if this device is already connected — disconnect old session
+	// Check if this device is already connected — reuse session silently
 	s.mu.Lock()
 	for ipStr, c := range s.clients {
 		if c.deviceID == deviceID {
-			log.Printf("Device %s reconnecting, removing old session %s", deviceID, ipStr)
+			log.Printf("Device %s reconnecting, updating session %s with new addr %s", deviceID, ipStr, addr)
+			// Update UDP address for existing session (no disconnect/connect notify)
 			delete(s.addrMap, c.udpAddr.String())
-			delete(s.clients, ipStr)
-			s.releaseIP(c.vpnIP)
-			go s.notifyDisconnected(c.deviceID, ipStr)
-			break
+			c.udpAddr = addr
+			c.touch()
+			s.addrMap[addr.String()] = ipStr
+			s.mu.Unlock()
+
+			// Send AUTH_OK with existing IP
+			resp := make([]byte, 5)
+			resp[0] = TypeAuthOK
+			copy(resp[1:5], c.vpnIP)
+			s.udpConn.WriteToUDP(resp, addr)
+			log.Printf("AUTH_OK (reconnect): device=%s ip=%s", deviceID, ipStr)
+			return
 		}
 	}
 	s.mu.Unlock()
