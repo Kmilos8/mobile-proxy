@@ -109,9 +109,13 @@ class Socks5ProxyServer @Inject constructor(
                     host = String(domain)
                 }
                 ATYP_IPV6 -> {
+                    // Cellular networks often lack IPv6 — reject so client retries with IPv4
                     val addr = ByteArray(16)
                     input.readFully(addr)
-                    host = java.net.InetAddress.getByAddress(addr).hostAddress ?: return
+                    input.readUnsignedShort() // consume port
+                    Log.w(TAG, "IPv6 not supported, rejecting ATYP_IPV6 connect")
+                    sendReply(output, 0x08) // Address type not supported
+                    return
                 }
                 else -> return
             }
@@ -143,11 +147,16 @@ class Socks5ProxyServer @Inject constructor(
         val cellularNet = networkManager.getCellularNetwork()
 
         // Resolve DNS via cellular if available, else system DNS
+        // Prefer IPv4 — cellular networks often lack IPv6 routing
         val addr = if (cellularNet != null) {
-            cellularNet.getAllByName(host).firstOrNull()
+            val all = cellularNet.getAllByName(host)
+            all.firstOrNull { it is java.net.Inet4Address }
+                ?: all.firstOrNull()
                 ?: InetAddress.getByName(host)
         } else {
-            InetAddress.getByName(host)
+            val all = InetAddress.getAllByName(host)
+            all.firstOrNull { it is java.net.Inet4Address }
+                ?: all.first()
         }
 
         val socket = Socket()

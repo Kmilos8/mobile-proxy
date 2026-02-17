@@ -86,11 +86,16 @@ class HttpProxyServer @Inject constructor(
         val cellularNet = networkManager.getCellularNetwork()
 
         // Resolve DNS via cellular if available, else system DNS
+        // Prefer IPv4 — cellular networks often lack IPv6 routing
         val addr = if (cellularNet != null) {
-            cellularNet.getAllByName(host).firstOrNull()
+            val all = cellularNet.getAllByName(host)
+            all.firstOrNull { it is java.net.Inet4Address }
+                ?: all.firstOrNull()
                 ?: InetAddress.getByName(host)
         } else {
-            InetAddress.getByName(host)
+            val all = InetAddress.getAllByName(host)
+            all.firstOrNull { it is java.net.Inet4Address }
+                ?: all.first()
         }
 
         val socket = Socket()
