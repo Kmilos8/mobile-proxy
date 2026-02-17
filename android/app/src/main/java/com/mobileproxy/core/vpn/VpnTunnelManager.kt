@@ -250,15 +250,17 @@ class VpnTunnelManager(
                 val packet = DatagramPacket(buffer, buffer.size)
                 socket.receive(packet)
 
-                if (packet.length < 2) continue
+                if (packet.length < 1) continue
 
                 when (buffer[0]) {
+                    TYPE_PONG -> {
+                        // PONG is 1 byte — handle before DATA size check
+                        lastPongTime.set(System.currentTimeMillis())
+                    }
                     TYPE_DATA -> {
+                        if (packet.length < 2) continue
                         // Write raw IP packet to TUN (skip type byte)
                         output.write(buffer, 1, packet.length - 1)
-                    }
-                    TYPE_PONG -> {
-                        lastPongTime.set(System.currentTimeMillis())
                     }
                 }
             }
