@@ -77,7 +77,7 @@ class ProxyVpnService : VpnService() {
         val manager = VpnTunnelManager(
             vpnService = this,
             serverAddress = serverIP,
-            serverPort = 1194,
+            serverPort = 443,
             deviceId = deviceId
         )
         tunnelManager = manager

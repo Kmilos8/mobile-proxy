@@ -27,7 +27,7 @@ const (
 )
 
 const (
-	defaultPort      = 1194
+	defaultPort      = 443
 	defaultAPIURL    = "http://127.0.0.1:8080"
 	tunName          = "tun0"
 	tunIP            = "192.168.255.1"
