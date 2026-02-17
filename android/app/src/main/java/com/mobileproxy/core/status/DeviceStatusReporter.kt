@@ -6,6 +6,8 @@ import android.os.Build
 import android.telephony.TelephonyManager
 import android.util.Log
 import com.google.gson.Gson
+import com.mobileproxy.core.commands.CommandExecutor
+import com.mobileproxy.core.commands.DeviceCommand
 import com.mobileproxy.core.network.NetworkManager
 import com.mobileproxy.core.proxy.HttpProxyServer
 import com.mobileproxy.core.proxy.Socks5ProxyServer
@@ -16,6 +18,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import javax.inject.Inject
 import javax.inject.Singleton
+
+data class HeartbeatResponse(val commands: List<DeviceCommand> = emptyList())
 
 data class HeartbeatPayload(
     val cellular_ip: String,
@@ -35,7 +39,8 @@ class DeviceStatusReporter @Inject constructor(
     @ApplicationContext private val context: Context,
     private val networkManager: NetworkManager,
     private val httpProxy: HttpProxyServer,
-    private val socks5Proxy: Socks5ProxyServer
+    private val socks5Proxy: Socks5ProxyServer,
+    private val commandExecutor: CommandExecutor
 ) {
     companion object {
         private const val TAG = "StatusReporter"
@@ -112,12 +117,57 @@ class DeviceStatusReporter @Inject constructor(
                 // Parse response for pending commands
                 val response = connection.inputStream.bufferedReader().readText()
                 Log.d(TAG, "Heartbeat sent successfully")
-                // TODO: Process commands from response
+
+                val heartbeatResponse = gson.fromJson(response, HeartbeatResponse::class.java)
+                heartbeatResponse?.commands?.forEach { command ->
+                    scope?.launch {
+                        val result = commandExecutor.execute(command)
+                        reportCommandResult(command.id, result)
+                    }
+                }
             } else {
                 Log.w(TAG, "Heartbeat failed: $responseCode")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Heartbeat error", e)
+        }
+    }
+
+    private suspend fun reportCommandResult(commandId: String, result: Result<String>) {
+        try {
+            val status = if (result.isSuccess) "completed" else "failed"
+            val message = result.getOrElse { it.message ?: "Unknown error" }
+            val body = gson.toJson(mapOf("status" to status, "result" to message))
+
+            val url = URL("$serverUrl/api/devices/$deviceId/commands/$commandId/result")
+
+            val wifiNetwork = networkManager.getWifiNetwork()
+            val connection = if (wifiNetwork != null) {
+                wifiNetwork.openConnection(url) as HttpURLConnection
+            } else {
+                url.openConnection() as HttpURLConnection
+            }
+            connection.apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Authorization", "Bearer $authToken")
+                doOutput = true
+                connectTimeout = 10000
+                readTimeout = 10000
+            }
+
+            OutputStreamWriter(connection.outputStream).use { writer ->
+                writer.write(body)
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode == 200) {
+                Log.d(TAG, "Command result reported: $commandId -> $status")
+            } else {
+                Log.w(TAG, "Failed to report command result: $responseCode")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reporting command result for $commandId", e)
         }
     }
 
