@@ -39,6 +39,7 @@ class VpnTunnelManager(
 
     private var tunFd: ParcelFileDescriptor? = null
     private var udpSocket: DatagramSocket? = null
+    private var serverAddr: InetSocketAddress? = null
     private var scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Track last PONG for dead-tunnel detection
@@ -77,28 +78,25 @@ class VpnTunnelManager(
 
     private suspend fun connectInternal(): Boolean {
         try {
-            // Create UDP socket — do NOT protect() yet.
-            // protect() sets SO_MARK which can break UDP receive on Samsung
-            // when no VPN is active. We protect after auth, before TUN establish.
+            // Create UDP socket for tunnel data relay
             val socket = DatagramSocket()
             socket.receiveBufferSize = RECV_BUF_SIZE
             socket.sendBufferSize = SEND_BUF_SIZE
-            socket.connect(InetSocketAddress(serverAddress, serverPort))
             udpSocket = socket
-            Log.i(TAG, "UDP socket created, connecting to $serverAddress:$serverPort" +
-                " (recv=${socket.receiveBufferSize/1024}KB, send=${socket.sendBufferSize/1024}KB)")
+            serverAddr = InetSocketAddress(serverAddress, serverPort)
+            Log.i(TAG, "UDP socket created on local port ${socket.localPort}")
 
-            // Authenticate (no VPN active yet, so normal routing works fine)
-            val assignedIP = authenticate(socket) ?: return false
+            // Authenticate via TCP (Samsung blocks incoming UDP for non-system apps).
+            // TCP auth sends device_id + UDP port; server responds with VPN IP.
+            val assignedIP = authenticateTCP(socket.localPort) ?: return false
 
             vpnIP = assignedIP
-            Log.i(TAG, "Authenticated, assigned VPN IP: $vpnIP")
+            Log.i(TAG, "Authenticated via TCP, assigned VPN IP: $vpnIP")
 
-            // NOW protect the socket before establishing TUN.
-            // Once TUN is active, all traffic routes through VPN —
-            // protect() ensures our tunnel socket bypasses VPN routing.
+            // Protect and connect the UDP socket before establishing TUN.
             vpnService.protect(socket)
-            Log.i(TAG, "Socket protected from VPN routing")
+            socket.connect(serverAddr)
+            Log.i(TAG, "UDP socket protected and connected to $serverAddress:$serverPort")
 
             // Create TUN interface
             tunFd = createTun(vpnIP)
@@ -185,52 +183,76 @@ class VpnTunnelManager(
             .establish()
     }
 
-    private fun authenticate(socket: DatagramSocket): String? {
-        // Parse device ID UUID to 16 bytes
+    /**
+     * Authenticate via TCP connection.
+     * Samsung devices block incoming UDP for non-system apps, so we use TCP
+     * for the auth handshake and then switch to UDP for the tunnel data.
+     *
+     * Protocol: send [0x01][16-byte device_id][4-byte UDP port big-endian]
+     * Response: [0x01][4-byte IPv4] on success, [0x03] on failure
+     */
+    private fun authenticateTCP(udpLocalPort: Int): String? {
         val uuidBytes = uuidToBytes(deviceId)
         if (uuidBytes == null) {
             Log.e(TAG, "Invalid device ID UUID: $deviceId")
             return null
         }
 
-        // Send AUTH: [0x01][16-byte device_id]
-        val authPacket = ByteArray(17)
-        authPacket[0] = TYPE_AUTH
-        System.arraycopy(uuidBytes, 0, authPacket, 1, 16)
+        val tcpSocket = Socket()
+        try {
+            tcpSocket.connect(InetSocketAddress(serverAddress, serverPort), 10000)
+            Log.i(TAG, "TCP connected to $serverAddress:$serverPort for auth")
 
-        socket.send(DatagramPacket(authPacket, authPacket.size))
-        Log.i(TAG, "AUTH sent, waiting for response...")
+            val output = tcpSocket.getOutputStream()
+            val input = tcpSocket.getInputStream()
 
-        // Receive response
-        val recvBuf = ByteArray(64)
-        val recvPacket = DatagramPacket(recvBuf, recvBuf.size)
-        socket.soTimeout = 10000 // 10s timeout for auth
-        socket.receive(recvPacket)
+            // Send AUTH: [0x01][16-byte device_id][4-byte UDP port big-endian]
+            val authPacket = ByteArray(21)
+            authPacket[0] = TYPE_AUTH
+            System.arraycopy(uuidBytes, 0, authPacket, 1, 16)
+            authPacket[17] = ((udpLocalPort shr 24) and 0xFF).toByte()
+            authPacket[18] = ((udpLocalPort shr 16) and 0xFF).toByte()
+            authPacket[19] = ((udpLocalPort shr 8) and 0xFF).toByte()
+            authPacket[20] = (udpLocalPort and 0xFF).toByte()
 
-        if (recvPacket.length < 1) {
-            Log.e(TAG, "Empty auth response")
-            return null
-        }
+            output.write(authPacket)
+            output.flush()
+            Log.i(TAG, "TCP AUTH sent (udpPort=$udpLocalPort), waiting for response...")
 
-        return when (recvBuf[0]) {
-            TYPE_AUTH_OK -> {
-                if (recvPacket.length < 5) {
-                    Log.e(TAG, "AUTH_OK too short")
-                    return null
+            // Read response
+            tcpSocket.soTimeout = 10000
+            val recvBuf = ByteArray(5)
+            val n = input.read(recvBuf)
+
+            if (n < 1) {
+                Log.e(TAG, "Empty TCP auth response")
+                return null
+            }
+
+            return when (recvBuf[0]) {
+                TYPE_AUTH_OK -> {
+                    if (n < 5) {
+                        Log.e(TAG, "TCP AUTH_OK too short: $n bytes")
+                        return null
+                    }
+                    val ip = "${recvBuf[1].toInt() and 0xFF}.${recvBuf[2].toInt() and 0xFF}.${recvBuf[3].toInt() and 0xFF}.${recvBuf[4].toInt() and 0xFF}"
+                    Log.i(TAG, "TCP AUTH_OK received, VPN IP: $ip")
+                    ip
                 }
-                // Parse 4-byte IPv4
-                val ip = "${recvBuf[1].toInt() and 0xFF}.${recvBuf[2].toInt() and 0xFF}.${recvBuf[3].toInt() and 0xFF}.${recvBuf[4].toInt() and 0xFF}"
-                socket.soTimeout = 0 // Remove timeout for data
-                ip
+                TYPE_AUTH_FAIL -> {
+                    Log.e(TAG, "TCP Authentication failed")
+                    null
+                }
+                else -> {
+                    Log.e(TAG, "Unknown TCP auth response type: ${recvBuf[0]}")
+                    null
+                }
             }
-            TYPE_AUTH_FAIL -> {
-                Log.e(TAG, "Authentication failed")
-                null
-            }
-            else -> {
-                Log.e(TAG, "Unknown auth response type: ${recvBuf[0]}")
-                null
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "TCP auth error: ${e.message}", e)
+            return null
+        } finally {
+            try { tcpSocket.close() } catch (_: Exception) {}
         }
     }
 

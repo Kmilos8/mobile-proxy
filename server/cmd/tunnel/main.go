@@ -127,6 +127,7 @@ func main() {
 	go srv.udpToTun()
 	go srv.tunToUdp()
 	go srv.cleanupLoop()
+	go srv.tcpAuthListener(port)
 
 	// Block forever
 	select {}
@@ -416,4 +417,102 @@ func (s *tunnelServer) notifyDisconnected(deviceID, vpnIP string) {
 
 func (s *tunnelServer) sendAuthFail(addr *net.UDPAddr) {
 	s.udpConn.WriteToUDP([]byte{TypeAuthFail}, addr)
+}
+
+// tcpAuthListener handles TCP-based authentication.
+// Clients that can't receive UDP (Samsung netfilter) use TCP for auth,
+// then switch to UDP for the tunnel data relay.
+// Protocol: client sends [0x01][16-byte device_id][4-byte UDP port big-endian]
+// Server responds: [0x01][4-byte IPv4] on success, [0x03] on failure.
+func (s *tunnelServer) tcpAuthListener(port int) {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		log.Fatalf("Failed to listen on TCP port %d: %v", port, err)
+	}
+	log.Printf("TCP auth listener on port %d", port)
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Printf("TCP accept error: %v", err)
+			continue
+		}
+		go s.handleTCPAuth(conn)
+	}
+}
+
+func (s *tunnelServer) handleTCPAuth(conn net.Conn) {
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	// Read: [0x01][16-byte device_id][4-byte UDP port big-endian]
+	buf := make([]byte, 21)
+	n, err := conn.Read(buf)
+	if err != nil || n < 21 || buf[0] != TypeAuth {
+		log.Printf("TCP auth: invalid request from %s (n=%d, err=%v)", conn.RemoteAddr(), n, err)
+		conn.Write([]byte{TypeAuthFail})
+		return
+	}
+
+	deviceID := fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		buf[1:5], buf[5:7], buf[7:9], buf[9:11], buf[11:17])
+	udpPort := int(buf[17])<<24 | int(buf[18])<<16 | int(buf[19])<<8 | int(buf[20])
+
+	// Get the client's IP from the TCP connection
+	tcpAddr := conn.RemoteAddr().(*net.TCPAddr)
+	clientIP := tcpAddr.IP
+	udpAddr := &net.UDPAddr{IP: clientIP, Port: udpPort}
+
+	log.Printf("TCP AUTH from %s, device_id=%s, udp_port=%d", conn.RemoteAddr(), deviceID, udpPort)
+
+	// Check if device already connected — update session
+	s.mu.Lock()
+	for ipStr, c := range s.clients {
+		if c.deviceID == deviceID {
+			log.Printf("Device %s reconnecting via TCP, updating session %s", deviceID, ipStr)
+			delete(s.addrMap, c.udpAddr.String())
+			c.udpAddr = udpAddr
+			c.touch()
+			s.addrMap[udpAddr.String()] = ipStr
+			s.mu.Unlock()
+
+			resp := make([]byte, 5)
+			resp[0] = TypeAuthOK
+			copy(resp[1:5], c.vpnIP)
+			conn.Write(resp)
+			log.Printf("TCP AUTH_OK (reconnect): device=%s ip=%s", deviceID, ipStr)
+			return
+		}
+	}
+	s.mu.Unlock()
+
+	// Allocate IP
+	ip, err := s.allocateIP()
+	if err != nil {
+		log.Printf("TCP auth: IP allocation failed for %s: %v", deviceID, err)
+		conn.Write([]byte{TypeAuthFail})
+		return
+	}
+
+	ipStr := ip.To4().String()
+	c := &client{
+		udpAddr:  udpAddr,
+		deviceID: deviceID,
+		vpnIP:    ip.To4(),
+	}
+	c.touch()
+
+	s.mu.Lock()
+	s.clients[ipStr] = c
+	s.addrMap[udpAddr.String()] = ipStr
+	s.mu.Unlock()
+
+	// Send AUTH_OK
+	resp := make([]byte, 5)
+	resp[0] = TypeAuthOK
+	copy(resp[1:5], ip.To4())
+	conn.Write(resp)
+
+	log.Printf("TCP AUTH_OK: device=%s assigned ip=%s udp=%s", deviceID, ipStr, udpAddr)
+	go s.notifyConnected(deviceID, ipStr)
 }
