@@ -170,6 +170,13 @@ func (s *DeviceService) GetIPHistory(ctx context.Context, deviceID uuid.UUID, li
 	return s.ipHistRepo.ListByDevice(ctx, deviceID, limit)
 }
 
+func (s *DeviceService) GetCommandHistory(ctx context.Context, deviceID uuid.UUID, limit int) ([]domain.DeviceCommand, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.commandRepo.GetByDevice(ctx, deviceID, limit)
+}
+
 func (s *DeviceService) GetByName(ctx context.Context, name string) (*domain.Device, error) {
 	return s.deviceRepo.GetByName(ctx, name)
 }

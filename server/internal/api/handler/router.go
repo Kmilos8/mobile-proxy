@@ -10,15 +10,17 @@ func SetupRouter(
 	authService *service.AuthService,
 	deviceService *service.DeviceService,
 	connService *service.ConnectionService,
+	bwService *service.BandwidthService,
 	customerHandler *CustomerHandler,
 	vpnHandler *VPNHandler,
+	statsHandler *StatsHandler,
 	wsHub *WSHub,
 ) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.CORSMiddleware())
 
 	authHandler := NewAuthHandler(authService)
-	deviceHandler := NewDeviceHandler(deviceService, wsHub)
+	deviceHandler := NewDeviceHandler(deviceService, bwService, wsHub)
 	connHandler := NewConnectionHandler(connService)
 
 	// Health check
@@ -41,10 +43,14 @@ func SetupRouter(
 	dashboard := r.Group("/api")
 	dashboard.Use(middleware.AuthMiddleware(authService))
 	{
+		dashboard.GET("/stats/overview", statsHandler.Overview)
+
 		dashboard.GET("/devices", deviceHandler.List)
 		dashboard.GET("/devices/:id", deviceHandler.GetByID)
 		dashboard.POST("/devices/:id/commands", deviceHandler.SendCommand)
 		dashboard.GET("/devices/:id/ip-history", deviceHandler.GetIPHistory)
+		dashboard.GET("/devices/:id/bandwidth", deviceHandler.GetBandwidth)
+		dashboard.GET("/devices/:id/commands", deviceHandler.GetCommands)
 
 		dashboard.GET("/connections", connHandler.List)
 		dashboard.POST("/connections", connHandler.Create)

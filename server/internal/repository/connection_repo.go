@@ -102,6 +102,13 @@ func (r *ConnectionRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+func (r *ConnectionRepository) CountActive(ctx context.Context) (int, error) {
+	query := `SELECT COUNT(*) FROM proxy_connections WHERE active = TRUE`
+	var count int
+	err := r.db.Pool.QueryRow(ctx, query).Scan(&count)
+	return count, err
+}
+
 func (r *ConnectionRepository) GetByUsername(ctx context.Context, username string) (*domain.ProxyConnection, error) {
 	query := `SELECT id, device_id, customer_id, username, password_hash, ip_whitelist,
 		bandwidth_limit, bandwidth_used, active, expires_at, created_at, updated_at

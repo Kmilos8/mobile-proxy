@@ -144,6 +144,12 @@ func (r *DeviceRepository) MarkStaleOffline(ctx context.Context, threshold time.
 	return tag.RowsAffected(), nil
 }
 
+func (r *DeviceRepository) CountByStatus(ctx context.Context) (total int, online int, err error) {
+	query := `SELECT COUNT(*), COUNT(*) FILTER (WHERE status = 'online') FROM devices`
+	err = r.db.Pool.QueryRow(ctx, query).Scan(&total, &online)
+	return
+}
+
 func (r *DeviceRepository) scanDevice(row pgx.Row) (*domain.Device, error) {
 	var d domain.Device
 	err := row.Scan(

@@ -37,6 +37,8 @@ func main() {
 	authService := service.NewAuthService(userRepo, cfg.JWT)
 	deviceService := service.NewDeviceService(deviceRepo, ipHistRepo, commandRepo, portService, vpnService)
 	connService := service.NewConnectionService(connRepo, deviceRepo)
+	bwRepo := repository.NewBandwidthRepository(db)
+	bwService := service.NewBandwidthService(bwRepo)
 
 	// WebSocket hub
 	wsHub := handler.NewWSHub()
@@ -44,9 +46,10 @@ func main() {
 	// Handlers
 	customerHandler := handler.NewCustomerHandler(customerRepo)
 	vpnHandler := handler.NewVPNHandler(deviceService, vpnService)
+	statsHandler := handler.NewStatsHandler(deviceRepo, connRepo, bwService)
 
 	// Router
-	router := handler.SetupRouter(authService, deviceService, connService, customerHandler, vpnHandler, wsHub)
+	router := handler.SetupRouter(authService, deviceService, connService, bwService, customerHandler, vpnHandler, statsHandler, wsHub)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

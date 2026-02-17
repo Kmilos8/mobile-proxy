@@ -83,6 +83,34 @@ export interface IPHistoryEntry {
   created_at: string
 }
 
+export interface DeviceCommand {
+  id: string
+  device_id: string
+  type: string
+  status: 'pending' | 'sent' | 'completed' | 'failed'
+  payload: string
+  result: string
+  created_at: string
+  executed_at: string | null
+}
+
+export interface DeviceBandwidth {
+  today_in: number
+  today_out: number
+  month_in: number
+  month_out: number
+}
+
+export interface OverviewStats {
+  devices_total: number
+  devices_online: number
+  connections_active: number
+  bandwidth_today_in: number
+  bandwidth_today_out: number
+  bandwidth_month_in: number
+  bandwidth_month_out: number
+}
+
 export const api = {
   auth: {
     login: (email: string, password: string) =>
@@ -99,6 +127,14 @@ export const api = {
       request(`/devices/${id}/commands`, { method: 'POST', token, body: { type, payload: payload || '{}' } }),
     ipHistory: (token: string, id: string) =>
       request<{ history: IPHistoryEntry[] }>(`/devices/${id}/ip-history`, { token }),
+    bandwidth: (token: string, id: string) =>
+      request<DeviceBandwidth>(`/devices/${id}/bandwidth`, { token }),
+    commands: (token: string, id: string) =>
+      request<{ commands: DeviceCommand[] }>(`/devices/${id}/commands`, { token }),
+  },
+  stats: {
+    overview: (token: string) =>
+      request<OverviewStats>('/stats/overview', { token }),
   },
   connections: {
     list: (token: string, deviceId?: string) =>

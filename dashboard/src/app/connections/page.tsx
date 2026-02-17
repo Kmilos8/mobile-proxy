@@ -1,9 +1,12 @@
 'use client'
 
 import { useEffect, useState, FormEvent } from 'react'
+import Link from 'next/link'
 import { api, ProxyConnection, Device } from '@/lib/api'
 import { getToken } from '@/lib/auth'
-import { formatBytes, formatDate } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
+import StatusBadge from '@/components/ui/StatusBadge'
+import BandwidthBar from '@/components/ui/BandwidthBar'
 
 export default function ConnectionsPage() {
   const [connections, setConnections] = useState<ProxyConnection[]>([])
@@ -80,8 +83,8 @@ export default function ConnectionsPage() {
     }
   }
 
-  function getDeviceName(deviceId: string): string {
-    return devices.find(d => d.id === deviceId)?.name || deviceId.slice(0, 8)
+  function getDevice(deviceId: string): Device | undefined {
+    return devices.find(d => d.id === deviceId)
   }
 
   if (loading) return <div className="text-zinc-500">Loading connections...</div>
@@ -164,36 +167,48 @@ export default function ConnectionsPage() {
             </tr>
           </thead>
           <tbody>
-            {connections.map(conn => (
-              <tr key={conn.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
-                <td className="px-4 py-3">{getDeviceName(conn.device_id)}</td>
-                <td className="px-4 py-3 font-mono text-xs">{conn.username}</td>
-                <td className="px-4 py-3 text-xs">
-                  {formatBytes(conn.bandwidth_used)}
-                  {conn.bandwidth_limit > 0 && ` / ${formatBytes(conn.bandwidth_limit)}`}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={conn.active ? 'text-green-400' : 'text-zinc-500'}>
-                    {conn.active ? 'Active' : 'Disabled'}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-zinc-400 text-xs">{formatDate(conn.created_at)}</td>
-                <td className="px-4 py-3 space-x-2">
-                  <button
-                    onClick={() => handleToggle(conn.id, conn.active)}
-                    className="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-white rounded"
-                  >
-                    {conn.active ? 'Disable' : 'Enable'}
-                  </button>
-                  <button
-                    onClick={() => handleDelete(conn.id)}
-                    className="px-2 py-1 text-xs bg-red-700 hover:bg-red-600 text-white rounded"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {connections.map(conn => {
+              const device = getDevice(conn.device_id)
+              return (
+                <tr key={conn.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <Link href={`/devices/${conn.device_id}`} className="text-blue-400 hover:text-blue-300">
+                        {device?.name || conn.device_id.slice(0, 8)}
+                      </Link>
+                      {device && <StatusBadge status={device.status} />}
+                    </div>
+                    {device?.cellular_ip && (
+                      <div className="text-xs text-zinc-500 font-mono mt-0.5">{device.cellular_ip}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs">{conn.username}</td>
+                  <td className="px-4 py-3 w-48">
+                    <BandwidthBar used={conn.bandwidth_used} limit={conn.bandwidth_limit} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={conn.active ? 'text-green-400' : 'text-zinc-500'}>
+                      {conn.active ? 'Active' : 'Disabled'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-zinc-400 text-xs">{formatDate(conn.created_at)}</td>
+                  <td className="px-4 py-3 space-x-2">
+                    <button
+                      onClick={() => handleToggle(conn.id, conn.active)}
+                      className="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-white rounded"
+                    >
+                      {conn.active ? 'Disable' : 'Enable'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(conn.id)}
+                      className="px-2 py-1 text-xs bg-red-700 hover:bg-red-600 text-white rounded"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
             {connections.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">

@@ -58,6 +58,29 @@ func (r *CommandRepository) UpdateStatus(ctx context.Context, id uuid.UUID, stat
 	return err
 }
 
+func (r *CommandRepository) GetByDevice(ctx context.Context, deviceID uuid.UUID, limit int) ([]domain.DeviceCommand, error) {
+	query := `SELECT id, device_id, type, status, payload, result, created_at, executed_at
+		FROM device_commands WHERE device_id = $1
+		ORDER BY created_at DESC LIMIT $2`
+	rows, err := r.db.Pool.Query(ctx, query, deviceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cmds []domain.DeviceCommand
+	for rows.Next() {
+		var cmd domain.DeviceCommand
+		err := rows.Scan(&cmd.ID, &cmd.DeviceID, &cmd.Type, &cmd.Status,
+			&cmd.Payload, &cmd.Result, &cmd.CreatedAt, &cmd.ExecutedAt)
+		if err != nil {
+			return nil, fmt.Errorf("scan command: %w", err)
+		}
+		cmds = append(cmds, cmd)
+	}
+	return cmds, nil
+}
+
 func (r *CommandRepository) MarkAsSent(ctx context.Context, ids []uuid.UUID) error {
 	query := `UPDATE device_commands SET status = 'sent' WHERE id = ANY($1)`
 	_, err := r.db.Pool.Exec(ctx, query, ids)

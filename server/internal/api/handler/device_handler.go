@@ -11,12 +11,14 @@ import (
 
 type DeviceHandler struct {
 	deviceService *service.DeviceService
+	bwService     *service.BandwidthService
 	wsHub         *WSHub
 }
 
-func NewDeviceHandler(deviceService *service.DeviceService, wsHub *WSHub) *DeviceHandler {
+func NewDeviceHandler(deviceService *service.DeviceService, bwService *service.BandwidthService, wsHub *WSHub) *DeviceHandler {
 	return &DeviceHandler{
 		deviceService: deviceService,
+		bwService:     bwService,
 		wsHub:         wsHub,
 	}
 }
@@ -155,4 +157,47 @@ func (h *DeviceHandler) GetIPHistory(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"history": history})
+}
+
+func (h *DeviceHandler) GetBandwidth(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device id"})
+		return
+	}
+
+	todayIn, todayOut, err := h.bwService.GetDeviceTodayTotal(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	monthIn, monthOut, err := h.bwService.GetDeviceMonthTotal(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"today_in":  todayIn,
+		"today_out": todayOut,
+		"month_in":  monthIn,
+		"month_out": monthOut,
+	})
+}
+
+func (h *DeviceHandler) GetCommands(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device id"})
+		return
+	}
+
+	commands, err := h.deviceService.GetCommandHistory(c.Request.Context(), id, 50)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"commands": commands})
 }

@@ -40,6 +40,15 @@ func (s *BandwidthService) GetDeviceMonthTotal(ctx context.Context, deviceID uui
 	return s.bwRepo.GetDeviceTotalMonth(ctx, deviceID, now.Year(), now.Month())
 }
 
+func (s *BandwidthService) GetTotalToday(ctx context.Context) (int64, int64, error) {
+	return s.bwRepo.GetTotalToday(ctx)
+}
+
+func (s *BandwidthService) GetTotalMonth(ctx context.Context) (int64, int64, error) {
+	now := time.Now()
+	return s.bwRepo.GetTotalMonth(ctx, now.Year(), now.Month())
+}
+
 func (s *BandwidthService) EnsurePartitions(ctx context.Context) error {
 	now := time.Now()
 	// Ensure current month and next month partitions exist

@@ -1,33 +1,13 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { api, Device } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
-import { timeAgo, cn } from '@/lib/utils'
-
-function StatusBadge({ status }: { status: Device['status'] }) {
-  const colors = {
-    online: 'bg-green-500/20 text-green-400 border-green-500/30',
-    offline: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
-    rotating: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-    error: 'bg-red-500/20 text-red-400 border-red-500/30',
-  }
-  return (
-    <span className={cn('px-2 py-0.5 rounded-full text-xs border', colors[status])}>
-      {status}
-    </span>
-  )
-}
-
-function BatteryIndicator({ level, charging }: { level: number; charging: boolean }) {
-  const color = level > 50 ? 'text-green-400' : level > 20 ? 'text-yellow-400' : 'text-red-400'
-  return (
-    <span className={cn('text-sm', color)}>
-      {level}%{charging ? ' +' : ''}
-    </span>
-  )
-}
+import { timeAgo } from '@/lib/utils'
+import StatusBadge from '@/components/ui/StatusBadge'
+import BatteryIndicator from '@/components/ui/BatteryIndicator'
 
 export default function DevicesPage() {
   const [devices, setDevices] = useState<Device[]>([])
@@ -104,7 +84,9 @@ export default function DevicesPage() {
             {devices.map(device => (
               <tr key={device.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
                 <td className="px-4 py-3">
-                  <div className="font-medium">{device.name}</div>
+                  <Link href={`/devices/${device.id}`} className="font-medium text-blue-400 hover:text-blue-300">
+                    {device.name}
+                  </Link>
                   <div className="text-xs text-zinc-500">{device.device_model}</div>
                 </td>
                 <td className="px-4 py-3">
