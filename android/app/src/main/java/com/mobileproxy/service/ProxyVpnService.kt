@@ -65,6 +65,12 @@ class ProxyVpnService : VpnService() {
     }
 
     private fun startVpn(serverIP: String, deviceId: String) {
+        // Prevent double-start: disconnect old tunnel first
+        tunnelManager?.let { old ->
+            Log.w(TAG, "Disconnecting existing tunnel before starting new one")
+            old.disconnect()
+        }
+
         Log.i(TAG, "Starting VPN tunnel to $serverIP for device $deviceId")
         instance = this
 

@@ -54,7 +54,14 @@ class ProxyForegroundService : Service() {
         return START_STICKY
     }
 
+    @Volatile private var isRunning = false
+
     private fun startProxy(serverUrl: String, deviceId: String, authToken: String) {
+        if (isRunning) {
+            Log.w(TAG, "Proxy service already running, ignoring duplicate start")
+            return
+        }
+        isRunning = true
         Log.i(TAG, "Starting proxy service")
 
         // Acquire wake lock
@@ -95,6 +102,7 @@ class ProxyForegroundService : Service() {
 
     private fun stopProxy() {
         Log.i(TAG, "Stopping proxy service")
+        isRunning = false
         statusReporter.stop()
         httpProxy.stop()
         socks5Proxy.stop()
