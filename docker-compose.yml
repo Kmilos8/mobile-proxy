@@ -38,7 +38,7 @@ services:
       - /dev/net/tun:/dev/net/tun
     network_mode: host
     environment:
-      TUNNEL_PORT: "443"
+      TUNNEL_PORT: "1194"
       API_URL: "http://127.0.0.1:8080"
     restart: unless-stopped
 
