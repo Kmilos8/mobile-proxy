@@ -116,10 +116,10 @@ func (h *RotationLinkHandler) Rotate(c *gin.Context) {
 	// Update last used timestamp
 	h.linkRepo.UpdateLastUsed(c.Request.Context(), link.ID)
 
-	// Send rotate_ip command to the device
+	// Send rotate_ip_airplane command to the device (airplane mode toggle for actual IP change)
 	cmd, err := h.deviceService.SendCommand(c.Request.Context(), link.DeviceID, &domain.CommandRequest{
-		Type:    domain.CommandRotateIP,
-		Payload: `{"method":"airplane_mode","source":"rotation_link"}`,
+		Type:    "rotate_ip_airplane",
+		Payload: `{"source":"rotation_link"}`,
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send rotation command"})
