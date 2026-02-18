@@ -171,8 +171,37 @@ class DeviceStatusReporter @Inject constructor(
         }
     }
 
+    private var cachedPublicIp: String = ""
+    private var lastIpLookupTime: Long = 0
+    private val IP_CACHE_DURATION = 60_000L // Re-check every 60s
+
     private fun getCellularIp(): String {
         val network = networkManager.getCellularNetwork() ?: return ""
+
+        // Use cached value if fresh enough
+        val now = System.currentTimeMillis()
+        if (cachedPublicIp.isNotEmpty() && (now - lastIpLookupTime) < IP_CACHE_DURATION) {
+            return cachedPublicIp
+        }
+
+        // Query external service through the cellular network to get the real public IP
+        try {
+            val url = URL("https://api.ipify.org")
+            val connection = network.openConnection(url) as HttpURLConnection
+            connection.connectTimeout = 5000
+            connection.readTimeout = 5000
+            val ip = connection.inputStream.bufferedReader().readText().trim()
+            connection.disconnect()
+            if (ip.isNotEmpty()) {
+                cachedPublicIp = ip
+                lastIpLookupTime = now
+                return ip
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "External IP lookup failed, using interface IP", e)
+        }
+
+        // Fallback: local interface IP
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
         val linkProperties = connectivityManager.getLinkProperties(network) ?: return ""
         return linkProperties.linkAddresses
