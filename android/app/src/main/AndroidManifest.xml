@@ -38,6 +38,10 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.SetupActivity"
+            android:exported="false" />
+
         <service
             android:name=".service.ProxyForegroundService"
             android:foregroundServiceType="specialUse"

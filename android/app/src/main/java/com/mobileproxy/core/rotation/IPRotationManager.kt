@@ -1,19 +1,22 @@
 package com.mobileproxy.core.rotation
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.net.ConnectivityManager
+import android.content.IntentFilter
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import com.mobileproxy.core.network.NetworkManager
 import com.mobileproxy.core.status.DeviceStatusReporter
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.Lazy
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
-
-private const val AIRPLANE_MODE_DELAY = 3000L
 
 @Singleton
 class IPRotationManager @Inject constructor(
@@ -23,25 +26,12 @@ class IPRotationManager @Inject constructor(
 ) {
     companion object {
         private const val TAG = "IPRotationManager"
-        private const val PREFS_NAME = "rotation_prefs"
-        private const val KEY_METHOD = "rotation_method"
-
-        const val METHOD_ACCESSIBILITY = 0
-        const val METHOD_SETTINGS_GLOBAL = 1
-        const val METHOD_CONNECTIVITY_MANAGER = 2
-        const val METHOD_CELLULAR_RECONNECT = 3
+        private const val AIRPLANE_MODE_TOGGLE_TIMEOUT_MS = 7000L
+        private const val AIRPLANE_MODE_OFF_DELAY_MS = 6000L
+        private const val CELLULAR_RECONNECT_DELAY_MS = 5000L
     }
 
-    fun getSavedMethod(): Int {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getInt(KEY_METHOD, METHOD_ACCESSIBILITY)
-    }
-
-    fun saveMethod(method: Int) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putInt(KEY_METHOD, method).apply()
-        Log.i(TAG, "Rotation method saved: $method")
-    }
+    private val commandIdCounter = AtomicInteger(0)
 
     /**
      * Cellular reconnect - no airplane mode, just reconnects cellular data.
@@ -50,7 +40,7 @@ class IPRotationManager @Inject constructor(
         Log.i(TAG, "Starting IP rotation via cellular reconnect")
         return try {
             networkManager.reconnectCellular()
-            delay(5000)
+            delay(CELLULAR_RECONNECT_DELAY_MS)
             statusReporter.get().invalidateIpCache()
             true
         } catch (e: Exception) {
@@ -60,24 +50,140 @@ class IPRotationManager @Inject constructor(
     }
 
     /**
-     * Main rotation entry point — uses the method selected by the user.
+     * Main rotation entry point — uses Voice Assistant session to toggle airplane mode
+     * via Samsung's VOICE_CONTROL_AIRPLANE_MODE intent. No WRITE_SECURE_SETTINGS needed.
+     *
+     * Falls back to Settings.Global (requires ADB grant) and then Accessibility Service.
      */
     suspend fun requestAirplaneModeToggle() {
-        val method = getSavedMethod()
-        Log.i(TAG, "Requesting IP rotation, method=$method")
+        Log.i(TAG, "Requesting IP rotation")
 
-        when (method) {
-            METHOD_ACCESSIBILITY -> rotateViaAccessibility()
-            METHOD_SETTINGS_GLOBAL -> rotateViaSettingsGlobal()
-            METHOD_CONNECTIVITY_MANAGER -> rotateViaConnectivityManager()
-            METHOD_CELLULAR_RECONNECT -> rotateByCellularReconnect()
-            else -> rotateViaAccessibility()
+        // Method 1: Voice Assistant (Samsung VOICE_CONTROL_AIRPLANE_MODE)
+        if (DigitalAssistantService.isReady) {
+            val success = rotateViaVoiceAssistant()
+            if (success) {
+                statusReporter.get().invalidateIpCache()
+                return
+            }
+            Log.w(TAG, "Voice Assistant method failed, trying fallbacks")
+        } else {
+            Log.w(TAG, "Digital Assistant service not ready, trying fallbacks")
+        }
+
+        // Method 2: Settings.Global (needs WRITE_SECURE_SETTINGS via ADB)
+        val settingsSuccess = rotateViaSettingsGlobal()
+        if (settingsSuccess) {
+            return
+        }
+
+        // Method 3: Accessibility Service (UI automation fallback)
+        Log.i(TAG, "Settings.Global failed, falling back to Accessibility")
+        rotateViaAccessibility()
+    }
+
+    /**
+     * Toggle airplane mode ON then OFF via Samsung's Voice Assistant intent.
+     * This works without WRITE_SECURE_SETTINGS because Samsung trusts the active
+     * voice assistant's VoiceInteractionSession.startVoiceActivity() calls.
+     */
+    private suspend fun rotateViaVoiceAssistant(): Boolean {
+        Log.i(TAG, "Using Voice Assistant method (Samsung VOICE_CONTROL_AIRPLANE_MODE)")
+
+        // Step 1: Turn airplane mode ON
+        val onSuccess = toggleAirplaneModeViaVoice(enable = true)
+        if (!onSuccess) {
+            Log.e(TAG, "Voice Assistant: failed to enable airplane mode")
+            return false
+        }
+        Log.i(TAG, "Voice Assistant: airplane mode ON confirmed")
+
+        // Wait for radios to fully disengage
+        delay(AIRPLANE_MODE_OFF_DELAY_MS)
+
+        // Step 2: Turn airplane mode OFF
+        val offSuccess = toggleAirplaneModeViaVoice(enable = false)
+        if (!offSuccess) {
+            Log.e(TAG, "Voice Assistant: failed to disable airplane mode")
+            // Try to ensure airplane mode gets turned off
+            delay(2000)
+            toggleAirplaneModeViaVoice(enable = false)
+            return false
+        }
+        Log.i(TAG, "Voice Assistant: airplane mode OFF confirmed")
+
+        // Wait for cellular to reconnect
+        delay(CELLULAR_RECONNECT_DELAY_MS)
+        Log.i(TAG, "Voice Assistant: IP rotation complete")
+        return true
+    }
+
+    /**
+     * Send a command to the DigitalAssistantService and wait for the airplane mode
+     * broadcast to confirm the toggle happened.
+     */
+    private suspend fun toggleAirplaneModeViaVoice(enable: Boolean): Boolean {
+        val commandId = commandIdCounter.getAndIncrement()
+        val command = AirplaneModeCommand(commandId, enable)
+
+        // Register a receiver to detect when airplane mode actually changes
+        val toggleConfirmed = CompletableDeferred<Boolean>()
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                if (intent?.action == Intent.ACTION_AIRPLANE_MODE_CHANGED) {
+                    val state = intent.getBooleanExtra("state", false)
+                    Log.d(TAG, "Airplane mode broadcast received: state=$state, expected=$enable")
+                    if (state == enable) {
+                        toggleConfirmed.complete(true)
+                    }
+                }
+            }
+        }
+
+        val filter = IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            context.registerReceiver(receiver, filter)
+        }
+
+        try {
+            // Send the command to DigitalAssistantService
+            val intent = Intent(DigitalAssistantService.ACTION_VOICE_COMMAND).apply {
+                putExtra(AirplaneModeCommand.KEY, command)
+                setPackage(context.packageName)
+            }
+            context.sendBroadcast(intent)
+            Log.d(TAG, "Voice command sent: $command")
+
+            // Wait for confirmation
+            val result = withTimeoutOrNull(AIRPLANE_MODE_TOGGLE_TIMEOUT_MS) {
+                toggleConfirmed.await()
+            }
+
+            if (result == null) {
+                Log.w(TAG, "Airplane mode toggle timed out after ${AIRPLANE_MODE_TOGGLE_TIMEOUT_MS}ms (enable=$enable)")
+                // Check if it actually changed despite no broadcast
+                val currentState = Settings.Global.getInt(
+                    context.contentResolver,
+                    Settings.Global.AIRPLANE_MODE_ON, 0
+                ) != 0
+                if (currentState == enable) {
+                    Log.i(TAG, "Airplane mode state matches expected (enable=$enable) despite timeout")
+                    return true
+                }
+                return false
+            }
+
+            return true
+        } finally {
+            try {
+                context.unregisterReceiver(receiver)
+            } catch (_: Exception) {}
         }
     }
 
     /**
-     * Method 0: Accessibility Service — opens Quick Settings and taps airplane mode tile.
-     * Most reliable on Samsung and modern Android devices.
+     * Accessibility Service — opens Quick Settings and taps airplane mode tile.
      */
     private suspend fun rotateViaAccessibility() {
         Log.i(TAG, "Using Accessibility Service method")
@@ -93,73 +199,31 @@ class IPRotationManager @Inject constructor(
     }
 
     /**
-     * Method 1: Settings.Global write + broadcast.
-     * Requires WRITE_SECURE_SETTINGS — granted when app is set as Digital Assistant.
-     * The broadcast tells Android to actually engage/disengage radios.
+     * Settings.Global write (legacy fallback).
+     * Requires WRITE_SECURE_SETTINGS (granted via ADB pm grant).
      */
-    private suspend fun rotateViaSettingsGlobal() {
-        Log.i(TAG, "Using Settings.Global + broadcast method (Digital Assistant)")
-        try {
-            // Turn ON
-            Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 1)
-            sendAirplaneModeBroadcast(true)
-            Log.i(TAG, "Airplane mode ON (setting + broadcast)")
+    private suspend fun rotateViaSettingsGlobal(): Boolean {
+        Log.i(TAG, "Using Settings.Global method (requires WRITE_SECURE_SETTINGS)")
 
-            delay(AIRPLANE_MODE_DELAY)
+        try {
+            Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 1)
+            Log.i(TAG, "Settings write: airplane_mode_on=1")
         } catch (e: SecurityException) {
-            Log.e(TAG, "Settings.Global write failed (not Digital Assistant?) — falling back to Accessibility", e)
-            rotateViaAccessibility()
-            return
-        } catch (e: Exception) {
-            Log.e(TAG, "Settings.Global ON failed", e)
-            return
+            Log.e(TAG, "Settings.Global write failed (no WRITE_SECURE_SETTINGS)", e)
+            return false
         }
 
-        // Always turn OFF — even if broadcast failed, the setting was written
+        delay(AIRPLANE_MODE_OFF_DELAY_MS)
+
         try {
             Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0)
-            sendAirplaneModeBroadcast(false)
-            Log.i(TAG, "Airplane mode OFF (setting + broadcast)")
-
-            delay(5000) // wait for cellular to reconnect
-            statusReporter.get().invalidateIpCache()
+            Log.i(TAG, "Settings write: airplane_mode_on=0")
         } catch (e: Exception) {
-            Log.e(TAG, "Settings.Global OFF failed", e)
+            Log.e(TAG, "Settings.Global OFF write failed", e)
         }
-    }
 
-    private fun sendAirplaneModeBroadcast(enabled: Boolean) {
-        try {
-            val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).putExtra("state", enabled)
-            context.sendBroadcast(intent)
-            Log.i(TAG, "Broadcast sent: airplane_mode=$enabled")
-        } catch (e: SecurityException) {
-            Log.w(TAG, "Protected broadcast not allowed (expected on some devices)", e)
-        }
-    }
-
-    /**
-     * Method 2: ConnectivityManager.setAirplaneMode() via reflection.
-     * Hidden system API used by Quick Settings. Requires NETWORK_AIRPLANE_MODE
-     * or similar permission — may not work on all devices.
-     */
-    private suspend fun rotateViaConnectivityManager() {
-        Log.i(TAG, "Using ConnectivityManager reflection method")
-        try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val method = cm.javaClass.getDeclaredMethod("setAirplaneMode", Boolean::class.javaPrimitiveType)
-
-            method.invoke(cm, true)
-            Log.i(TAG, "setAirplaneMode(true) success")
-
-            delay(7000)
-
-            method.invoke(cm, false)
-            Log.i(TAG, "setAirplaneMode(false) success")
-
-            statusReporter.get().invalidateIpCache()
-        } catch (e: Exception) {
-            Log.e(TAG, "ConnectivityManager method failed: ${e.cause?.message ?: e.message}")
-        }
+        delay(CELLULAR_RECONNECT_DELAY_MS)
+        statusReporter.get().invalidateIpCache()
+        return true
     }
 }

@@ -3,7 +3,6 @@ package com.mobileproxy.ui
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
-import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -39,6 +38,15 @@ class MainActivity : AppCompatActivity() {
         pendingStart = false
     }
 
+    private val setupLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            // Setup complete — auto-start proxy
+            startProxyService()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -53,8 +61,15 @@ class MainActivity : AppCompatActivity() {
         val vpnText = findViewById<TextView>(R.id.textVpn)
         val startButton = findViewById<Button>(R.id.buttonStart)
         val stopButton = findViewById<Button>(R.id.buttonStop)
+        val setupButton = findViewById<Button>(R.id.buttonSetupWizard)
 
         startButton.setOnClickListener {
+            // Redirect to setup wizard if not completed
+            if (!SetupActivity.isSetupComplete(this)) {
+                setupLauncher.launch(Intent(this, SetupActivity::class.java))
+                return@setOnClickListener
+            }
+
             val vpnIntent = VpnService.prepare(this)
             if (vpnIntent != null) {
                 pendingStart = true
@@ -72,35 +87,18 @@ class MainActivity : AppCompatActivity() {
             statusText.text = "Status: Stopped"
         }
 
-        // Rotation method spinner
-        val spinner = findViewById<Spinner>(R.id.spinnerRotationMethod)
-        val rotationStatus = findViewById<TextView>(R.id.textRotationStatus)
-        val testButton = findViewById<Button>(R.id.buttonTestRotation)
-
-        // Load saved method
-        spinner.setSelection(rotationManager.getSavedMethod())
-
-        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                rotationManager.saveMethod(position)
-                rotationStatus.text = ""
-            }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        setupButton.setOnClickListener {
+            setupLauncher.launch(Intent(this, SetupActivity::class.java))
         }
 
-        testButton.setOnClickListener {
-            testButton.isEnabled = false
-            rotationStatus.text = "Testing rotation..."
+        findViewById<Button>(R.id.buttonChangeIp).setOnClickListener {
+            statusText.text = "Status: Changing IP..."
             scope.launch {
                 try {
-                    withContext(Dispatchers.IO) {
-                        rotationManager.requestAirplaneModeToggle()
-                    }
-                    rotationStatus.text = "Rotation completed. Check if IP changed."
+                    rotationManager.requestAirplaneModeToggle()
+                    statusText.text = "Status: IP changed"
                 } catch (e: Exception) {
-                    rotationStatus.text = "Error: ${e.message}"
-                } finally {
-                    testButton.isEnabled = true
+                    statusText.text = "Status: IP change failed - ${e.message}"
                 }
             }
         }

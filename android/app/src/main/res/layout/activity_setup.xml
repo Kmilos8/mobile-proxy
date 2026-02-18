@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <!-- Step indicator -->
+    <TextView
+        android:id="@+id/textStepIndicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Step 1 of 6"
+        android:textSize="14sp"
+        android:textColor="#888888"
+        android:layout_marginBottom="8dp" />
+
+    <ProgressBar
+        android:id="@+id/progressSetup"
+        style="@android:style/Widget.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="6"
+        android:progress="1"
+        android:layout_marginBottom="24dp" />
+
+    <!-- ViewFlipper with 6 steps -->
+    <ViewFlipper
+        android:id="@+id/viewFlipper"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <!-- Step 1: Welcome -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_welcome_title"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_welcome_desc"
+                android:textSize="15sp"
+                android:layout_marginBottom="32dp" />
+
+            <Button
+                android:id="@+id/buttonStartSetup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Start Setup" />
+        </LinearLayout>
+
+        <!-- Step 2: Notifications -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_notifications_title"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_notifications_desc"
+                android:textSize="15sp"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:id="@+id/textNotificationStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Status: Not granted"
+                android:textSize="13sp"
+                android:textColor="#888888"
+                android:layout_marginBottom="24dp" />
+
+            <Button
+                android:id="@+id/buttonAllowNotifications"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Allow"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/buttonSkipNotifications"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Skip" />
+        </LinearLayout>
+
+        <!-- Step 3: VPN -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_vpn_title"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_vpn_desc"
+                android:textSize="15sp"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:id="@+id/textVpnStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Status: Not granted"
+                android:textSize="13sp"
+                android:textColor="#888888"
+                android:layout_marginBottom="24dp" />
+
+            <Button
+                android:id="@+id/buttonAllowVpn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Allow VPN" />
+        </LinearLayout>
+
+        <!-- Step 4: Digital Assistant -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_assistant_title"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_assistant_desc"
+                android:textSize="15sp"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:id="@+id/textAssistantStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Status: Not set"
+                android:textSize="13sp"
+                android:textColor="#888888"
+                android:layout_marginBottom="24dp" />
+
+            <Button
+                android:id="@+id/buttonOpenAssistantSettings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Open Settings"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/buttonContinueAssistant"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Continue" />
+        </LinearLayout>
+
+        <!-- Step 5: Battery Optimization -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_battery_title"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_battery_desc"
+                android:textSize="15sp"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:id="@+id/textBatteryStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Status: Optimized"
+                android:textSize="13sp"
+                android:textColor="#888888"
+                android:layout_marginBottom="24dp" />
+
+            <Button
+                android:id="@+id/buttonDisableBattery"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Disable"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/buttonContinueBattery"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Continue" />
+        </LinearLayout>
+
+        <!-- Step 6: Done -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_done_title"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/setup_done_desc"
+                android:textSize="15sp"
+                android:gravity="center"
+                android:layout_marginBottom="32dp" />
+
+            <Button
+                android:id="@+id/buttonFinish"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Finish" />
+        </LinearLayout>
+
+    </ViewFlipper>
+</LinearLayout>

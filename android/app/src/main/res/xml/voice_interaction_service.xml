@@ -2,4 +2,5 @@
 <voice-interaction-service
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:sessionService="com.mobileproxy.core.rotation.DigitalAssistantSessionService"
+    android:recognitionService="com.mobileproxy.core.rotation.DigitalAssistantService"
     android:supportsAssist="true" />

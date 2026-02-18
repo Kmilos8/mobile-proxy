@@ -57,7 +57,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginBottom="24dp">
+        android:layout_marginBottom="16dp">
 
         <Button
             android:id="@+id/buttonStart"
@@ -76,39 +76,18 @@
             android:layout_marginStart="8dp" />
     </LinearLayout>
 
-    <View
+    <Button
+        android:id="@+id/buttonSetupWizard"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
         android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#333333"
+        android:layout_height="wrap_content"
+        android:text="Setup Wizard"
         android:layout_marginBottom="16dp" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="IP Rotation Method"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="8dp" />
-
-    <Spinner
-        android:id="@+id/spinnerRotationMethod"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:entries="@array/rotation_methods"
-        android:layout_marginBottom="8dp" />
-
     <Button
-        android:id="@+id/buttonTestRotation"
+        android:id="@+id/buttonChangeIp"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Test Rotation"
-        android:layout_marginBottom="8dp" />
-
-    <TextView
-        android:id="@+id/textRotationStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text=""
-        android:textSize="12sp"
-        android:textColor="#888888" />
+        android:text="Change IP" />
 </LinearLayout>

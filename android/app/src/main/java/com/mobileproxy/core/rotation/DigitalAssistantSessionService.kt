@@ -6,11 +6,12 @@ import android.service.voice.VoiceInteractionSessionService
 
 /**
  * Required companion to DigitalAssistantService.
- * Android won't accept a VoiceInteractionService without a session service.
+ * Returns our custom AirplaneModeSession which handles airplane mode toggle commands
+ * via Samsung's VOICE_CONTROL_AIRPLANE_MODE intent.
  */
 class DigitalAssistantSessionService : VoiceInteractionSessionService() {
 
     override fun onNewSession(args: Bundle?): VoiceInteractionSession {
-        return VoiceInteractionSession(this)
+        return AirplaneModeSession(this)
     }
 }

@@ -5,10 +5,17 @@
     <string name="notification_channel_name">Proxy Service</string>
     <string name="notification_channel_description">Shows proxy service status</string>
 
-    <string-array name="rotation_methods">
-        <item>Accessibility Service (Quick Settings tap)</item>
-        <item>Digital Assistant (Settings.Global)</item>
-        <item>ConnectivityManager (reflection)</item>
-        <item>Cellular reconnect (no airplane mode)</item>
-    </string-array>
+    <!-- Setup Wizard -->
+    <string name="setup_welcome_title">Welcome to MobileProxy</string>
+    <string name="setup_welcome_desc">This wizard will guide you through the required permissions so the proxy and IP rotation work correctly.</string>
+    <string name="setup_notifications_title">Notifications</string>
+    <string name="setup_notifications_desc">MobileProxy needs notification permission to show the foreground service status while running.</string>
+    <string name="setup_vpn_title">VPN Permission</string>
+    <string name="setup_vpn_desc">MobileProxy routes traffic through a local VPN. Android requires your approval to create this connection.</string>
+    <string name="setup_assistant_title">Digital Assistant</string>
+    <string name="setup_assistant_desc">Setting MobileProxy as the Digital Assistant grants WRITE_SECURE_SETTINGS, which allows silent airplane mode toggling for IP rotation — no accessibility hacks needed.</string>
+    <string name="setup_battery_title">Battery Optimization</string>
+    <string name="setup_battery_desc">Disable battery optimization so Android does not kill the proxy service in the background.</string>
+    <string name="setup_done_title">Setup Complete</string>
+    <string name="setup_done_desc">All permissions are configured. The proxy is ready to start.</string>
 </resources>
