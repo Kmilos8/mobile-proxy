@@ -171,9 +171,14 @@ class DeviceStatusReporter @Inject constructor(
         }
     }
 
-    private var cachedPublicIp: String = ""
-    private var lastIpLookupTime: Long = 0
+    @Volatile var cachedPublicIp: String = ""
+    @Volatile var lastIpLookupTime: Long = 0
     private val IP_CACHE_DURATION = 60_000L // Re-check every 60s
+
+    fun invalidateIpCache() {
+        cachedPublicIp = ""
+        lastIpLookupTime = 0
+    }
 
     private fun getCellularIp(): String {
         val network = networkManager.getCellularNetwork() ?: return ""

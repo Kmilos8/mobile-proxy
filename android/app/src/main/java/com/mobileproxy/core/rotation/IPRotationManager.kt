@@ -4,7 +4,9 @@ import android.content.Context
 import android.provider.Settings
 import android.util.Log
 import com.mobileproxy.core.network.NetworkManager
+import com.mobileproxy.core.status.DeviceStatusReporter
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.Lazy
 import kotlinx.coroutines.delay
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -12,11 +14,12 @@ import javax.inject.Singleton
 @Singleton
 class IPRotationManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val networkManager: NetworkManager
+    private val networkManager: NetworkManager,
+    private val statusReporter: Lazy<DeviceStatusReporter>
 ) {
     companion object {
         private const val TAG = "IPRotationManager"
-        private const val AIRPLANE_MODE_DELAY_MS = 5000L
+        private const val AIRPLANE_MODE_DELAY_MS = 7000L
     }
 
     /**
@@ -67,6 +70,9 @@ class IPRotationManager @Inject constructor(
             // Turn airplane mode OFF
             Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0)
             Log.i(TAG, "Airplane mode OFF")
+
+            // Invalidate cached IP so next heartbeat fetches the new one
+            statusReporter.get().invalidateIpCache()
 
             true
         } catch (e: SecurityException) {
