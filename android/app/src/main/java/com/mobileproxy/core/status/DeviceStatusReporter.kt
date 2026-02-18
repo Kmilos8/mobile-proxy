@@ -190,14 +190,19 @@ class DeviceStatusReporter @Inject constructor(
     }
 
     private fun getNetworkTypeString(tm: TelephonyManager): String {
-        return when (tm.dataNetworkType) {
-            TelephonyManager.NETWORK_TYPE_LTE -> "4G"
-            TelephonyManager.NETWORK_TYPE_NR -> "5G"
-            TelephonyManager.NETWORK_TYPE_HSPAP -> "3G+"
-            TelephonyManager.NETWORK_TYPE_HSPA -> "3G"
-            TelephonyManager.NETWORK_TYPE_UMTS -> "3G"
-            TelephonyManager.NETWORK_TYPE_EDGE -> "2G"
-            else -> "Unknown"
+        return try {
+            when (tm.dataNetworkType) {
+                TelephonyManager.NETWORK_TYPE_LTE -> "4G"
+                TelephonyManager.NETWORK_TYPE_NR -> "5G"
+                TelephonyManager.NETWORK_TYPE_HSPAP -> "3G+"
+                TelephonyManager.NETWORK_TYPE_HSPA -> "3G"
+                TelephonyManager.NETWORK_TYPE_UMTS -> "3G"
+                TelephonyManager.NETWORK_TYPE_EDGE -> "2G"
+                else -> "Unknown"
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Missing READ_PHONE_STATE permission for network type")
+            "Unknown"
         }
     }
 }

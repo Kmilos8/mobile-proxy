@@ -102,8 +102,8 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, ProxyForegroundService::class.java).apply {
             action = ProxyForegroundService.ACTION_START
             putExtra(ProxyForegroundService.EXTRA_SERVER_URL, serverUrl)
-            putExtra(ProxyForegroundService.EXTRA_DEVICE_ID, "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
-            putExtra(ProxyForegroundService.EXTRA_AUTH_TOKEN, "")
+            putExtra(ProxyForegroundService.EXTRA_DEVICE_ID, "ed880c1f-f3b9-4d9e-bda8-a3e755204a63")
+            putExtra(ProxyForegroundService.EXTRA_AUTH_TOKEN, "device-token-placeholder")
         }
         startForegroundService(intent)
         statusText.text = "Status: Running"

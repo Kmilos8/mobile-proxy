@@ -18,6 +18,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="Server URL (e.g., https://relay.example.com)"
+        android:text="http://178.156.240.184"
         android:inputType="textUri"
         android:layout_marginBottom="16dp" />
 
