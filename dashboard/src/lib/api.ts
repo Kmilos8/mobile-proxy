@@ -101,6 +101,15 @@ export interface DeviceBandwidth {
   month_out: number
 }
 
+export interface RotationLink {
+  id: string
+  device_id: string
+  token: string
+  name: string
+  created_at: string
+  last_used_at: string | null
+}
+
 export interface OverviewStats {
   devices_total: number
   devices_online: number
@@ -153,5 +162,13 @@ export const api = {
       request<{ customers: Customer[] }>('/customers', { token }),
     create: (token: string, data: { name: string; email: string }) =>
       request<Customer>('/customers', { method: 'POST', token, body: data }),
+  },
+  rotationLinks: {
+    list: (token: string, deviceId: string) =>
+      request<{ links: RotationLink[] }>(`/rotation-links?device_id=${deviceId}`, { token }),
+    create: (token: string, data: { device_id: string; name?: string }) =>
+      request<RotationLink>('/rotation-links', { method: 'POST', token, body: data }),
+    delete: (token: string, id: string) =>
+      request(`/rotation-links/${id}`, { method: 'DELETE', token }),
   },
 }

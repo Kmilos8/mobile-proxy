@@ -125,6 +125,15 @@ type DeviceCommand struct {
 	ExecutedAt *time.Time    `json:"executed_at" db:"executed_at"`
 }
 
+type RotationLink struct {
+	ID         uuid.UUID  `json:"id" db:"id"`
+	DeviceID   uuid.UUID  `json:"device_id" db:"device_id"`
+	Token      string     `json:"token" db:"token"`
+	Name       string     `json:"name" db:"name"`
+	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at" db:"last_used_at"`
+}
+
 // API request/response types
 
 type DeviceRegistrationRequest struct {

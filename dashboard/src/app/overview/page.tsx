@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { Smartphone, LinkIcon, ArrowDownUp, Calendar } from 'lucide-react'
+import { Smartphone, LinkIcon, ArrowDownUp, Calendar, Activity, ChevronRight } from 'lucide-react'
 import { api, Device, OverviewStats } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
-import { formatBytes, timeAgo } from '@/lib/utils'
+import { formatBytes, timeAgo, cn } from '@/lib/utils'
 import StatCard from '@/components/ui/StatCard'
 import StatusBadge from '@/components/ui/StatusBadge'
 
@@ -45,13 +45,21 @@ export default function OverviewPage() {
   }, [fetchData])
 
   if (loading) {
-    return <div className="text-zinc-500">Loading overview...</div>
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-zinc-500">Loading overview...</div>
+      </div>
+    )
   }
+
+  const onlineDevices = devices.filter(d => d.status === 'online')
+  const offlineDevices = devices.filter(d => d.status === 'offline')
 
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Overview</h1>
 
+      {/* Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           title="Devices"
@@ -79,43 +87,98 @@ export default function OverviewPage() {
         />
       </div>
 
-      <h2 className="text-lg font-semibold mb-3">Device Status</h2>
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-800 text-zinc-400 text-left">
-              <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Cellular IP</th>
-              <th className="px-4 py-3 font-medium">Last Seen</th>
-            </tr>
-          </thead>
-          <tbody>
-            {devices.map(device => (
-              <tr key={device.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
-                <td className="px-4 py-3">
-                  <Link href={`/devices/${device.id}`} className="text-blue-400 hover:text-blue-300">
-                    {device.name}
-                  </Link>
-                  <div className="text-xs text-zinc-500">{device.device_model}</div>
-                </td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={device.status} />
-                </td>
-                <td className="px-4 py-3 font-mono text-xs">{device.cellular_ip || '-'}</td>
-                <td className="px-4 py-3 text-zinc-400">{timeAgo(device.last_heartbeat)}</td>
-              </tr>
-            ))}
-            {devices.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-zinc-500">
-                  No devices registered yet
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {/* Online Devices */}
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Activity className="w-4 h-4 text-green-400" />
+          Online Devices
+        </h2>
+        <Link href="/devices" className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1">
+          View all <ChevronRight className="w-3 h-3" />
+        </Link>
       </div>
+
+      {onlineDevices.length === 0 ? (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 text-center text-zinc-500 mb-6">
+          No devices online
+        </div>
+      ) : (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden mb-6">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-800 text-zinc-500 text-left">
+                <th className="px-4 py-2.5 font-medium text-xs">Device</th>
+                <th className="px-4 py-2.5 font-medium text-xs">Carrier</th>
+                <th className="px-4 py-2.5 font-medium text-xs">External IP</th>
+                <th className="px-4 py-2.5 font-medium text-xs">HTTP / SOCKS5</th>
+                <th className="px-4 py-2.5 font-medium text-xs">Battery</th>
+                <th className="px-4 py-2.5 font-medium text-xs">Last Seen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {onlineDevices.map(device => (
+                <tr key={device.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
+                  <td className="px-4 py-2.5">
+                    <Link href={`/devices/${device.id}`} className="text-blue-400 hover:text-blue-300 font-medium">
+                      {device.name}
+                    </Link>
+                    <div className="text-xs text-zinc-600">{device.device_model}</div>
+                  </td>
+                  <td className="px-4 py-2.5 text-zinc-300">{device.carrier || '-'}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-zinc-300">{device.cellular_ip || '-'}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-zinc-400">{device.http_port} / {device.socks5_port}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <div className={cn(
+                        'w-5 h-2.5 rounded-full',
+                        device.battery_level > 50 ? 'bg-green-500' :
+                        device.battery_level > 20 ? 'bg-yellow-500' : 'bg-red-500'
+                      )} style={{ width: `${Math.max(device.battery_level / 4, 4)}px` }} />
+                      <span className="text-xs text-zinc-400">{device.battery_level}%</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-zinc-500">{timeAgo(device.last_heartbeat)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Offline Devices */}
+      {offlineDevices.length > 0 && (
+        <>
+          <h2 className="text-lg font-semibold flex items-center gap-2 mb-3 text-zinc-400">
+            Offline Devices
+            <span className="text-sm font-normal text-zinc-600">({offlineDevices.length})</span>
+          </h2>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-800 text-zinc-500 text-left">
+                  <th className="px-4 py-2.5 font-medium text-xs">Device</th>
+                  <th className="px-4 py-2.5 font-medium text-xs">Last IP</th>
+                  <th className="px-4 py-2.5 font-medium text-xs">Last Seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {offlineDevices.map(device => (
+                  <tr key={device.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
+                    <td className="px-4 py-2.5">
+                      <Link href={`/devices/${device.id}`} className="text-zinc-400 hover:text-zinc-300">
+                        {device.name}
+                      </Link>
+                      <div className="text-xs text-zinc-600">{device.device_model}</div>
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-zinc-500">{device.cellular_ip || '-'}</td>
+                    <td className="px-4 py-2.5 text-xs text-zinc-600">{timeAgo(device.last_heartbeat)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   )
 }

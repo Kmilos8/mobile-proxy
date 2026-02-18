@@ -29,6 +29,7 @@ func main() {
 	commandRepo := repository.NewCommandRepository(db)
 	ipHistRepo := repository.NewIPHistoryRepository(db)
 	customerRepo := repository.NewCustomerRepository(db)
+	rotationLinkRepo := repository.NewRotationLinkRepository(db)
 
 	// Services
 	iptablesService := service.NewIPTablesService()
@@ -47,9 +48,10 @@ func main() {
 	customerHandler := handler.NewCustomerHandler(customerRepo)
 	vpnHandler := handler.NewVPNHandler(deviceService, vpnService)
 	statsHandler := handler.NewStatsHandler(deviceRepo, connRepo, bwService)
+	rotationLinkHandler := handler.NewRotationLinkHandler(rotationLinkRepo, deviceService)
 
 	// Router
-	router := handler.SetupRouter(authService, deviceService, connService, bwService, customerHandler, vpnHandler, statsHandler, wsHub)
+	router := handler.SetupRouter(authService, deviceService, connService, bwService, customerHandler, vpnHandler, statsHandler, rotationLinkHandler, wsHub)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

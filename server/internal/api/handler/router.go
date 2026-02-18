@@ -14,6 +14,7 @@ func SetupRouter(
 	customerHandler *CustomerHandler,
 	vpnHandler *VPNHandler,
 	statsHandler *StatsHandler,
+	rotationLinkHandler *RotationLinkHandler,
 	wsHub *WSHub,
 ) *gin.Engine {
 	r := gin.Default()
@@ -30,6 +31,9 @@ func SetupRouter(
 
 	// Public routes
 	r.POST("/api/auth/login", authHandler.Login)
+
+	// Public rotation link endpoint (no auth)
+	r.GET("/api/public/rotate/:token", rotationLinkHandler.Rotate)
 
 	// Device routes (authenticated by device token in future, open for MVP)
 	deviceAPI := r.Group("/api/devices")
@@ -62,6 +66,10 @@ func SetupRouter(
 		dashboard.POST("/customers", customerHandler.Create)
 		dashboard.GET("/customers/:id", customerHandler.GetByID)
 		dashboard.PUT("/customers/:id", customerHandler.Update)
+
+		dashboard.GET("/rotation-links", rotationLinkHandler.List)
+		dashboard.POST("/rotation-links", rotationLinkHandler.Create)
+		dashboard.DELETE("/rotation-links/:id", rotationLinkHandler.Delete)
 	}
 
 	// Internal VPN routes (called by OpenVPN scripts)

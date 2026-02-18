@@ -3,15 +3,21 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ArrowDownUp, Calendar } from 'lucide-react'
-import { api, Device, DeviceBandwidth, DeviceCommand, ProxyConnection, IPHistoryEntry } from '@/lib/api'
+import {
+  ArrowLeft, Smartphone, Settings, Link2, Clock, Activity,
+  RotateCw, Power, Search, Wifi, WifiOff, Copy, Trash2, Plus,
+  Battery, Signal, Globe, Cpu, RefreshCw, ChevronRight
+} from 'lucide-react'
+import { api, Device, DeviceBandwidth, DeviceCommand, ProxyConnection, IPHistoryEntry, RotationLink } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
-import { formatBytes, formatDate, timeAgo } from '@/lib/utils'
+import { formatBytes, formatDate, timeAgo, cn } from '@/lib/utils'
 import StatusBadge from '@/components/ui/StatusBadge'
 import BatteryIndicator from '@/components/ui/BatteryIndicator'
-import StatCard from '@/components/ui/StatCard'
-import BandwidthBar from '@/components/ui/BandwidthBar'
+
+type SidebarTab = 'primary' | 'advanced' | 'change-ip' | 'history' | 'metrics'
+
+const SERVER_HOST = process.env.NEXT_PUBLIC_SERVER_HOST || '178.156.240.184'
 
 export default function DeviceDetailPage() {
   const params = useParams()
@@ -22,24 +28,30 @@ export default function DeviceDetailPage() {
   const [connections, setConnections] = useState<ProxyConnection[]>([])
   const [ipHistory, setIpHistory] = useState<IPHistoryEntry[]>([])
   const [commands, setCommands] = useState<DeviceCommand[]>([])
+  const [rotationLinks, setRotationLinks] = useState<RotationLink[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<SidebarTab>('primary')
+  const [commandFeedback, setCommandFeedback] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     const token = getToken()
     if (!token) return
     try {
-      const [deviceRes, bwRes, connRes, histRes, cmdRes] = await Promise.all([
+      const [deviceRes, bwRes, connRes, histRes, cmdRes, linksRes] = await Promise.all([
         api.devices.get(token, id),
         api.devices.bandwidth(token, id),
         api.connections.list(token, id),
         api.devices.ipHistory(token, id),
         api.devices.commands(token, id),
+        api.rotationLinks.list(token, id),
       ])
       setDevice(deviceRes)
       setBandwidth(bwRes)
       setConnections(connRes.connections || [])
       setIpHistory(histRes.history || [])
       setCommands(cmdRes.commands || [])
+      setRotationLinks(linksRes.links || [])
     } catch (err) {
       console.error('Failed to fetch device detail:', err)
     } finally {
@@ -57,230 +69,837 @@ export default function DeviceDetailPage() {
         }
       }
     })
-    return () => { unsub() }
+    const interval = setInterval(fetchData, 15000)
+    return () => { unsub(); clearInterval(interval) }
   }, [fetchData, id])
 
-  async function handleRotateIP() {
+  async function sendCommand(type: string, label: string) {
     const token = getToken()
     if (!token || !device) return
     try {
-      await api.devices.sendCommand(token, device.id, 'rotate_ip')
+      await api.devices.sendCommand(token, device.id, type)
+      setCommandFeedback(`${label} command sent`)
+      setTimeout(() => setCommandFeedback(null), 3000)
+      // Refresh commands list
+      const cmdRes = await api.devices.commands(token, device.id)
+      setCommands(cmdRes.commands || [])
     } catch (err) {
-      console.error('Failed to send rotate command:', err)
+      setCommandFeedback(`Failed to send ${label} command`)
+      setTimeout(() => setCommandFeedback(null), 3000)
     }
   }
 
+  async function handleCreateRotationLink() {
+    const token = getToken()
+    if (!token || !device) return
+    try {
+      const link = await api.rotationLinks.create(token, { device_id: device.id, name: `Link ${rotationLinks.length + 1}` })
+      setRotationLinks(prev => [link, ...prev])
+    } catch (err) {
+      console.error('Failed to create rotation link:', err)
+    }
+  }
+
+  async function handleDeleteRotationLink(linkId: string) {
+    const token = getToken()
+    if (!token) return
+    try {
+      await api.rotationLinks.delete(token, linkId)
+      setRotationLinks(prev => prev.filter(l => l.id !== linkId))
+    } catch (err) {
+      console.error('Failed to delete rotation link:', err)
+    }
+  }
+
+  function copyToClipboard(text: string, itemId: string) {
+    navigator.clipboard.writeText(text)
+    setCopiedId(itemId)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  function getRotationUrl(token: string) {
+    const base = process.env.NEXT_PUBLIC_API_URL || `http://${SERVER_HOST}:8080/api`
+    return `${base}/public/rotate/${token}`
+  }
+
   if (loading) {
-    return <div className="text-zinc-500">Loading device...</div>
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-zinc-500">Loading device...</div>
+      </div>
+    )
   }
 
   if (!device) {
     return <div className="text-zinc-500">Device not found</div>
   }
 
+  const sidebarItems: { id: SidebarTab; label: string; icon: typeof Smartphone }[] = [
+    { id: 'primary', label: 'Primary', icon: Smartphone },
+    { id: 'advanced', label: 'Advanced', icon: Settings },
+    { id: 'change-ip', label: 'Change IP', icon: Link2 },
+    { id: 'history', label: 'History', icon: Clock },
+    { id: 'metrics', label: 'Device Metrics', icon: Activity },
+  ]
+
   return (
     <div>
+      {/* Header */}
       <Link href="/devices" className="text-sm text-zinc-400 hover:text-white flex items-center gap-1 mb-4">
         <ArrowLeft className="w-4 h-4" /> Back to Devices
       </Link>
 
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">{device.name}</h1>
-          <div className="flex items-center gap-2 mt-1">
-            <StatusBadge status={device.status} />
-            <span className="text-sm text-zinc-500">{device.device_model}</span>
-          </div>
-        </div>
-        <button
-          onClick={handleRotateIP}
-          disabled={device.status !== 'online'}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded text-sm"
-        >
-          Rotate IP
-        </button>
-      </div>
-
-      {/* Device Info Grid */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 mb-6">
-        <h2 className="text-sm font-semibold text-zinc-400 mb-3">Device Info</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div className="flex items-center gap-4">
           <div>
-            <span className="text-zinc-500">Cellular IP</span>
-            <div className="font-mono">{device.cellular_ip || '-'}</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">WiFi IP</span>
-            <div className="font-mono">{device.wifi_ip || '-'}</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">VPN IP</span>
-            <div className="font-mono">{device.vpn_ip || '-'}</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">Carrier</span>
-            <div>{device.carrier || '-'}</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">Network</span>
-            <div>{device.network_type || '-'}</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">Battery</span>
-            <div><BatteryIndicator level={device.battery_level} charging={device.battery_charging} /></div>
-          </div>
-          <div>
-            <span className="text-zinc-500">Signal</span>
-            <div>{device.signal_strength} dBm</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">Ports</span>
-            <div className="text-xs">HTTP:{device.http_port} SOCKS:{device.socks5_port}</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">App Version</span>
-            <div>{device.app_version || '-'}</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">Android</span>
-            <div>{device.android_version || '-'}</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">Last Seen</span>
-            <div>{timeAgo(device.last_heartbeat)}</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">Registered</span>
-            <div>{formatDate(device.created_at)}</div>
+            <h1 className="text-xl font-bold flex items-center gap-2">
+              {device.name || 'Unnamed Device'}
+              <StatusBadge status={device.status} />
+            </h1>
+            <div className="text-sm text-zinc-500 mt-0.5">
+              {device.device_model} &middot; Connection ID: {device.id.slice(0, 8)}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Bandwidth */}
-      {bandwidth && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <StatCard
-            title="Bandwidth Today"
-            value={formatBytes((bandwidth.today_in) + (bandwidth.today_out))}
-            subtitle={`${formatBytes(bandwidth.today_in)} in / ${formatBytes(bandwidth.today_out)} out`}
-            icon={ArrowDownUp}
-          />
-          <StatCard
-            title="Bandwidth Month"
-            value={formatBytes((bandwidth.month_in) + (bandwidth.month_out))}
-            subtitle={`${formatBytes(bandwidth.month_in)} in / ${formatBytes(bandwidth.month_out)} out`}
-            icon={Calendar}
-          />
+      {/* Command feedback toast */}
+      {commandFeedback && (
+        <div className="fixed top-4 right-4 bg-zinc-800 border border-zinc-700 text-sm px-4 py-2 rounded-lg shadow-lg z-50">
+          {commandFeedback}
         </div>
       )}
 
-      {/* Connections */}
-      <h2 className="text-lg font-semibold mb-3">Connections</h2>
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden mb-6">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-800 text-zinc-400 text-left">
-              <th className="px-4 py-3 font-medium">Username</th>
-              <th className="px-4 py-3 font-medium">Bandwidth</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {connections.map(conn => (
-              <tr key={conn.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
-                <td className="px-4 py-3 font-mono text-xs">{conn.username}</td>
-                <td className="px-4 py-3 w-48">
-                  <BandwidthBar used={conn.bandwidth_used} limit={conn.bandwidth_limit} />
-                </td>
-                <td className="px-4 py-3">
-                  <span className={conn.active ? 'text-green-400' : 'text-zinc-500'}>
-                    {conn.active ? 'Active' : 'Disabled'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-            {connections.length === 0 && (
-              <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-zinc-500">
-                  No connections for this device
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {/* Main layout: Sidebar + Content */}
+      <div className="flex gap-6">
+        {/* Left Sidebar Tabs */}
+        <div className="w-52 flex-shrink-0">
+          <nav className="space-y-0.5">
+            {sidebarItems.map(item => {
+              const Icon = item.icon
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={cn(
+                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left',
+                    activeTab === item.id
+                      ? 'bg-blue-600 text-white'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                  )}
+                >
+                  <Icon className="w-4 h-4" />
+                  {item.label}
+                </button>
+              )
+            })}
+          </nav>
+        </div>
+
+        {/* Content Area */}
+        <div className="flex-1 min-w-0">
+          {activeTab === 'primary' && <PrimaryTab device={device} connections={connections} bandwidth={bandwidth} serverHost={SERVER_HOST} copyToClipboard={copyToClipboard} copiedId={copiedId} />}
+          {activeTab === 'advanced' && <AdvancedTab device={device} commands={commands} sendCommand={sendCommand} />}
+          {activeTab === 'change-ip' && <ChangeIPTab device={device} rotationLinks={rotationLinks} onCreateLink={handleCreateRotationLink} onDeleteLink={handleDeleteRotationLink} getRotationUrl={getRotationUrl} copyToClipboard={copyToClipboard} copiedId={copiedId} />}
+          {activeTab === 'history' && <HistoryTab ipHistory={ipHistory} commands={commands} />}
+          {activeTab === 'metrics' && <MetricsTab device={device} bandwidth={bandwidth} />}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============= PRIMARY TAB =============
+function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboard, copiedId }: {
+  device: Device
+  connections: ProxyConnection[]
+  bandwidth: DeviceBandwidth | null
+  serverHost: string
+  copyToClipboard: (text: string, id: string) => void
+  copiedId: string | null
+}) {
+  const [subTab, setSubTab] = useState<'proxy' | 'info'>('proxy')
+
+  return (
+    <div>
+      {/* Sub-tabs */}
+      <div className="flex gap-1 border-b border-zinc-800 mb-6">
+        <button
+          onClick={() => setSubTab('proxy')}
+          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
+            subTab === 'proxy' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+          )}
+        >
+          Proxy
+        </button>
+        <button
+          onClick={() => setSubTab('info')}
+          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
+            subTab === 'info' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+          )}
+        >
+          Basic Info
+        </button>
       </div>
 
-      {/* IP History */}
-      <h2 className="text-lg font-semibold mb-3">IP History</h2>
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden mb-6">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-800 text-zinc-400 text-left">
-              <th className="px-4 py-3 font-medium">IP Address</th>
-              <th className="px-4 py-3 font-medium">Method</th>
-              <th className="px-4 py-3 font-medium">Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ipHistory.map(entry => (
-              <tr key={entry.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
-                <td className="px-4 py-3 font-mono text-xs">{entry.ip}</td>
-                <td className="px-4 py-3">
-                  <span className="px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-300">
-                    {entry.method}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-zinc-400">{formatDate(entry.created_at)}</td>
-              </tr>
-            ))}
-            {ipHistory.length === 0 && (
-              <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-zinc-500">
-                  No IP history yet
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {subTab === 'proxy' && (
+        <div>
+          <h3 className="text-sm font-medium text-zinc-400 mb-4">Access Points</h3>
+
+          {connections.length === 0 ? (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center text-zinc-500">
+              No proxy connections configured.
+              <div className="mt-2">
+                <Link href="/connections" className="text-blue-400 hover:text-blue-300 text-sm">
+                  Create a connection
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* HTTP Proxy */}
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+                <div className="px-4 py-2 bg-zinc-800/50 border-b border-zinc-800">
+                  <span className="text-sm font-medium">HTTP Proxy</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-800/50 text-zinc-500 text-left">
+                      <th className="px-4 py-2 font-medium text-xs">IP</th>
+                      <th className="px-4 py-2 font-medium text-xs">Port</th>
+                      <th className="px-4 py-2 font-medium text-xs">Login</th>
+                      <th className="px-4 py-2 font-medium text-xs">Password</th>
+                      <th className="px-4 py-2 font-medium text-xs">Status</th>
+                      <th className="px-4 py-2 font-medium text-xs"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {connections.map(conn => (
+                      <tr key={`http-${conn.id}`} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
+                        <td className="px-4 py-2.5 font-mono text-xs">{serverHost}</td>
+                        <td className="px-4 py-2.5 font-mono text-xs">{device.http_port}</td>
+                        <td className="px-4 py-2.5 font-mono text-xs">{conn.username}</td>
+                        <td className="px-4 py-2.5 font-mono text-xs">{conn.password || '********'}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={cn('text-xs', conn.active ? 'text-green-400' : 'text-zinc-500')}>
+                            {conn.active ? 'Active' : 'Disabled'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <button
+                            onClick={() => copyToClipboard(`${serverHost}:${device.http_port}:${conn.username}:${conn.password || ''}`, `http-${conn.id}`)}
+                            className="text-zinc-500 hover:text-white transition-colors"
+                            title="Copy proxy string"
+                          >
+                            {copiedId === `http-${conn.id}` ? <span className="text-green-400 text-xs">Copied!</span> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* SOCKS5 Proxy */}
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+                <div className="px-4 py-2 bg-zinc-800/50 border-b border-zinc-800">
+                  <span className="text-sm font-medium">SOCKS5 Proxy</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-800/50 text-zinc-500 text-left">
+                      <th className="px-4 py-2 font-medium text-xs">IP</th>
+                      <th className="px-4 py-2 font-medium text-xs">Port</th>
+                      <th className="px-4 py-2 font-medium text-xs">Login</th>
+                      <th className="px-4 py-2 font-medium text-xs">Password</th>
+                      <th className="px-4 py-2 font-medium text-xs">Status</th>
+                      <th className="px-4 py-2 font-medium text-xs"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {connections.map(conn => (
+                      <tr key={`socks-${conn.id}`} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
+                        <td className="px-4 py-2.5 font-mono text-xs">{serverHost}</td>
+                        <td className="px-4 py-2.5 font-mono text-xs">{device.socks5_port}</td>
+                        <td className="px-4 py-2.5 font-mono text-xs">{conn.username}</td>
+                        <td className="px-4 py-2.5 font-mono text-xs">{conn.password || '********'}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={cn('text-xs', conn.active ? 'text-green-400' : 'text-zinc-500')}>
+                            {conn.active ? 'Active' : 'Disabled'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <button
+                            onClick={() => copyToClipboard(`${serverHost}:${device.socks5_port}:${conn.username}:${conn.password || ''}`, `socks-${conn.id}`)}
+                            className="text-zinc-500 hover:text-white transition-colors"
+                            title="Copy proxy string"
+                          >
+                            {copiedId === `socks-${conn.id}` ? <span className="text-green-400 text-xs">Copied!</span> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* External IP */}
+          <div className="mt-6 bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <div className="text-sm text-zinc-400 mb-2">External IP (Cellular)</div>
+            <div className="font-mono text-lg">{device.cellular_ip || 'Unknown'}</div>
+          </div>
+        </div>
+      )}
+
+      {subTab === 'info' && (
+        <div className="space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-zinc-400 mb-4">Device Information</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <InfoRow label="Name" value={device.name || '-'} />
+              <InfoRow label="Model" value={device.device_model || '-'} />
+              <InfoRow label="Android ID" value={device.android_id} mono />
+              <InfoRow label="Android Version" value={device.android_version || '-'} />
+              <InfoRow label="App Version" value={device.app_version || '-'} />
+              <InfoRow label="Registered" value={formatDate(device.created_at)} />
+            </div>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-zinc-400 mb-4">Network</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <InfoRow label="Cellular IP" value={device.cellular_ip || '-'} mono />
+              <InfoRow label="WiFi IP" value={device.wifi_ip || '-'} mono />
+              <InfoRow label="VPN IP" value={device.vpn_ip || '-'} mono />
+              <InfoRow label="Carrier" value={device.carrier || '-'} />
+              <InfoRow label="Network Type" value={device.network_type || '-'} />
+              <InfoRow label="Last Heartbeat" value={timeAgo(device.last_heartbeat)} />
+            </div>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-zinc-400 mb-4">Ports</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <InfoRow label="HTTP Proxy" value={`${device.http_port}`} mono />
+              <InfoRow label="SOCKS5 Proxy" value={`${device.socks5_port}`} mono />
+              <InfoRow label="Base Port" value={`${device.base_port}`} mono />
+            </div>
+          </div>
+
+          {bandwidth && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+              <h3 className="text-sm font-medium text-zinc-400 mb-4">Bandwidth</h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <InfoRow label="Today In" value={formatBytes(bandwidth.today_in)} />
+                <InfoRow label="Today Out" value={formatBytes(bandwidth.today_out)} />
+                <InfoRow label="Month In" value={formatBytes(bandwidth.month_in)} />
+                <InfoRow label="Month Out" value={formatBytes(bandwidth.month_out)} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============= ADVANCED TAB =============
+function AdvancedTab({ device, commands, sendCommand }: {
+  device: Device
+  commands: DeviceCommand[]
+  sendCommand: (type: string, label: string) => void
+}) {
+  const [subTab, setSubTab] = useState<'actions' | 'config'>('actions')
+
+  const actionButtons = [
+    { type: 'rotate_ip', label: 'Rotate IP', icon: RotateCw, color: 'bg-blue-600 hover:bg-blue-700', description: 'Change cellular IP via airplane mode' },
+    { type: 'reboot', label: 'Reboot Device', icon: Power, color: 'bg-orange-600 hover:bg-orange-700', description: 'Restart the Android device' },
+    { type: 'find_phone', label: 'Find Phone', icon: Search, color: 'bg-purple-600 hover:bg-purple-700', description: 'Play sound on the device' },
+    { type: 'wifi_on', label: 'WiFi On', icon: Wifi, color: 'bg-green-600 hover:bg-green-700', description: 'Enable WiFi' },
+    { type: 'wifi_off', label: 'WiFi Off', icon: WifiOff, color: 'bg-zinc-600 hover:bg-zinc-700', description: 'Disable WiFi' },
+  ]
+
+  return (
+    <div>
+      <div className="flex gap-1 border-b border-zinc-800 mb-6">
+        <button
+          onClick={() => setSubTab('actions')}
+          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
+            subTab === 'actions' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+          )}
+        >
+          Actions
+        </button>
+        <button
+          onClick={() => setSubTab('config')}
+          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
+            subTab === 'config' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+          )}
+        >
+          Configuration
+        </button>
       </div>
 
-      {/* Command History */}
-      <h2 className="text-lg font-semibold mb-3">Command History</h2>
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-800 text-zinc-400 text-left">
-              <th className="px-4 py-3 font-medium">Type</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Created</th>
-              <th className="px-4 py-3 font-medium">Executed</th>
-            </tr>
-          </thead>
-          <tbody>
-            {commands.map(cmd => (
-              <tr key={cmd.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
-                <td className="px-4 py-3">
-                  <span className="px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-300">
-                    {cmd.type}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={cmd.status} />
-                </td>
-                <td className="px-4 py-3 text-zinc-400">{formatDate(cmd.created_at)}</td>
-                <td className="px-4 py-3 text-zinc-400">{cmd.executed_at ? formatDate(cmd.executed_at) : '-'}</td>
-              </tr>
-            ))}
-            {commands.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
-                  No commands sent yet
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {subTab === 'actions' && (
+        <div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-8">
+            {actionButtons.map(action => {
+              const Icon = action.icon
+              const disabled = device.status !== 'online'
+              return (
+                <button
+                  key={action.type}
+                  onClick={() => sendCommand(action.type, action.label)}
+                  disabled={disabled}
+                  className={cn(
+                    'flex items-center gap-3 px-4 py-3 rounded-lg text-white text-left transition-all',
+                    disabled ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' : action.color
+                  )}
+                >
+                  <Icon className="w-5 h-5 flex-shrink-0" />
+                  <div>
+                    <div className="text-sm font-medium">{action.label}</div>
+                    <div className={cn('text-xs', disabled ? 'text-zinc-600' : 'text-white/70')}>
+                      {action.description}
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Recent commands */}
+          <h3 className="text-sm font-medium text-zinc-400 mb-3">Recent Commands</h3>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-800 text-zinc-500 text-left">
+                  <th className="px-4 py-2 font-medium text-xs">Command</th>
+                  <th className="px-4 py-2 font-medium text-xs">Status</th>
+                  <th className="px-4 py-2 font-medium text-xs">Sent</th>
+                  <th className="px-4 py-2 font-medium text-xs">Executed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {commands.slice(0, 10).map(cmd => (
+                  <tr key={cmd.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
+                    <td className="px-4 py-2">
+                      <span className="px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-300">
+                        {cmd.type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2"><StatusBadge status={cmd.status} /></td>
+                    <td className="px-4 py-2 text-xs text-zinc-400">{timeAgo(cmd.created_at)}</td>
+                    <td className="px-4 py-2 text-xs text-zinc-400">{cmd.executed_at ? timeAgo(cmd.executed_at) : '-'}</td>
+                  </tr>
+                ))}
+                {commands.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
+                      No commands sent yet
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {subTab === 'config' && (
+        <div className="space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-zinc-400 mb-4">IP Rotation Method</h3>
+            <p className="text-sm text-zinc-300 mb-2">
+              Current method: <span className="font-medium text-white">Airplane Mode Toggle</span>
+            </p>
+            <p className="text-xs text-zinc-500">
+              Uses Settings.Global to toggle airplane mode ON/OFF with a 5-second delay.
+              Requires WRITE_SECURE_SETTINGS permission granted via ADB.
+            </p>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-zinc-400 mb-4">Device Status</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Status</span>
+                <StatusBadge status={device.status} />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Last heartbeat</span>
+                <span className="text-zinc-300">{timeAgo(device.last_heartbeat)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">VPN Connection</span>
+                <span className={device.vpn_ip ? 'text-green-400' : 'text-zinc-500'}>
+                  {device.vpn_ip ? `Connected (${device.vpn_ip})` : 'Disconnected'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============= CHANGE IP TAB =============
+function ChangeIPTab({ device, rotationLinks, onCreateLink, onDeleteLink, getRotationUrl, copyToClipboard, copiedId }: {
+  device: Device
+  rotationLinks: RotationLink[]
+  onCreateLink: () => void
+  onDeleteLink: (id: string) => void
+  getRotationUrl: (token: string) => string
+  copyToClipboard: (text: string, id: string) => void
+  copiedId: string | null
+}) {
+  const [subTab, setSubTab] = useState<'url' | 'rotation'>('url')
+
+  return (
+    <div>
+      <div className="flex gap-1 border-b border-zinc-800 mb-6">
+        <button
+          onClick={() => setSubTab('url')}
+          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
+            subTab === 'url' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+          )}
+        >
+          URL
+        </button>
+        <button
+          onClick={() => setSubTab('rotation')}
+          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
+            subTab === 'rotation' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+          )}
+        >
+          About
+        </button>
       </div>
+
+      {subTab === 'url' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-zinc-400">URL for IP address change</h3>
+            <button
+              onClick={onCreateLink}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Add URL
+            </button>
+          </div>
+
+          {rotationLinks.length === 0 ? (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
+              <Link2 className="w-8 h-8 text-zinc-600 mx-auto mb-3" />
+              <p className="text-zinc-500 text-sm">No rotation links yet.</p>
+              <p className="text-zinc-600 text-xs mt-1">
+                Create a link that anyone can use to trigger IP rotation on this device.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {rotationLinks.map(link => {
+                const url = getRotationUrl(link.token)
+                return (
+                  <div key={link.id} className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 text-sm font-mono truncate block"
+                      >
+                        {url}
+                      </a>
+                      <div className="text-xs text-zinc-500 mt-1">
+                        {link.name && <span className="mr-3">{link.name}</span>}
+                        Created {formatDate(link.created_at)}
+                        {link.last_used_at && <span className="ml-3">Last used: {timeAgo(link.last_used_at)}</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => copyToClipboard(url, `link-${link.id}`)}
+                        className="p-2 text-zinc-500 hover:text-white transition-colors"
+                        title="Copy URL"
+                      >
+                        {copiedId === `link-${link.id}` ? <span className="text-green-400 text-xs">Copied!</span> : <Copy className="w-4 h-4" />}
+                      </button>
+                      <button
+                        onClick={() => onDeleteLink(link.id)}
+                        className="p-2 text-zinc-500 hover:text-red-400 transition-colors"
+                        title="Delete link"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {subTab === 'rotation' && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-zinc-400 mb-3">How Rotation Links Work</h3>
+          <div className="text-sm text-zinc-300 space-y-2">
+            <p>Rotation links are public URLs that trigger an IP rotation on this device when accessed.</p>
+            <p>When someone visits the link, the server sends a <code className="px-1.5 py-0.5 bg-zinc-800 rounded text-xs">rotate_ip</code> command to the device, which toggles airplane mode to get a new cellular IP.</p>
+            <p>No authentication is required to use a rotation link - share it with anyone who needs to trigger IP changes.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============= HISTORY TAB =============
+function HistoryTab({ ipHistory, commands }: {
+  ipHistory: IPHistoryEntry[]
+  commands: DeviceCommand[]
+}) {
+  const [subTab, setSubTab] = useState<'ip' | 'commands'>('ip')
+
+  return (
+    <div>
+      <div className="flex gap-1 border-b border-zinc-800 mb-6">
+        <button
+          onClick={() => setSubTab('ip')}
+          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
+            subTab === 'ip' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+          )}
+        >
+          IP History
+        </button>
+        <button
+          onClick={() => setSubTab('commands')}
+          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
+            subTab === 'commands' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+          )}
+        >
+          Command History
+        </button>
+      </div>
+
+      {subTab === 'ip' && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-800 text-zinc-500 text-left">
+                <th className="px-4 py-2 font-medium text-xs">#</th>
+                <th className="px-4 py-2 font-medium text-xs">Date</th>
+                <th className="px-4 py-2 font-medium text-xs">IP</th>
+                <th className="px-4 py-2 font-medium text-xs">Method</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ipHistory.map((entry, idx) => (
+                <tr key={entry.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
+                  <td className="px-4 py-2 text-zinc-500">{idx + 1}</td>
+                  <td className="px-4 py-2 text-zinc-300">{formatDate(entry.created_at)}</td>
+                  <td className="px-4 py-2 font-mono text-xs">{entry.ip}</td>
+                  <td className="px-4 py-2">
+                    <span className="px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-300">
+                      {entry.method}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {ipHistory.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
+                    No IP history yet
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {subTab === 'commands' && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-800 text-zinc-500 text-left">
+                <th className="px-4 py-2 font-medium text-xs">Type</th>
+                <th className="px-4 py-2 font-medium text-xs">Status</th>
+                <th className="px-4 py-2 font-medium text-xs">Created</th>
+                <th className="px-4 py-2 font-medium text-xs">Executed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {commands.map(cmd => (
+                <tr key={cmd.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
+                  <td className="px-4 py-2">
+                    <span className="px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-300">
+                      {cmd.type}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2"><StatusBadge status={cmd.status} /></td>
+                  <td className="px-4 py-2 text-zinc-400">{formatDate(cmd.created_at)}</td>
+                  <td className="px-4 py-2 text-zinc-400">{cmd.executed_at ? formatDate(cmd.executed_at) : '-'}</td>
+                </tr>
+              ))}
+              {commands.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
+                    No commands sent yet
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============= METRICS TAB =============
+function MetricsTab({ device, bandwidth }: {
+  device: Device
+  bandwidth: DeviceBandwidth | null
+}) {
+  const [subTab, setSubTab] = useState<'battery' | 'device' | 'network'>('battery')
+
+  return (
+    <div>
+      <div className="flex gap-1 border-b border-zinc-800 mb-6">
+        <button
+          onClick={() => setSubTab('battery')}
+          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
+            subTab === 'battery' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+          )}
+        >
+          Battery
+        </button>
+        <button
+          onClick={() => setSubTab('device')}
+          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
+            subTab === 'device' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+          )}
+        >
+          Device
+        </button>
+        <button
+          onClick={() => setSubTab('network')}
+          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
+            subTab === 'network' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+          )}
+        >
+          Network
+        </button>
+      </div>
+
+      {subTab === 'battery' && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Battery className="w-5 h-5 text-zinc-500" />
+              <div>
+                <div className="text-sm text-zinc-400">Battery Level</div>
+                <div className="text-2xl font-bold">{device.battery_level}%</div>
+              </div>
+            </div>
+
+            {/* Battery bar */}
+            <div className="w-full h-4 bg-zinc-800 rounded-full overflow-hidden">
+              <div
+                className={cn('h-full rounded-full transition-all',
+                  device.battery_level > 50 ? 'bg-green-500' :
+                  device.battery_level > 20 ? 'bg-yellow-500' : 'bg-red-500'
+                )}
+                style={{ width: `${device.battery_level}%` }}
+              />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-zinc-400">Charging:</span>
+              <span className={cn('text-sm', device.battery_charging ? 'text-green-400' : 'text-zinc-500')}>
+                {device.battery_charging ? 'Yes' : 'No'}
+              </span>
+            </div>
+
+            <div className="text-xs text-zinc-600 mt-2">
+              Last updated: {timeAgo(device.last_heartbeat)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {subTab === 'device' && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 mb-4">
+              <Cpu className="w-5 h-5 text-zinc-500" />
+              <span className="text-sm font-medium text-zinc-300">Device Information</span>
+            </div>
+
+            <InfoRow label="Model" value={device.device_model || '-'} />
+            <InfoRow label="Android Version" value={device.android_version || '-'} />
+            <InfoRow label="App Version" value={device.app_version || '-'} />
+            <InfoRow label="Android ID" value={device.android_id} mono />
+            <InfoRow label="Registered" value={formatDate(device.created_at)} />
+          </div>
+        </div>
+      )}
+
+      {subTab === 'network' && (
+        <div className="space-y-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <Globe className="w-5 h-5 text-zinc-500" />
+              <span className="text-sm font-medium text-zinc-300">Network Status</span>
+            </div>
+            <div className="space-y-3">
+              <InfoRow label="Carrier" value={device.carrier || '-'} />
+              <InfoRow label="Network Type" value={device.network_type || '-'} />
+              <InfoRow label="Signal Strength" value={`${device.signal_strength} dBm`} />
+              <InfoRow label="Cellular IP" value={device.cellular_ip || '-'} mono />
+              <InfoRow label="WiFi IP" value={device.wifi_ip || '-'} mono />
+              <InfoRow label="VPN IP" value={device.vpn_ip || '-'} mono />
+            </div>
+          </div>
+
+          {bandwidth && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <RefreshCw className="w-5 h-5 text-zinc-500" />
+                <span className="text-sm font-medium text-zinc-300">Bandwidth Usage</span>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-zinc-800/50 rounded-lg p-3 text-center">
+                  <div className="text-xs text-zinc-500">Today</div>
+                  <div className="text-lg font-bold mt-1">{formatBytes(bandwidth.today_in + bandwidth.today_out)}</div>
+                  <div className="text-xs text-zinc-500">{formatBytes(bandwidth.today_in)} in / {formatBytes(bandwidth.today_out)} out</div>
+                </div>
+                <div className="bg-zinc-800/50 rounded-lg p-3 text-center">
+                  <div className="text-xs text-zinc-500">This Month</div>
+                  <div className="text-lg font-bold mt-1">{formatBytes(bandwidth.month_in + bandwidth.month_out)}</div>
+                  <div className="text-xs text-zinc-500">{formatBytes(bandwidth.month_in)} in / {formatBytes(bandwidth.month_out)} out</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============= SHARED COMPONENTS =============
+function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-zinc-800/50 last:border-0">
+      <span className="text-zinc-500 text-sm">{label}</span>
+      <span className={cn('text-sm text-zinc-200', mono && 'font-mono text-xs')}>{value}</span>
     </div>
   )
 }
