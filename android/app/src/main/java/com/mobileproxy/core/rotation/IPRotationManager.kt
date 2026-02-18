@@ -1,7 +1,6 @@
 package com.mobileproxy.core.rotation
 
 import android.content.Context
-import android.content.Intent
 import android.provider.Settings
 import android.util.Log
 import com.mobileproxy.core.network.NetworkManager
@@ -17,7 +16,7 @@ class IPRotationManager @Inject constructor(
 ) {
     companion object {
         private const val TAG = "IPRotationManager"
-        private const val AIRPLANE_MODE_DELAY_MS = 3000L
+        private const val AIRPLANE_MODE_DELAY_MS = 5000L
     }
 
     /**
@@ -53,21 +52,20 @@ class IPRotationManager @Inject constructor(
     }
 
     /**
-     * Directly write Settings.Global.AIRPLANE_MODE_ON and broadcast the change.
+     * Directly write Settings.Global.AIRPLANE_MODE_ON.
+     * Android picks up the change via ContentObserver — no broadcast needed.
      * Returns true if both the ON and OFF writes succeed.
      */
     private suspend fun toggleAirplaneModeViaSettings(): Boolean {
         return try {
             // Turn airplane mode ON
             Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 1)
-            broadcastAirplaneModeChange()
             Log.i(TAG, "Airplane mode ON")
 
             delay(AIRPLANE_MODE_DELAY_MS)
 
             // Turn airplane mode OFF
             Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0)
-            broadcastAirplaneModeChange()
             Log.i(TAG, "Airplane mode OFF")
 
             true
@@ -78,11 +76,5 @@ class IPRotationManager @Inject constructor(
             Log.e(TAG, "Failed to toggle airplane mode via Settings.Global", e)
             false
         }
-    }
-
-    private fun broadcastAirplaneModeChange() {
-        val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED)
-        intent.putExtra("state", Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0)
-        context.sendBroadcast(intent)
     }
 }
