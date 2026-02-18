@@ -3,15 +3,15 @@ package com.mobileproxy.ui
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
+import android.view.View
+import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.mobileproxy.BuildConfig
 import com.mobileproxy.R
 import com.mobileproxy.core.network.NetworkManager
 import com.mobileproxy.core.network.NetworkState
+import com.mobileproxy.core.rotation.IPRotationManager
 import com.mobileproxy.service.ProxyForegroundService
 import com.mobileproxy.service.ProxyVpnService
 import dagger.hilt.android.AndroidEntryPoint
@@ -23,6 +23,7 @@ import javax.inject.Inject
 class MainActivity : AppCompatActivity() {
 
     @Inject lateinit var networkManager: NetworkManager
+    @Inject lateinit var rotationManager: IPRotationManager
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var pendingStart = false
@@ -54,7 +55,6 @@ class MainActivity : AppCompatActivity() {
         val stopButton = findViewById<Button>(R.id.buttonStop)
 
         startButton.setOnClickListener {
-            // Check VPN permission first
             val vpnIntent = VpnService.prepare(this)
             if (vpnIntent != null) {
                 pendingStart = true
@@ -70,6 +70,39 @@ class MainActivity : AppCompatActivity() {
             }
             startService(intent)
             statusText.text = "Status: Stopped"
+        }
+
+        // Rotation method spinner
+        val spinner = findViewById<Spinner>(R.id.spinnerRotationMethod)
+        val rotationStatus = findViewById<TextView>(R.id.textRotationStatus)
+        val testButton = findViewById<Button>(R.id.buttonTestRotation)
+
+        // Load saved method
+        spinner.setSelection(rotationManager.getSavedMethod())
+
+        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                rotationManager.saveMethod(position)
+                rotationStatus.text = ""
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        testButton.setOnClickListener {
+            testButton.isEnabled = false
+            rotationStatus.text = "Testing rotation..."
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) {
+                        rotationManager.requestAirplaneModeToggle()
+                    }
+                    rotationStatus.text = "Rotation completed. Check if IP changed."
+                } catch (e: Exception) {
+                    rotationStatus.text = "Error: ${e.message}"
+                } finally {
+                    testButton.isEnabled = true
+                }
+            }
         }
 
         // Observe network states
@@ -89,8 +122,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-
-        // Observe VPN state
         scope.launch {
             ProxyVpnService.vpnState.collectLatest { connected ->
                 vpnText.text = if (connected) "VPN: Connected" else "VPN: Disconnected"

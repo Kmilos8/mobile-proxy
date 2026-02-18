@@ -4,4 +4,11 @@
     <string name="accessibility_description">Required for IP rotation via airplane mode toggle</string>
     <string name="notification_channel_name">Proxy Service</string>
     <string name="notification_channel_description">Shows proxy service status</string>
+
+    <string-array name="rotation_methods">
+        <item>Accessibility Service (Quick Settings tap)</item>
+        <item>Digital Assistant (Settings.Global)</item>
+        <item>ConnectivityManager (reflection)</item>
+        <item>Cellular reconnect (no airplane mode)</item>
+    </string-array>
 </resources>
