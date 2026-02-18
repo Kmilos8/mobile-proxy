@@ -38,8 +38,9 @@ class IPRotationManager @Inject constructor(
 
     /**
      * Toggle airplane mode ON then OFF to force a new IP assignment.
-     * Primary: direct Settings.Global write (requires digital assistant role).
-     * Fallback: AirplaneModeAccessibilityService if the write fails.
+     * Uses Settings.Global write (requires WRITE_SECURE_SETTINGS granted via adb).
+     * Android picks up the change via ContentObserver and toggles the radio.
+     * Falls back to AirplaneModeAccessibilityService if permission is missing.
      */
     suspend fun requestAirplaneModeToggle() {
         Log.i(TAG, "Requesting airplane mode toggle")
@@ -54,7 +55,6 @@ class IPRotationManager @Inject constructor(
     /**
      * Directly write Settings.Global.AIRPLANE_MODE_ON.
      * Android picks up the change via ContentObserver — no broadcast needed.
-     * Returns true if both the ON and OFF writes succeed.
      */
     private suspend fun toggleAirplaneModeViaSettings(): Boolean {
         return try {
