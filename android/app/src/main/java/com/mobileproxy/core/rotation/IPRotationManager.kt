@@ -3,7 +3,6 @@ package com.mobileproxy.core.rotation
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.provider.Settings
 import android.util.Log
 import com.mobileproxy.core.network.NetworkManager
 import com.mobileproxy.core.status.DeviceStatusReporter
@@ -54,13 +53,6 @@ class IPRotationManager @Inject constructor(
         }
     }
 
-    private fun isCellularConnected(): Boolean {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val activeNetwork = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(activeNetwork) ?: return false
-        return caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
-    }
-
     private fun hasCellularNetwork(): Boolean {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         for (network in cm.allNetworks) {
@@ -71,18 +63,40 @@ class IPRotationManager @Inject constructor(
     }
 
     /**
-     * Enable airplane mode via Settings.Global, wait for cellular to actually go down, then disable.
-     * We cannot send ACTION_AIRPLANE_MODE_CHANGED (protected broadcast) or use `cmd connectivity`
-     * (requires shell user) from a regular app. Settings.Global write is what we have.
+     * Call the hidden ConnectivityManager.setAirplaneMode(boolean) via reflection.
+     * This is the same API the Settings app / Quick Settings tile uses.
+     * It actually engages/disengages the radios (solid icon, cellular drops).
+     * Settings.Global.putInt only changes the DB value without affecting radios.
+     */
+    private fun setAirplaneMode(enabled: Boolean): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val method = cm.javaClass.getDeclaredMethod("setAirplaneMode", Boolean::class.javaPrimitiveType)
+            method.invoke(cm, enabled)
+            Log.i(TAG, "ConnectivityManager.setAirplaneMode($enabled) success")
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "ConnectivityManager.setAirplaneMode($enabled) failed: ${e.cause?.message ?: e.message}")
+            false
+        }
+    }
+
+    /**
+     * Enable airplane mode, wait for cellular to actually go down, then disable.
+     * Uses ConnectivityManager.setAirplaneMode() (hidden API via reflection) which
+     * is the same code path as the manual quick settings toggle.
      */
     private suspend fun toggleAirplaneMode(): Boolean {
         return try {
             val hadCellular = hasCellularNetwork()
             Log.i(TAG, "Cellular before toggle: $hadCellular")
 
-            // Enable airplane mode
-            Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 1)
-            Log.i(TAG, "Airplane mode setting ON")
+            // Enable airplane mode via the real system API
+            val enabled = setAirplaneMode(true)
+            if (!enabled) {
+                Log.e(TAG, "setAirplaneMode(true) failed")
+                return false
+            }
 
             // Poll for cellular to actually go down
             if (hadCellular) {
@@ -111,22 +125,17 @@ class IPRotationManager @Inject constructor(
             }
 
             // Disable airplane mode
-            Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0)
-            Log.i(TAG, "Airplane mode setting OFF")
+            setAirplaneMode(false)
+            Log.i(TAG, "Airplane mode OFF")
 
             // Invalidate cached IP so next heartbeat fetches the new one
             statusReporter.get().invalidateIpCache()
 
             true
-        } catch (e: SecurityException) {
-            Log.e(TAG, "No permission to write AIRPLANE_MODE_ON", e)
-            false
         } catch (e: Exception) {
             Log.e(TAG, "Airplane mode toggle failed", e)
             // Safety: ensure airplane mode is off
-            try {
-                Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0)
-            } catch (_: Exception) {}
+            try { setAirplaneMode(false) } catch (_: Exception) {}
             false
         }
     }
