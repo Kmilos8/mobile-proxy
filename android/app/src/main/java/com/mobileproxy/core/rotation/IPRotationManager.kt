@@ -1,6 +1,7 @@
 package com.mobileproxy.core.rotation
 
 import android.content.Context
+import android.content.Intent
 import android.provider.Settings
 import android.util.Log
 import com.mobileproxy.core.network.NetworkManager
@@ -56,20 +57,23 @@ class IPRotationManager @Inject constructor(
     }
 
     /**
-     * Directly write Settings.Global.AIRPLANE_MODE_ON.
-     * Android picks up the change via ContentObserver — no broadcast needed.
+     * Write Settings.Global.AIRPLANE_MODE_ON and broadcast ACTION_AIRPLANE_MODE_CHANGED.
+     * The setting write alone only changes the flag — the broadcast tells ConnectivityService
+     * to actually kill/restore the radios (cellular, WiFi, Bluetooth).
      */
     private suspend fun toggleAirplaneModeViaSettings(): Boolean {
         return try {
             // Turn airplane mode ON
             Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 1)
-            Log.i(TAG, "Airplane mode ON")
+            context.sendBroadcast(Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).putExtra("state", true))
+            Log.i(TAG, "Airplane mode ON (setting + broadcast)")
 
             delay(AIRPLANE_MODE_DELAY_MS)
 
             // Turn airplane mode OFF
             Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0)
-            Log.i(TAG, "Airplane mode OFF")
+            context.sendBroadcast(Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).putExtra("state", false))
+            Log.i(TAG, "Airplane mode OFF (setting + broadcast)")
 
             // Invalidate cached IP so next heartbeat fetches the new one
             statusReporter.get().invalidateIpCache()
