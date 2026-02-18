@@ -1,8 +1,15 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
     id("org.jetbrains.kotlin.kapt")
+}
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) load(file.inputStream())
 }
 
 android {
@@ -15,6 +22,10 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
+
+        buildConfigField("String", "DEVICE_ID", "\"${localProperties.getProperty("DEVICE_ID", "")}\"")
+        buildConfigField("String", "DEVICE_AUTH_TOKEN", "\"${localProperties.getProperty("DEVICE_AUTH_TOKEN", "")}\"")
+        buildConfigField("String", "DEFAULT_SERVER_URL", "\"${localProperties.getProperty("DEFAULT_SERVER_URL", "")}\"")
     }
 
     buildTypes {
@@ -35,6 +46,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
 }
 

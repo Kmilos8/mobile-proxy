@@ -8,6 +8,7 @@ import android.widget.EditText
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import com.mobileproxy.BuildConfig
 import com.mobileproxy.R
 import com.mobileproxy.core.network.NetworkManager
 import com.mobileproxy.core.network.NetworkState
@@ -42,6 +43,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         val serverUrlEdit = findViewById<EditText>(R.id.editServerUrl)
+        if (serverUrlEdit.text.isNullOrEmpty() && BuildConfig.DEFAULT_SERVER_URL.isNotEmpty()) {
+            serverUrlEdit.setText(BuildConfig.DEFAULT_SERVER_URL)
+        }
         val statusText = findViewById<TextView>(R.id.textStatus)
         val cellularText = findViewById<TextView>(R.id.textCellular)
         val wifiText = findViewById<TextView>(R.id.textWifi)
@@ -102,8 +106,8 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, ProxyForegroundService::class.java).apply {
             action = ProxyForegroundService.ACTION_START
             putExtra(ProxyForegroundService.EXTRA_SERVER_URL, serverUrl)
-            putExtra(ProxyForegroundService.EXTRA_DEVICE_ID, "ed880c1f-f3b9-4d9e-bda8-a3e755204a63")
-            putExtra(ProxyForegroundService.EXTRA_AUTH_TOKEN, "device-token-placeholder")
+            putExtra(ProxyForegroundService.EXTRA_DEVICE_ID, BuildConfig.DEVICE_ID)
+            putExtra(ProxyForegroundService.EXTRA_AUTH_TOKEN, BuildConfig.DEVICE_AUTH_TOKEN)
         }
         startForegroundService(intent)
         statusText.text = "Status: Running"
