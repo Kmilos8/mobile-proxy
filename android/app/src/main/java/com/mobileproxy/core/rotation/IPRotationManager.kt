@@ -102,25 +102,39 @@ class IPRotationManager @Inject constructor(
         try {
             // Turn ON
             Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 1)
-            val onIntent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).putExtra("state", true)
-            context.sendBroadcast(onIntent)
+            sendAirplaneModeBroadcast(true)
             Log.i(TAG, "Airplane mode ON (setting + broadcast)")
 
             delay(AIRPLANE_MODE_DELAY)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Settings.Global write failed (not Digital Assistant?) — falling back to Accessibility", e)
+            rotateViaAccessibility()
+            return
+        } catch (e: Exception) {
+            Log.e(TAG, "Settings.Global ON failed", e)
+            return
+        }
 
-            // Turn OFF
+        // Always turn OFF — even if broadcast failed, the setting was written
+        try {
             Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0)
-            val offIntent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).putExtra("state", false)
-            context.sendBroadcast(offIntent)
+            sendAirplaneModeBroadcast(false)
             Log.i(TAG, "Airplane mode OFF (setting + broadcast)")
 
-            delay(3000) // wait for cellular to reconnect
+            delay(5000) // wait for cellular to reconnect
             statusReporter.get().invalidateIpCache()
-        } catch (e: SecurityException) {
-            Log.e(TAG, "Settings.Global failed (not Digital Assistant?) — falling back to Accessibility", e)
-            rotateViaAccessibility()
         } catch (e: Exception) {
-            Log.e(TAG, "Settings.Global method failed", e)
+            Log.e(TAG, "Settings.Global OFF failed", e)
+        }
+    }
+
+    private fun sendAirplaneModeBroadcast(enabled: Boolean) {
+        try {
+            val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).putExtra("state", enabled)
+            context.sendBroadcast(intent)
+            Log.i(TAG, "Broadcast sent: airplane_mode=$enabled")
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Protected broadcast not allowed (expected on some devices)", e)
         }
     }
 
