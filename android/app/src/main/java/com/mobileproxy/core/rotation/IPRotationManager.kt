@@ -1,7 +1,6 @@
 package com.mobileproxy.core.rotation
 
 import android.content.Context
-import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.provider.Settings
@@ -72,84 +71,62 @@ class IPRotationManager @Inject constructor(
     }
 
     /**
-     * Enable airplane mode, wait for cellular to actually go down, then disable.
-     * Tries `cmd connectivity` first (full system-level toggle), falls back to Settings.Global.
+     * Enable airplane mode via Settings.Global, wait for cellular to actually go down, then disable.
+     * We cannot send ACTION_AIRPLANE_MODE_CHANGED (protected broadcast) or use `cmd connectivity`
+     * (requires shell user) from a regular app. Settings.Global write is what we have.
      */
     private suspend fun toggleAirplaneMode(): Boolean {
         return try {
             val hadCellular = hasCellularNetwork()
             Log.i(TAG, "Cellular before toggle: $hadCellular")
 
-            // Try cmd connectivity first (fully engages airplane mode on Samsung)
-            val useCmd = tryEnableAirplaneModeCmd()
-            if (!useCmd) {
-                // Fallback to Settings.Global
-                Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 1)
-                context.sendBroadcast(Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).putExtra("state", true))
-            }
-            Log.i(TAG, "Airplane mode ON (method=${if (useCmd) "cmd" else "settings"})")
+            // Enable airplane mode
+            Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 1)
+            Log.i(TAG, "Airplane mode setting ON")
 
-            // Wait for cellular to actually go down
+            // Poll for cellular to actually go down
             if (hadCellular) {
                 val startTime = System.currentTimeMillis()
+                var lastLog = 0L
                 while (hasCellularNetwork() && (System.currentTimeMillis() - startTime) < CELLULAR_DOWN_TIMEOUT_MS) {
+                    val elapsed = System.currentTimeMillis() - startTime
+                    if (elapsed - lastLog >= 2000) {
+                        Log.i(TAG, "Waiting for cellular down... (${elapsed}ms)")
+                        lastLog = elapsed
+                    }
                     delay(POLL_INTERVAL_MS)
                 }
                 val elapsed = System.currentTimeMillis() - startTime
                 val cellularDown = !hasCellularNetwork()
-                Log.i(TAG, "Cellular down: $cellularDown (waited ${elapsed}ms)")
+                Log.i(TAG, "Cellular down: $cellularDown (after ${elapsed}ms)")
 
-                // Extra wait after cellular drops to ensure carrier releases the IP
                 if (cellularDown) {
+                    delay(POST_DOWN_WAIT_MS)
+                } else {
+                    Log.w(TAG, "Cellular did NOT go down after ${elapsed}ms, proceeding anyway")
                     delay(POST_DOWN_WAIT_MS)
                 }
             } else {
-                // No cellular was detected, just wait a fixed time
                 delay(7000)
             }
 
             // Disable airplane mode
-            if (useCmd) {
-                tryDisableAirplaneModeCmd()
-            } else {
-                Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0)
-                context.sendBroadcast(Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).putExtra("state", false))
-            }
-            Log.i(TAG, "Airplane mode OFF")
+            Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0)
+            Log.i(TAG, "Airplane mode setting OFF")
 
             // Invalidate cached IP so next heartbeat fetches the new one
             statusReporter.get().invalidateIpCache()
 
             true
+        } catch (e: SecurityException) {
+            Log.e(TAG, "No permission to write AIRPLANE_MODE_ON", e)
+            false
         } catch (e: Exception) {
             Log.e(TAG, "Airplane mode toggle failed", e)
-            // Make sure airplane mode is off
+            // Safety: ensure airplane mode is off
             try {
-                tryDisableAirplaneModeCmd()
                 Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0)
             } catch (_: Exception) {}
-            false
-        }
-    }
-
-    private fun tryEnableAirplaneModeCmd(): Boolean {
-        return try {
-            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", "cmd connectivity airplane-mode enable"))
-            val exitCode = process.waitFor()
-            exitCode == 0
-        } catch (e: Exception) {
-            Log.w(TAG, "cmd connectivity enable failed", e)
-            false
-        }
-    }
-
-    private fun tryDisableAirplaneModeCmd(): Boolean {
-        return try {
-            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", "cmd connectivity airplane-mode disable"))
-            val exitCode = process.waitFor()
-            exitCode == 0
-        } catch (e: Exception) {
-            Log.w(TAG, "cmd connectivity disable failed", e)
             false
         }
     }
