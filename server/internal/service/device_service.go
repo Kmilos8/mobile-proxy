@@ -235,6 +235,10 @@ func (s *DeviceService) GetCommandHistory(ctx context.Context, deviceID uuid.UUI
 	return s.commandRepo.GetByDevice(ctx, deviceID, limit)
 }
 
+func (s *DeviceService) UpdateNameDescription(ctx context.Context, id uuid.UUID, name, description string) error {
+	return s.deviceRepo.UpdateNameDescription(ctx, id, name, description)
+}
+
 func (s *DeviceService) GetByName(ctx context.Context, name string) (*domain.Device, error) {
 	return s.deviceRepo.GetByName(ctx, name)
 }

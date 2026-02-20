@@ -48,6 +48,7 @@ type User struct {
 type Device struct {
 	ID              uuid.UUID    `json:"id" db:"id"`
 	Name            string       `json:"name" db:"name"`
+	Description     string       `json:"description" db:"description"`
 	AndroidID       string       `json:"android_id" db:"android_id"`
 	Status          DeviceStatus `json:"status" db:"status"`
 	CellularIP      string       `json:"cellular_ip" db:"cellular_ip"`
@@ -91,6 +92,9 @@ type ProxyConnection struct {
 	BandwidthLimit int64      `json:"bandwidth_limit" db:"bandwidth_limit"` // bytes, 0 = unlimited
 	BandwidthUsed  int64      `json:"bandwidth_used" db:"bandwidth_used"`
 	Active         bool       `json:"active" db:"active"`
+	BasePort       *int       `json:"base_port" db:"base_port"`
+	HTTPPort       *int       `json:"http_port" db:"http_port"`
+	SOCKS5Port     *int       `json:"socks5_port" db:"socks5_port"`
 	ExpiresAt      *time.Time `json:"expires_at" db:"expires_at"`
 	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`

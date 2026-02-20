@@ -93,7 +93,7 @@ export default function OverviewPage() {
           <Activity className="w-4 h-4 text-green-400" />
           Online Devices
         </h2>
-        <Link href="/devices" className="text-sm text-brand-400 hover:text-brand-300 flex items-center gap-1">
+        <Link href="/connections" className="text-sm text-brand-400 hover:text-brand-300 flex items-center gap-1">
           View all <ChevronRight className="w-3 h-3" />
         </Link>
       </div>
@@ -119,7 +119,7 @@ export default function OverviewPage() {
               {onlineDevices.map(device => (
                 <tr key={device.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
                   <td className="px-4 py-2.5">
-                    <Link href={`/devices/${device.id}`} className="text-brand-400 hover:text-brand-300 font-medium">
+                    <Link href={`/connections/${device.id}`} className="text-brand-400 hover:text-brand-300 font-medium">
                       {device.name}
                     </Link>
                     <div className="text-xs text-zinc-600">{device.device_model}</div>
@@ -165,7 +165,7 @@ export default function OverviewPage() {
                 {offlineDevices.map(device => (
                   <tr key={device.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
                     <td className="px-4 py-2.5">
-                      <Link href={`/devices/${device.id}`} className="text-zinc-400 hover:text-zinc-300">
+                      <Link href={`/connections/${device.id}`} className="text-zinc-400 hover:text-zinc-300">
                         {device.name}
                       </Link>
                       <div className="text-xs text-zinc-600">{device.device_model}</div>

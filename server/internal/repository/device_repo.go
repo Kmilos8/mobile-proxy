@@ -29,7 +29,7 @@ func (r *DeviceRepository) Create(ctx context.Context, d *domain.Device) error {
 }
 
 func (r *DeviceRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Device, error) {
-	query := `SELECT id, name, android_id, status,
+	query := `SELECT id, name, description, android_id, status,
 		COALESCE(host(cellular_ip),'') as cellular_ip,
 		COALESCE(host(wifi_ip),'') as wifi_ip,
 		COALESCE(host(vpn_ip),'') as vpn_ip,
@@ -42,7 +42,7 @@ func (r *DeviceRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.D
 }
 
 func (r *DeviceRepository) GetByAndroidID(ctx context.Context, androidID string) (*domain.Device, error) {
-	query := `SELECT id, name, android_id, status,
+	query := `SELECT id, name, description, android_id, status,
 		COALESCE(host(cellular_ip),'') as cellular_ip,
 		COALESCE(host(wifi_ip),'') as wifi_ip,
 		COALESCE(host(vpn_ip),'') as vpn_ip,
@@ -55,7 +55,7 @@ func (r *DeviceRepository) GetByAndroidID(ctx context.Context, androidID string)
 }
 
 func (r *DeviceRepository) GetByName(ctx context.Context, name string) (*domain.Device, error) {
-	query := `SELECT id, name, android_id, status,
+	query := `SELECT id, name, description, android_id, status,
 		COALESCE(host(cellular_ip),'') as cellular_ip,
 		COALESCE(host(wifi_ip),'') as wifi_ip,
 		COALESCE(host(vpn_ip),'') as vpn_ip,
@@ -68,7 +68,7 @@ func (r *DeviceRepository) GetByName(ctx context.Context, name string) (*domain.
 }
 
 func (r *DeviceRepository) List(ctx context.Context) ([]domain.Device, error) {
-	query := `SELECT id, name, android_id, status,
+	query := `SELECT id, name, description, android_id, status,
 		COALESCE(host(cellular_ip),'') as cellular_ip,
 		COALESCE(host(wifi_ip),'') as wifi_ip,
 		COALESCE(host(vpn_ip),'') as vpn_ip,
@@ -122,7 +122,11 @@ func (r *DeviceRepository) SetVpnIP(ctx context.Context, id uuid.UUID, vpnIP str
 }
 
 func (r *DeviceRepository) GetNextBasePort(ctx context.Context) (int, error) {
-	query := `SELECT COALESCE(MAX(base_port), 29996) + 4 FROM devices`
+	query := `SELECT COALESCE(MAX(max_port), 29996) + 4 FROM (
+		SELECT MAX(base_port) AS max_port FROM devices
+		UNION ALL
+		SELECT MAX(base_port) AS max_port FROM proxy_connections
+	) sub`
 	var port int
 	err := r.db.Pool.QueryRow(ctx, query).Scan(&port)
 	if err != nil {
@@ -156,10 +160,16 @@ func (r *DeviceRepository) CountByStatus(ctx context.Context) (total int, online
 	return
 }
 
+func (r *DeviceRepository) UpdateNameDescription(ctx context.Context, id uuid.UUID, name, description string) error {
+	query := `UPDATE devices SET name = $2, description = $3, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, id, name, description)
+	return err
+}
+
 func (r *DeviceRepository) scanDevice(row pgx.Row) (*domain.Device, error) {
 	var d domain.Device
 	err := row.Scan(
-		&d.ID, &d.Name, &d.AndroidID, &d.Status,
+		&d.ID, &d.Name, &d.Description, &d.AndroidID, &d.Status,
 		&d.CellularIP, &d.WifiIP, &d.VpnIP,
 		&d.Carrier, &d.NetworkType, &d.BatteryLevel, &d.BatteryCharging, &d.SignalStrength,
 		&d.BasePort, &d.HTTPPort, &d.SOCKS5Port, &d.UDPRelayPort, &d.OVPNPort,
@@ -175,7 +185,7 @@ func (r *DeviceRepository) scanDevice(row pgx.Row) (*domain.Device, error) {
 func (r *DeviceRepository) scanDeviceRow(rows pgx.Rows) (*domain.Device, error) {
 	var d domain.Device
 	err := rows.Scan(
-		&d.ID, &d.Name, &d.AndroidID, &d.Status,
+		&d.ID, &d.Name, &d.Description, &d.AndroidID, &d.Status,
 		&d.CellularIP, &d.WifiIP, &d.VpnIP,
 		&d.Carrier, &d.NetworkType, &d.BatteryLevel, &d.BatteryCharging, &d.SignalStrength,
 		&d.BasePort, &d.HTTPPort, &d.SOCKS5Port, &d.UDPRelayPort, &d.OVPNPort,

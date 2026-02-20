@@ -3,15 +3,14 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Smartphone, LinkIcon, Users, LogOut } from 'lucide-react'
+import { LayoutDashboard, Smartphone, Users, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { clearAuth } from '@/lib/auth'
 import { useRouter } from 'next/navigation'
 
 const navItems = [
   { href: '/overview', label: 'Overview', icon: LayoutDashboard },
-  { href: '/devices', label: 'Devices', icon: Smartphone },
-  { href: '/connections', label: 'Connections', icon: LinkIcon },
+  { href: '/connections', label: 'Connections', icon: Smartphone },
   { href: '/customers', label: 'Customers', icon: Users },
 ]
 

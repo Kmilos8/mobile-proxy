@@ -45,6 +45,10 @@ func main() {
 		log.Printf("Tunnel push URL configured: %s", v)
 	}
 	connService := service.NewConnectionService(connRepo, deviceRepo)
+	connService.SetPortService(portService)
+	if v := os.Getenv("TUNNEL_PUSH_URL"); v != "" {
+		connService.SetTunnelPushURL(v)
+	}
 	bwRepo := repository.NewBandwidthRepository(db)
 	bwService := service.NewBandwidthService(bwRepo)
 
@@ -60,7 +64,7 @@ func main() {
 
 	// Handlers
 	customerHandler := handler.NewCustomerHandler(customerRepo)
-	vpnHandler := handler.NewVPNHandler(deviceService, vpnService)
+	vpnHandler := handler.NewVPNHandler(deviceService, vpnService, connService)
 	statsHandler := handler.NewStatsHandler(deviceRepo, connRepo, bwService)
 	rotationLinkHandler := handler.NewRotationLinkHandler(rotationLinkRepo, deviceService)
 	pairingHandler := handler.NewPairingHandler(pairingService)

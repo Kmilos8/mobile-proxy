@@ -60,6 +60,52 @@ func (h *DeviceHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"devices": devices})
 }
 
+func (h *DeviceHandler) Update(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device id"})
+		return
+	}
+
+	var body struct {
+		Name        *string `json:"name"`
+		Description *string `json:"description"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	device, err := h.deviceService.GetByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "device not found"})
+		return
+	}
+
+	name := device.Name
+	description := device.Description
+	if body.Name != nil {
+		name = *body.Name
+	}
+	if body.Description != nil {
+		description = *body.Description
+	}
+
+	if err := h.deviceService.UpdateNameDescription(c.Request.Context(), id, name, description); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Return updated device
+	updated, err := h.deviceService.GetByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, updated)
+}
+
 func (h *DeviceHandler) GetByID(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

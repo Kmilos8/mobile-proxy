@@ -423,13 +423,18 @@ func (s *tunnelServer) notifyConnected(deviceID, vpnIP string) {
 	}
 	defer resp.Body.Close()
 
-	// Parse base_port from API response to set up DNAT rules
+	// Parse base_port and connection_ports from API response to set up DNAT rules
 	var result struct {
-		BasePort int `json:"base_port"`
+		BasePort        int   `json:"base_port"`
+		ConnectionPorts []int `json:"connection_ports"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.BasePort > 0 {
 		setupDNAT(result.BasePort, vpnIP)
-		log.Printf("Notified API + DNAT setup: device %s vpn_ip=%s base_port=%d", deviceID, vpnIP, result.BasePort)
+		// Also set up DNAT for each connection's ports
+		for _, cp := range result.ConnectionPorts {
+			setupDNAT(cp, vpnIP)
+		}
+		log.Printf("Notified API + DNAT setup: device %s vpn_ip=%s base_port=%d conn_ports=%v", deviceID, vpnIP, result.BasePort, result.ConnectionPorts)
 	} else {
 		log.Printf("Notified API: device %s connected (status=%d, no DNAT: base_port=%d)", deviceID, resp.StatusCode, result.BasePort)
 	}
@@ -445,13 +450,17 @@ func (s *tunnelServer) notifyDisconnected(deviceID, vpnIP string) {
 	}
 	defer resp.Body.Close()
 
-	// Parse base_port from API response to tear down DNAT rules
+	// Parse base_port and connection_ports from API response to tear down DNAT rules
 	var result struct {
-		BasePort int `json:"base_port"`
+		BasePort        int   `json:"base_port"`
+		ConnectionPorts []int `json:"connection_ports"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.BasePort > 0 {
 		teardownDNAT(result.BasePort, vpnIP)
-		log.Printf("Notified API + DNAT teardown: device %s vpn_ip=%s base_port=%d", deviceID, vpnIP, result.BasePort)
+		for _, cp := range result.ConnectionPorts {
+			teardownDNAT(cp, vpnIP)
+		}
+		log.Printf("Notified API + DNAT teardown: device %s vpn_ip=%s base_port=%d conn_ports=%v", deviceID, vpnIP, result.BasePort, result.ConnectionPorts)
 	} else {
 		log.Printf("Notified API: device %s disconnected (status=%d)", deviceID, resp.StatusCode)
 	}
@@ -630,6 +639,8 @@ func (s *tunnelServer) startPushAPI() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/push-command", s.handlePushCommand)
+	mux.HandleFunc("/refresh-dnat", s.handleRefreshDNAT)
+	mux.HandleFunc("/teardown-dnat", s.handleTeardownDNAT)
 
 	log.Printf("Push API listening on port %d", pushPort)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", pushPort), mux); err != nil {
@@ -683,6 +694,56 @@ func (s *tunnelServer) handlePushCommand(w http.ResponseWriter, r *http.Request)
 	}
 
 	log.Printf("Pushed command %s (%s) to device %s", req.ID, req.Type, req.DeviceID)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"ok":true}`))
+}
+
+func (s *tunnelServer) handleRefreshDNAT(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		DeviceID string `json:"device_id"`
+		BasePort int    `json:"base_port"`
+		VpnIP    string `json:"vpn_ip"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	if req.BasePort > 0 && req.VpnIP != "" {
+		setupDNAT(req.BasePort, req.VpnIP)
+		log.Printf("Refresh DNAT: device=%s base_port=%d vpn_ip=%s", req.DeviceID, req.BasePort, req.VpnIP)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"ok":true}`))
+}
+
+func (s *tunnelServer) handleTeardownDNAT(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		DeviceID string `json:"device_id"`
+		BasePort int    `json:"base_port"`
+		VpnIP    string `json:"vpn_ip"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	if req.BasePort > 0 && req.VpnIP != "" {
+		teardownDNAT(req.BasePort, req.VpnIP)
+		log.Printf("Teardown DNAT: device=%s base_port=%d vpn_ip=%s", req.DeviceID, req.BasePort, req.VpnIP)
+	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"ok":true}`))
 }

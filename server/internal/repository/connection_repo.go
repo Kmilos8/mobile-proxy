@@ -17,77 +17,37 @@ func NewConnectionRepository(db *DB) *ConnectionRepository {
 }
 
 func (r *ConnectionRepository) Create(ctx context.Context, c *domain.ProxyConnection) error {
-	query := `INSERT INTO proxy_connections (id, device_id, customer_id, username, password_hash, ip_whitelist, bandwidth_limit, active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	query := `INSERT INTO proxy_connections (id, device_id, customer_id, username, password_hash, ip_whitelist, bandwidth_limit, active, base_port, http_port, socks5_port)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	_, err := r.db.Pool.Exec(ctx, query,
 		c.ID, c.DeviceID, c.CustomerID, c.Username, c.PasswordHash,
-		c.IPWhitelist, c.BandwidthLimit, c.Active)
+		c.IPWhitelist, c.BandwidthLimit, c.Active,
+		c.BasePort, c.HTTPPort, c.SOCKS5Port)
 	return err
 }
 
 func (r *ConnectionRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.ProxyConnection, error) {
 	query := `SELECT id, device_id, customer_id, username, password_hash, ip_whitelist,
-		bandwidth_limit, bandwidth_used, active, expires_at, created_at, updated_at
+		bandwidth_limit, bandwidth_used, active, base_port, http_port, socks5_port,
+		expires_at, created_at, updated_at
 		FROM proxy_connections WHERE id = $1`
-	var c domain.ProxyConnection
-	err := r.db.Pool.QueryRow(ctx, query, id).Scan(
-		&c.ID, &c.DeviceID, &c.CustomerID, &c.Username, &c.PasswordHash,
-		&c.IPWhitelist, &c.BandwidthLimit, &c.BandwidthUsed, &c.Active,
-		&c.ExpiresAt, &c.CreatedAt, &c.UpdatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("get connection: %w", err)
-	}
-	return &c, nil
+	return r.scanConnection(r.db.Pool.QueryRow(ctx, query, id))
 }
 
 func (r *ConnectionRepository) ListByDevice(ctx context.Context, deviceID uuid.UUID) ([]domain.ProxyConnection, error) {
 	query := `SELECT id, device_id, customer_id, username, password_hash, ip_whitelist,
-		bandwidth_limit, bandwidth_used, active, expires_at, created_at, updated_at
+		bandwidth_limit, bandwidth_used, active, base_port, http_port, socks5_port,
+		expires_at, created_at, updated_at
 		FROM proxy_connections WHERE device_id = $1 ORDER BY created_at DESC`
-	rows, err := r.db.Pool.Query(ctx, query, deviceID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var conns []domain.ProxyConnection
-	for rows.Next() {
-		var c domain.ProxyConnection
-		err := rows.Scan(
-			&c.ID, &c.DeviceID, &c.CustomerID, &c.Username, &c.PasswordHash,
-			&c.IPWhitelist, &c.BandwidthLimit, &c.BandwidthUsed, &c.Active,
-			&c.ExpiresAt, &c.CreatedAt, &c.UpdatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("scan connection: %w", err)
-		}
-		conns = append(conns, c)
-	}
-	return conns, nil
+	return r.scanConnections(ctx, query, deviceID)
 }
 
 func (r *ConnectionRepository) List(ctx context.Context) ([]domain.ProxyConnection, error) {
 	query := `SELECT id, device_id, customer_id, username, password_hash, ip_whitelist,
-		bandwidth_limit, bandwidth_used, active, expires_at, created_at, updated_at
+		bandwidth_limit, bandwidth_used, active, base_port, http_port, socks5_port,
+		expires_at, created_at, updated_at
 		FROM proxy_connections ORDER BY created_at DESC`
-	rows, err := r.db.Pool.Query(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var conns []domain.ProxyConnection
-	for rows.Next() {
-		var c domain.ProxyConnection
-		err := rows.Scan(
-			&c.ID, &c.DeviceID, &c.CustomerID, &c.Username, &c.PasswordHash,
-			&c.IPWhitelist, &c.BandwidthLimit, &c.BandwidthUsed, &c.Active,
-			&c.ExpiresAt, &c.CreatedAt, &c.UpdatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("scan connection: %w", err)
-		}
-		conns = append(conns, c)
-	}
-	return conns, nil
+	return r.scanConnections(ctx, query)
 }
 
 func (r *ConnectionRepository) UpdateActive(ctx context.Context, id uuid.UUID, active bool) error {
@@ -111,15 +71,39 @@ func (r *ConnectionRepository) CountActive(ctx context.Context) (int, error) {
 
 func (r *ConnectionRepository) GetByUsername(ctx context.Context, username string) (*domain.ProxyConnection, error) {
 	query := `SELECT id, device_id, customer_id, username, password_hash, ip_whitelist,
-		bandwidth_limit, bandwidth_used, active, expires_at, created_at, updated_at
+		bandwidth_limit, bandwidth_used, active, base_port, http_port, socks5_port,
+		expires_at, created_at, updated_at
 		FROM proxy_connections WHERE username = $1 AND active = TRUE`
+	return r.scanConnection(r.db.Pool.QueryRow(ctx, query, username))
+}
+
+func (r *ConnectionRepository) scanConnection(row interface{ Scan(dest ...interface{}) error }) (*domain.ProxyConnection, error) {
 	var c domain.ProxyConnection
-	err := r.db.Pool.QueryRow(ctx, query, username).Scan(
+	err := row.Scan(
 		&c.ID, &c.DeviceID, &c.CustomerID, &c.Username, &c.PasswordHash,
 		&c.IPWhitelist, &c.BandwidthLimit, &c.BandwidthUsed, &c.Active,
+		&c.BasePort, &c.HTTPPort, &c.SOCKS5Port,
 		&c.ExpiresAt, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("get connection by username: %w", err)
+		return nil, fmt.Errorf("scan connection: %w", err)
 	}
 	return &c, nil
+}
+
+func (r *ConnectionRepository) scanConnections(ctx context.Context, query string, args ...interface{}) ([]domain.ProxyConnection, error) {
+	rows, err := r.db.Pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var conns []domain.ProxyConnection
+	for rows.Next() {
+		c, err := r.scanConnection(rows)
+		if err != nil {
+			return nil, err
+		}
+		conns = append(conns, *c)
+	}
+	return conns, nil
 }

@@ -33,6 +33,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 export interface Device {
   id: string
   name: string
+  description: string
   android_id: string
   status: 'online' | 'offline' | 'rotating' | 'error'
   cellular_ip: string
@@ -63,6 +64,9 @@ export interface ProxyConnection {
   bandwidth_limit: number
   bandwidth_used: number
   active: boolean
+  base_port: number | null
+  http_port: number | null
+  socks5_port: number | null
   expires_at: string | null
   created_at: string
 }
@@ -154,6 +158,8 @@ export const api = {
       request<{ devices: Device[] }>('/devices', { token }),
     get: (token: string, id: string) =>
       request<Device>(`/devices/${id}`, { token }),
+    update: (token: string, id: string, data: { name?: string; description?: string }) =>
+      request<Device>(`/devices/${id}`, { method: 'PATCH', token, body: data }),
     sendCommand: (token: string, id: string, type: string, payload?: string) =>
       request(`/devices/${id}/commands`, { method: 'POST', token, body: { type, payload: payload || '{}' } }),
     ipHistory: (token: string, id: string) =>
