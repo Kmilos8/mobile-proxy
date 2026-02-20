@@ -8,7 +8,7 @@ const STATUS_COLORS: Record<string, string> = {
   offline: 'bg-red-500',
   rotating: 'bg-yellow-500',
   error: 'bg-red-700',
-  unknown: 'bg-zinc-700',
+  unknown: 'bg-zinc-800',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -20,72 +20,62 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const BUCKET_MINUTES = 5
-const BUCKETS_PER_DAY = (24 * 60) / BUCKET_MINUTES // 288
+const BUCKETS_PER_HOUR = 60 / BUCKET_MINUTES // 12
 
 interface Bucket {
   index: number
+  hour: number
   status: string
-  startTime: string // HH:MM
-  endTime: string   // HH:MM
+  startTime: string
+  endTime: string
 }
 
 function buildBuckets(segments: UptimeSegment[]): Bucket[] {
   const buckets: Bucket[] = []
 
-  if (!segments || segments.length === 0) {
-    for (let i = 0; i < BUCKETS_PER_DAY; i++) {
-      const startMin = i * BUCKET_MINUTES
-      const endMin = startMin + BUCKET_MINUTES
-      buckets.push({
-        index: i,
-        status: 'unknown',
-        startTime: formatMinutes(startMin),
-        endTime: formatMinutes(endMin),
-      })
-    }
-    return buckets
-  }
+  const parsed = segments?.length
+    ? segments.map(s => ({
+        status: s.status,
+        start: new Date(s.start_time).getTime(),
+        end: new Date(s.end_time).getTime(),
+      }))
+    : null
 
-  // Parse segment times once
-  const parsed = segments.map(s => ({
-    status: s.status,
-    start: new Date(s.start_time).getTime(),
-    end: new Date(s.end_time).getTime(),
-  }))
+  const dayStart = parsed
+    ? new Date(new Date(segments[0].start_time).toDateString()).getTime()
+    : 0
 
-  // Get the day start from the first segment
-  const firstStart = new Date(segments[0].start_time)
-  const dayStart = new Date(firstStart.getFullYear(), firstStart.getMonth(), firstStart.getDate()).getTime()
-
-  for (let i = 0; i < BUCKETS_PER_DAY; i++) {
+  for (let i = 0; i < 24 * BUCKETS_PER_HOUR; i++) {
     const startMin = i * BUCKET_MINUTES
     const endMin = startMin + BUCKET_MINUTES
-    const bucketMid = dayStart + (startMin + BUCKET_MINUTES / 2) * 60 * 1000
+    const hour = Math.floor(startMin / 60)
 
-    // Find which segment covers the midpoint of this bucket
     let status = 'unknown'
-    for (const seg of parsed) {
-      if (bucketMid >= seg.start && bucketMid < seg.end) {
-        status = seg.status
-        break
+    if (parsed) {
+      const bucketMid = dayStart + (startMin + BUCKET_MINUTES / 2) * 60 * 1000
+      for (const seg of parsed) {
+        if (bucketMid >= seg.start && bucketMid < seg.end) {
+          status = seg.status
+          break
+        }
       }
     }
 
+    const h = Math.floor(startMin / 60)
+    const m = startMin % 60
+    const h2 = Math.floor(endMin / 60)
+    const m2 = endMin % 60
+
     buckets.push({
       index: i,
+      hour,
       status,
-      startTime: formatMinutes(startMin),
-      endTime: formatMinutes(endMin),
+      startTime: `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`,
+      endTime: `${h2.toString().padStart(2, '0')}:${m2.toString().padStart(2, '0')}`,
     })
   }
 
   return buckets
-}
-
-function formatMinutes(totalMin: number): string {
-  const h = Math.floor(totalMin / 60)
-  const m = totalMin % 60
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
 }
 
 interface UptimeTimelineProps {
@@ -97,7 +87,13 @@ export default function UptimeTimeline({ segments }: UptimeTimelineProps) {
 
   const buckets = buildBuckets(segments)
 
-  // Calculate uptime stats
+  // Group buckets by hour
+  const hours: Bucket[][] = []
+  for (let h = 0; h < 24; h++) {
+    hours.push(buckets.filter(b => b.hour === h))
+  }
+
+  // Stats
   const onlineBuckets = buckets.filter(b => b.status === 'online').length
   const knownBuckets = buckets.filter(b => b.status !== 'unknown').length
   const uptimeHours = ((onlineBuckets * BUCKET_MINUTES) / 60).toFixed(1)
@@ -109,50 +105,43 @@ export default function UptimeTimeline({ segments }: UptimeTimelineProps) {
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
       <h3 className="text-sm font-medium text-zinc-400 mb-4">Uptime Timeline</h3>
 
-      {/* Timeline - 288 five-minute blocks */}
-      <div className="relative">
-        <div className="flex h-8 rounded overflow-hidden">
-          {buckets.map((bucket) => {
-            const color = STATUS_COLORS[bucket.status] || STATUS_COLORS.unknown
-            return (
-              <div
-                key={bucket.index}
-                className={`${color} cursor-pointer transition-opacity border-r border-r-zinc-900/20 last:border-r-0 ${hoveredIdx !== null && hoveredIdx !== bucket.index ? 'opacity-50' : ''}`}
-                style={{ width: `${100 / BUCKETS_PER_DAY}%` }}
-                onMouseEnter={() => setHoveredIdx(bucket.index)}
-                onMouseLeave={() => setHoveredIdx(null)}
-              />
-            )
-          })}
-        </div>
-
-        {/* Tooltip */}
-        {hoveredIdx !== null && buckets[hoveredIdx] && (
-          <div
-            className="absolute top-10 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs shadow-lg z-10 whitespace-nowrap pointer-events-none"
-            style={{
-              left: `${(hoveredIdx / BUCKETS_PER_DAY) * 100}%`,
-              transform: hoveredIdx > BUCKETS_PER_DAY * 0.75 ? 'translateX(-100%)' : hoveredIdx > BUCKETS_PER_DAY * 0.25 ? 'translateX(-50%)' : undefined,
-            }}
-          >
-            <div className="font-medium text-zinc-200">
-              {STATUS_LABELS[buckets[hoveredIdx].status] || buckets[hoveredIdx].status}
+      {/* Grid: 24 hour columns, each with 12 squares */}
+      <div className="relative grid grid-cols-24 gap-x-1" style={{ gridTemplateColumns: 'repeat(24, 1fr)' }}>
+        {hours.map((hourBuckets, h) => (
+          <div key={h} className="flex flex-col items-center">
+            {/* 12 squares per hour: 2 rows x 6 cols */}
+            <div className="grid grid-cols-6 gap-[2px] w-full">
+              {hourBuckets.map((bucket) => {
+                const color = STATUS_COLORS[bucket.status] || STATUS_COLORS.unknown
+                const isHovered = hoveredIdx === bucket.index
+                return (
+                  <div
+                    key={bucket.index}
+                    className={`aspect-square rounded-[2px] cursor-pointer transition-all ${color} ${
+                      hoveredIdx !== null && !isHovered ? 'opacity-40' : ''
+                    } ${isHovered ? 'ring-1 ring-white scale-125 z-10' : ''}`}
+                    onMouseEnter={() => setHoveredIdx(bucket.index)}
+                    onMouseLeave={() => setHoveredIdx(null)}
+                  />
+                )
+              })}
             </div>
-            <div className="text-zinc-400 mt-1">
-              {buckets[hoveredIdx].startTime} - {buckets[hoveredIdx].endTime}
-            </div>
+            {/* Hour label */}
+            <span className="text-[9px] text-zinc-600 mt-1 leading-none">{h}</span>
           </div>
-        )}
+        ))}
       </div>
 
-      {/* Hour labels */}
-      <div className="flex justify-between mt-1 text-xs text-zinc-600">
-        <span>0:00</span>
-        <span>6:00</span>
-        <span>12:00</span>
-        <span>18:00</span>
-        <span>24:00</span>
-      </div>
+      {/* Tooltip */}
+      {hoveredIdx !== null && buckets[hoveredIdx] && (
+        <div className="mt-2 text-xs text-zinc-400">
+          <span className="font-medium text-zinc-200">
+            {STATUS_LABELS[buckets[hoveredIdx].status]}
+          </span>
+          {' '}
+          {buckets[hoveredIdx].startTime} - {buckets[hoveredIdx].endTime}
+        </div>
+      )}
 
       {/* Legend and summary */}
       <div className="flex items-center justify-between mt-4">
@@ -170,7 +159,7 @@ export default function UptimeTimeline({ segments }: UptimeTimelineProps) {
             <span className="text-zinc-400">Rotating</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded bg-zinc-700" />
+            <div className="w-3 h-3 rounded bg-zinc-800 border border-zinc-700" />
             <span className="text-zinc-400">Unknown</span>
           </div>
         </div>
