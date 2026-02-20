@@ -32,3 +32,9 @@ postgres_data/
 # Go
 *.test
 *.out
+
+# Android
+android/.gradle/
+android/app/build/
+android/local.properties
+*.apk
