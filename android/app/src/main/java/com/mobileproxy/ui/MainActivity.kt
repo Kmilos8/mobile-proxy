@@ -71,7 +71,6 @@ class MainActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_main)
 
-        val serverUrlEdit = findViewById<EditText>(R.id.editServerUrl)
         updateServerUrlFromCredentials()
 
         val statusText = findViewById<TextView>(R.id.textStatus)
