@@ -8,7 +8,7 @@ const STATUS_COLORS: Record<string, string> = {
   offline: 'bg-red-500',
   rotating: 'bg-yellow-500',
   error: 'bg-red-700',
-  unknown: 'bg-zinc-600',
+  unknown: 'bg-zinc-700',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -19,17 +19,73 @@ const STATUS_LABELS: Record<string, string> = {
   unknown: 'Unknown',
 }
 
-function formatDuration(ms: number): string {
-  const totalSec = Math.floor(ms / 1000)
-  const hours = Math.floor(totalSec / 3600)
-  const minutes = Math.floor((totalSec % 3600) / 60)
-  if (hours > 0) return `${hours}h ${minutes}m`
-  return `${minutes}m`
+const BUCKET_MINUTES = 5
+const BUCKETS_PER_DAY = (24 * 60) / BUCKET_MINUTES // 288
+
+interface Bucket {
+  index: number
+  status: string
+  startTime: string // HH:MM
+  endTime: string   // HH:MM
 }
 
-function formatTime(dateStr: string): string {
-  const d = new Date(dateStr)
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+function buildBuckets(segments: UptimeSegment[]): Bucket[] {
+  const buckets: Bucket[] = []
+
+  if (!segments || segments.length === 0) {
+    for (let i = 0; i < BUCKETS_PER_DAY; i++) {
+      const startMin = i * BUCKET_MINUTES
+      const endMin = startMin + BUCKET_MINUTES
+      buckets.push({
+        index: i,
+        status: 'unknown',
+        startTime: formatMinutes(startMin),
+        endTime: formatMinutes(endMin),
+      })
+    }
+    return buckets
+  }
+
+  // Parse segment times once
+  const parsed = segments.map(s => ({
+    status: s.status,
+    start: new Date(s.start_time).getTime(),
+    end: new Date(s.end_time).getTime(),
+  }))
+
+  // Get the day start from the first segment
+  const firstStart = new Date(segments[0].start_time)
+  const dayStart = new Date(firstStart.getFullYear(), firstStart.getMonth(), firstStart.getDate()).getTime()
+
+  for (let i = 0; i < BUCKETS_PER_DAY; i++) {
+    const startMin = i * BUCKET_MINUTES
+    const endMin = startMin + BUCKET_MINUTES
+    const bucketMid = dayStart + (startMin + BUCKET_MINUTES / 2) * 60 * 1000
+
+    // Find which segment covers the midpoint of this bucket
+    let status = 'unknown'
+    for (const seg of parsed) {
+      if (bucketMid >= seg.start && bucketMid < seg.end) {
+        status = seg.status
+        break
+      }
+    }
+
+    buckets.push({
+      index: i,
+      status,
+      startTime: formatMinutes(startMin),
+      endTime: formatMinutes(endMin),
+    })
+  }
+
+  return buckets
+}
+
+function formatMinutes(totalMin: number): string {
+  const h = Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
 }
 
 interface UptimeTimelineProps {
@@ -39,52 +95,31 @@ interface UptimeTimelineProps {
 export default function UptimeTimeline({ segments }: UptimeTimelineProps) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
 
-  if (!segments || segments.length === 0) {
-    return (
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-        <h3 className="text-sm font-medium text-zinc-400 mb-4">Uptime Timeline</h3>
-        <div className="text-sm text-zinc-500 text-center py-4">No uptime data available for this date</div>
-      </div>
-    )
-  }
-
-  // Calculate total day span from segments
-  const dayStart = new Date(segments[0].start_time).getTime()
-  const dayEnd = new Date(segments[segments.length - 1].end_time).getTime()
-  const totalSpan = dayEnd - dayStart
+  const buckets = buildBuckets(segments)
 
   // Calculate uptime stats
-  let uptimeMs = 0
-  let totalMs = 0
-  for (const seg of segments) {
-    const dur = new Date(seg.end_time).getTime() - new Date(seg.start_time).getTime()
-    totalMs += dur
-    if (seg.status === 'online') {
-      uptimeMs += dur
-    }
-  }
-  const uptimeHours = (uptimeMs / 3600000).toFixed(1)
-  const uptimePercent = totalMs > 0 ? ((uptimeMs / totalMs) * 100).toFixed(1) : '0.0'
+  const onlineBuckets = buckets.filter(b => b.status === 'online').length
+  const knownBuckets = buckets.filter(b => b.status !== 'unknown').length
+  const uptimeHours = ((onlineBuckets * BUCKET_MINUTES) / 60).toFixed(1)
+  const uptimePercent = knownBuckets > 0
+    ? ((onlineBuckets / knownBuckets) * 100).toFixed(1)
+    : '0.0'
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
       <h3 className="text-sm font-medium text-zinc-400 mb-4">Uptime Timeline</h3>
 
-      {/* Timeline bar */}
+      {/* Timeline - 288 five-minute blocks */}
       <div className="relative">
         <div className="flex h-8 rounded overflow-hidden">
-          {segments.map((seg, idx) => {
-            const start = new Date(seg.start_time).getTime()
-            const end = new Date(seg.end_time).getTime()
-            const width = totalSpan > 0 ? ((end - start) / totalSpan) * 100 : 0
-            const color = STATUS_COLORS[seg.status] || STATUS_COLORS.unknown
-
+          {buckets.map((bucket) => {
+            const color = STATUS_COLORS[bucket.status] || STATUS_COLORS.unknown
             return (
               <div
-                key={idx}
-                className={`${color} relative cursor-pointer transition-opacity ${hoveredIdx !== null && hoveredIdx !== idx ? 'opacity-60' : ''}`}
-                style={{ width: `${width}%`, minWidth: width > 0 ? '2px' : '0' }}
-                onMouseEnter={() => setHoveredIdx(idx)}
+                key={bucket.index}
+                className={`${color} cursor-pointer transition-opacity border-r border-r-zinc-900/20 last:border-r-0 ${hoveredIdx !== null && hoveredIdx !== bucket.index ? 'opacity-50' : ''}`}
+                style={{ width: `${100 / BUCKETS_PER_DAY}%` }}
+                onMouseEnter={() => setHoveredIdx(bucket.index)}
                 onMouseLeave={() => setHoveredIdx(null)}
               />
             )
@@ -92,16 +127,19 @@ export default function UptimeTimeline({ segments }: UptimeTimelineProps) {
         </div>
 
         {/* Tooltip */}
-        {hoveredIdx !== null && segments[hoveredIdx] && (
-          <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs shadow-lg z-10 whitespace-nowrap">
+        {hoveredIdx !== null && buckets[hoveredIdx] && (
+          <div
+            className="absolute top-10 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs shadow-lg z-10 whitespace-nowrap pointer-events-none"
+            style={{
+              left: `${(hoveredIdx / BUCKETS_PER_DAY) * 100}%`,
+              transform: hoveredIdx > BUCKETS_PER_DAY * 0.75 ? 'translateX(-100%)' : hoveredIdx > BUCKETS_PER_DAY * 0.25 ? 'translateX(-50%)' : undefined,
+            }}
+          >
             <div className="font-medium text-zinc-200">
-              {STATUS_LABELS[segments[hoveredIdx].status] || segments[hoveredIdx].status}
+              {STATUS_LABELS[buckets[hoveredIdx].status] || buckets[hoveredIdx].status}
             </div>
             <div className="text-zinc-400 mt-1">
-              {formatTime(segments[hoveredIdx].start_time)} - {formatTime(segments[hoveredIdx].end_time)}
-            </div>
-            <div className="text-zinc-500">
-              Duration: {formatDuration(new Date(segments[hoveredIdx].end_time).getTime() - new Date(segments[hoveredIdx].start_time).getTime())}
+              {buckets[hoveredIdx].startTime} - {buckets[hoveredIdx].endTime}
             </div>
           </div>
         )}
@@ -132,7 +170,7 @@ export default function UptimeTimeline({ segments }: UptimeTimelineProps) {
             <span className="text-zinc-400">Rotating</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded bg-zinc-600" />
+            <div className="w-3 h-3 rounded bg-zinc-700" />
             <span className="text-zinc-400">Unknown</span>
           </div>
         </div>
