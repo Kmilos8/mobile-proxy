@@ -52,16 +52,16 @@ func generateAuthToken() string {
 	return hex.EncodeToString(b)
 }
 
-func (s *PairingService) CreateCode(ctx context.Context, expiresInHours int, createdBy *uuid.UUID) (*domain.CreatePairingCodeResponse, error) {
-	if expiresInHours <= 0 {
-		expiresInHours = 24
+func (s *PairingService) CreateCode(ctx context.Context, expiresInMinutes int, createdBy *uuid.UUID) (*domain.CreatePairingCodeResponse, error) {
+	if expiresInMinutes <= 0 {
+		expiresInMinutes = 5
 	}
 
 	pc := &domain.PairingCode{
 		ID:              uuid.New(),
 		Code:            generatePairingCode(),
 		DeviceAuthToken: generateAuthToken(),
-		ExpiresAt:       time.Now().Add(time.Duration(expiresInHours) * time.Hour),
+		ExpiresAt:       time.Now().Add(time.Duration(expiresInMinutes) * time.Minute),
 		CreatedBy:       createdBy,
 	}
 

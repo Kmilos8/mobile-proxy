@@ -115,6 +115,12 @@ class MainActivity : AppCompatActivity() {
             setupLauncher.launch(Intent(this, SetupActivity::class.java))
         }
 
+        findViewById<Button>(R.id.buttonUnpair).setOnClickListener {
+            credentialManager.clear()
+            statusText.text = "Status: Unpaired"
+            pairingLauncher.launch(Intent(this, PairingActivity::class.java))
+        }
+
         findViewById<Button>(R.id.buttonChangeIp).setOnClickListener {
             statusText.text = "Status: Changing IP..."
             scope.launch {

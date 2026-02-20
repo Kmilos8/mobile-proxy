@@ -184,9 +184,9 @@ export const api = {
   pairingCodes: {
     list: (token: string) =>
       request<{ pairing_codes: PairingCode[] }>('/pairing-codes', { token }),
-    create: (token: string, expiresInHours?: number) =>
+    create: (token: string, expiresInMinutes?: number) =>
       request<{ id: string; code: string; expires_at: string }>('/pairing-codes', {
-        method: 'POST', token, body: { expires_in_hours: expiresInHours || 24 }
+        method: 'POST', token, body: { expires_in_minutes: expiresInMinutes || 5 }
       }),
     delete: (token: string, id: string) =>
       request(`/pairing-codes/${id}`, { method: 'DELETE', token }),

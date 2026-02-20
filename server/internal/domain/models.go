@@ -203,7 +203,7 @@ type CommandRequest struct {
 }
 
 type CreatePairingCodeRequest struct {
-	ExpiresInHours int `json:"expires_in_hours"`
+	ExpiresInMinutes int `json:"expires_in_minutes"`
 }
 
 type CreatePairingCodeResponse struct {

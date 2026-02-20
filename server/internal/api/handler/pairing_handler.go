@@ -21,8 +21,8 @@ func NewPairingHandler(pairingService *service.PairingService) *PairingHandler {
 func (h *PairingHandler) CreateCode(c *gin.Context) {
 	var req domain.CreatePairingCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		// Allow empty body — default to 24h
-		req.ExpiresInHours = 24
+		// Allow empty body — default to 5 minutes
+		req.ExpiresInMinutes = 5
 	}
 
 	// Get user ID from JWT context
@@ -33,7 +33,7 @@ func (h *PairingHandler) CreateCode(c *gin.Context) {
 		}
 	}
 
-	resp, err := h.pairingService.CreateCode(c.Request.Context(), req.ExpiresInHours, createdBy)
+	resp, err := h.pairingService.CreateCode(c.Request.Context(), req.ExpiresInMinutes, createdBy)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
