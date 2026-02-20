@@ -115,9 +115,18 @@ func (s *DeviceService) Heartbeat(ctx context.Context, deviceID uuid.UUID, req *
 		return nil, fmt.Errorf("get device: %w", err)
 	}
 
-	// Log status transition if changed (device was not online, heartbeat sets it online)
-	if s.statusLogRepo != nil && device.Status != domain.DeviceStatusOnline {
-		_ = s.statusLogRepo.Insert(ctx, deviceID, string(domain.DeviceStatusOnline), string(device.Status), time.Now().UTC())
+	// Log status transition
+	if s.statusLogRepo != nil {
+		now := time.Now().UTC()
+		if device.Status != domain.DeviceStatusOnline {
+			// Device was not online, heartbeat sets it online — log the transition
+			_ = s.statusLogRepo.Insert(ctx, deviceID, string(domain.DeviceStatusOnline), string(device.Status), now)
+		} else {
+			// Device already online — ensure there's at least one log entry for today
+			if hasLogs, err := s.statusLogRepo.HasLogsForDate(ctx, deviceID, now); err == nil && !hasLogs {
+				_ = s.statusLogRepo.Insert(ctx, deviceID, string(domain.DeviceStatusOnline), string(domain.DeviceStatusOnline), now)
+			}
+		}
 	}
 
 	// Update heartbeat

@@ -23,6 +23,15 @@ func (r *StatusLogRepository) Insert(ctx context.Context, deviceID uuid.UUID, st
 	return err
 }
 
+func (r *StatusLogRepository) HasLogsForDate(ctx context.Context, deviceID uuid.UUID, date time.Time) (bool, error) {
+	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, 0, 1)
+	query := `SELECT EXISTS(SELECT 1 FROM device_status_logs WHERE device_id = $1 AND changed_at >= $2 AND changed_at < $3)`
+	var exists bool
+	err := r.db.Pool.QueryRow(ctx, query, deviceID, start, end).Scan(&exists)
+	return exists, err
+}
+
 func (r *StatusLogRepository) GetByDeviceAndDate(ctx context.Context, deviceID uuid.UUID, date time.Time) ([]domain.DeviceStatusLog, error) {
 	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(0, 0, 1)
