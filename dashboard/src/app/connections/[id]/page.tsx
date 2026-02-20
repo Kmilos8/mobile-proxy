@@ -20,7 +20,7 @@ import UptimeTimeline from '@/components/UptimeTimeline'
 
 type SidebarTab = 'primary' | 'advanced' | 'change-ip' | 'history' | 'metrics' | 'usage'
 
-const SERVER_HOST = process.env.NEXT_PUBLIC_SERVER_HOST || '178.156.240.184'
+const SERVER_HOST = process.env.NEXT_PUBLIC_SERVER_HOST || '178.156.210.156'
 
 export default function ConnectionDetailPage() {
   const params = useParams()
@@ -509,7 +509,7 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
                   <CopyField label="IP" value={serverHost} copyId={`ip-${conn.id}`} copyToClipboard={copyToClipboard} copiedId={copiedId} mono />
                   <CopyField label="Port" value={String(port)} copyId={`port-${conn.id}`} copyToClipboard={copyToClipboard} copiedId={copiedId} mono />
                   <CopyField label="Username" value={conn.username} copyId={`user-${conn.id}`} copyToClipboard={copyToClipboard} copiedId={copiedId} mono />
-                  <CopyField label="Password" value={conn.password || '••••••'} copyId={`pass-${conn.id}`} copyToClipboard={copyToClipboard} copiedId={copiedId} mono />
+                  <CopyField label="Password" value={conn.password || ''} copyId={`pass-${conn.id}`} copyToClipboard={copyToClipboard} copiedId={copiedId} mono />
 
                   {/* Copy All button */}
                   <div className="pt-2 mt-2 border-t border-zinc-800/50">

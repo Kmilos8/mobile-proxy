@@ -103,15 +103,34 @@ func (s *ConnectionService) Create(ctx context.Context, req *domain.CreateConnec
 }
 
 func (s *ConnectionService) GetByID(ctx context.Context, id uuid.UUID) (*domain.ProxyConnection, error) {
-	return s.connRepo.GetByID(ctx, id)
+	conn, err := s.connRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	conn.Password = conn.PasswordPlain
+	return conn, nil
 }
 
 func (s *ConnectionService) ListByDevice(ctx context.Context, deviceID uuid.UUID) ([]domain.ProxyConnection, error) {
-	return s.connRepo.ListByDevice(ctx, deviceID)
+	conns, err := s.connRepo.ListByDevice(ctx, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range conns {
+		conns[i].Password = conns[i].PasswordPlain
+	}
+	return conns, nil
 }
 
 func (s *ConnectionService) List(ctx context.Context) ([]domain.ProxyConnection, error) {
-	return s.connRepo.List(ctx)
+	conns, err := s.connRepo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range conns {
+		conns[i].Password = conns[i].PasswordPlain
+	}
+	return conns, nil
 }
 
 func (s *ConnectionService) SetActive(ctx context.Context, id uuid.UUID, active bool) error {
