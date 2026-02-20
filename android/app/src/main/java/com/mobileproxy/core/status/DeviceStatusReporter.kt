@@ -10,6 +10,7 @@ import com.mobileproxy.core.commands.CommandExecutor
 import com.mobileproxy.core.commands.DeviceCommand
 import com.mobileproxy.core.network.NetworkManager
 import com.mobileproxy.core.proxy.HttpProxyServer
+import com.mobileproxy.core.proxy.ProxyCredentialStore
 import com.mobileproxy.core.proxy.Socks5ProxyServer
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
@@ -19,7 +20,11 @@ import java.net.URL
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class HeartbeatResponse(val commands: List<DeviceCommand> = emptyList())
+data class ProxyCredentialResponse(val username: String = "", val password: String = "")
+data class HeartbeatResponse(
+    val commands: List<DeviceCommand> = emptyList(),
+    val credentials: List<ProxyCredentialResponse> = emptyList()
+)
 
 data class HeartbeatPayload(
     val cellular_ip: String,
@@ -40,7 +45,8 @@ class DeviceStatusReporter @Inject constructor(
     private val networkManager: NetworkManager,
     private val httpProxy: HttpProxyServer,
     private val socks5Proxy: Socks5ProxyServer,
-    private val commandExecutor: CommandExecutor
+    private val commandExecutor: CommandExecutor,
+    private val credentialStore: ProxyCredentialStore
 ) {
     companion object {
         private const val TAG = "StatusReporter"
@@ -123,6 +129,14 @@ class DeviceStatusReporter @Inject constructor(
                     scope?.launch {
                         val result = commandExecutor.execute(command)
                         reportCommandResult(command.id, result)
+                    }
+                }
+
+                // Sync proxy credentials
+                heartbeatResponse?.credentials?.let { creds ->
+                    if (creds.isNotEmpty()) {
+                        credentialStore.update(creds.map { it.username to it.password })
+                        Log.d(TAG, "Synced ${creds.size} proxy credentials")
                     }
                 }
             } else {

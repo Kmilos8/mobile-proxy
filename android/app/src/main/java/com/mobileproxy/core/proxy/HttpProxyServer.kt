@@ -1,5 +1,6 @@
 package com.mobileproxy.core.proxy
 
+import android.util.Base64
 import android.util.Log
 import com.mobileproxy.core.network.NetworkManager
 import com.mobileproxy.service.ProxyVpnService
@@ -15,16 +16,21 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * HTTP CONNECT proxy server.
+ * HTTP CONNECT proxy server with Proxy-Authorization (Basic) authentication.
  * Accepts connections on the VPN interface and forwards them through cellular.
  */
 @Singleton
 class HttpProxyServer @Inject constructor(
-    private val networkManager: NetworkManager
+    private val networkManager: NetworkManager,
+    private val credentialStore: ProxyCredentialStore
 ) {
     companion object {
         private const val TAG = "HttpProxyServer"
         private const val BUFFER_SIZE = 32768
+        private const val AUTH_RESPONSE = "HTTP/1.1 407 Proxy Authentication Required\r\n" +
+                "Proxy-Authenticate: Basic realm=\"MobileProxy\"\r\n" +
+                "Content-Length: 0\r\n" +
+                "\r\n"
     }
 
     private var serverSocket: ServerSocket? = null
@@ -66,10 +72,57 @@ class HttpProxyServer @Inject constructor(
             val reader = BufferedReader(InputStreamReader(clientSocket.getInputStream()))
             val requestLine = reader.readLine() ?: return
 
+            // Read all headers
+            val headers = mutableListOf<String>()
+            while (true) {
+                val line = reader.readLine()
+                if (line.isNullOrEmpty()) break
+                headers.add(line)
+            }
+
+            // Check Proxy-Authorization if credentials are configured
+            if (credentialStore.hasCredentials()) {
+                val authHeader = headers.find {
+                    it.startsWith("Proxy-Authorization:", ignoreCase = true)
+                }
+
+                if (authHeader == null) {
+                    clientSocket.getOutputStream().write(AUTH_RESPONSE.toByteArray())
+                    return
+                }
+
+                val authValue = authHeader.substringAfter(":").trim()
+                if (!authValue.startsWith("Basic ", ignoreCase = true)) {
+                    clientSocket.getOutputStream().write(AUTH_RESPONSE.toByteArray())
+                    return
+                }
+
+                val decoded = try {
+                    String(Base64.decode(authValue.substring(6), Base64.DEFAULT))
+                } catch (e: Exception) {
+                    clientSocket.getOutputStream().write(AUTH_RESPONSE.toByteArray())
+                    return
+                }
+
+                val colonIdx = decoded.indexOf(':')
+                if (colonIdx < 0) {
+                    clientSocket.getOutputStream().write(AUTH_RESPONSE.toByteArray())
+                    return
+                }
+
+                val username = decoded.substring(0, colonIdx)
+                val password = decoded.substring(colonIdx + 1)
+
+                if (!credentialStore.validate(username, password)) {
+                    clientSocket.getOutputStream().write(AUTH_RESPONSE.toByteArray())
+                    return
+                }
+            }
+
             if (requestLine.startsWith("CONNECT")) {
-                handleConnect(clientSocket, requestLine, reader)
+                handleConnect(clientSocket, requestLine)
             } else {
-                handlePlainHttp(clientSocket, requestLine, reader)
+                handlePlainHttp(clientSocket, requestLine, headers)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Client error", e)
@@ -113,8 +166,7 @@ class HttpProxyServer @Inject constructor(
 
     private suspend fun handleConnect(
         clientSocket: Socket,
-        requestLine: String,
-        reader: BufferedReader
+        requestLine: String
     ) {
         // Parse CONNECT host:port
         val parts = requestLine.split(" ")
@@ -122,12 +174,6 @@ class HttpProxyServer @Inject constructor(
         val hostPort = parts[1].split(":")
         val host = hostPort[0]
         val port = hostPort.getOrNull(1)?.toIntOrNull() ?: 443
-
-        // Consume remaining headers
-        while (true) {
-            val line = reader.readLine()
-            if (line.isNullOrEmpty()) break
-        }
 
         // Connect to target
         val targetSocket: Socket
@@ -153,7 +199,7 @@ class HttpProxyServer @Inject constructor(
     private suspend fun handlePlainHttp(
         clientSocket: Socket,
         requestLine: String,
-        reader: BufferedReader
+        headers: List<String>
     ) {
         // Parse plain HTTP request (GET http://host/path HTTP/1.1)
         val parts = requestLine.split(" ")
@@ -164,15 +210,15 @@ class HttpProxyServer @Inject constructor(
         val host = hostMatch.groupValues[1]
         val port = hostMatch.groupValues[3].toIntOrNull() ?: 80
 
-        // Read remaining headers
-        val headers = StringBuilder()
-        headers.appendLine(requestLine)
-        while (true) {
-            val line = reader.readLine()
-            if (line.isNullOrEmpty()) break
-            headers.appendLine(line)
+        // Rebuild request with headers (excluding Proxy-Authorization)
+        val requestBuf = StringBuilder()
+        requestBuf.appendLine(requestLine)
+        for (header in headers) {
+            if (!header.startsWith("Proxy-Authorization:", ignoreCase = true)) {
+                requestBuf.appendLine(header)
+            }
         }
-        headers.appendLine()
+        requestBuf.appendLine()
 
         // Connect to target
         val targetSocket: Socket
@@ -187,7 +233,7 @@ class HttpProxyServer @Inject constructor(
         }
 
         // Forward request
-        targetSocket.getOutputStream().write(headers.toString().toByteArray())
+        targetSocket.getOutputStream().write(requestBuf.toString().toByteArray())
 
         // Relay response
         relay(clientSocket, targetSocket)

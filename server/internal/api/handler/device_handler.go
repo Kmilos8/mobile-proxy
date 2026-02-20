@@ -19,6 +19,7 @@ type lastBytes struct {
 
 type DeviceHandler struct {
 	deviceService *service.DeviceService
+	connService   *service.ConnectionService
 	bwService     *service.BandwidthService
 	wsHub         *WSHub
 	lastBytesMu   sync.Mutex
@@ -32,6 +33,10 @@ func NewDeviceHandler(deviceService *service.DeviceService, bwService *service.B
 		wsHub:         wsHub,
 		lastBytesMap:  make(map[uuid.UUID]lastBytes),
 	}
+}
+
+func (h *DeviceHandler) SetConnectionService(cs *service.ConnectionService) {
+	h.connService = cs
 }
 
 func (h *DeviceHandler) Register(c *gin.Context) {
@@ -139,6 +144,23 @@ func (h *DeviceHandler) Heartbeat(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Include proxy credentials for device-side authentication
+	if h.connService != nil {
+		conns, err := h.connService.ListByDevice(c.Request.Context(), id)
+		if err == nil {
+			var creds []domain.ProxyCredential
+			for _, conn := range conns {
+				if conn.Active && conn.PasswordPlain != "" {
+					creds = append(creds, domain.ProxyCredential{
+						Username: conn.Username,
+						Password: conn.PasswordPlain,
+					})
+				}
+			}
+			resp.Credentials = creds
+		}
 	}
 
 	// Record bandwidth delta (device sends cumulative bytes)

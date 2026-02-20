@@ -23,6 +23,7 @@ func SetupRouter(
 
 	authHandler := NewAuthHandler(authService)
 	deviceHandler := NewDeviceHandler(deviceService, bwService, wsHub)
+	deviceHandler.SetConnectionService(connService)
 	connHandler := NewConnectionHandler(connService)
 
 	// Health check

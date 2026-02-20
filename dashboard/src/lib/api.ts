@@ -64,6 +64,7 @@ export interface ProxyConnection {
   bandwidth_limit: number
   bandwidth_used: number
   active: boolean
+  proxy_type: 'http' | 'socks5'
   base_port: number | null
   http_port: number | null
   socks5_port: number | null
@@ -182,7 +183,7 @@ export const api = {
       request<{ connections: ProxyConnection[] }>(
         `/connections${deviceId ? `?device_id=${deviceId}` : ''}`, { token }
       ),
-    create: (token: string, data: { device_id: string; username: string; password: string; ip_whitelist?: string[]; bandwidth_limit?: number }) =>
+    create: (token: string, data: { device_id: string; username: string; password: string; proxy_type?: string; ip_whitelist?: string[]; bandwidth_limit?: number }) =>
       request<ProxyConnection>('/connections', { method: 'POST', token, body: data }),
     setActive: (token: string, id: string, active: boolean) =>
       request(`/connections/${id}`, { method: 'PATCH', token, body: { active } }),

@@ -413,6 +413,11 @@ func (s *tunnelServer) cleanupLoop() {
 	}
 }
 
+type connInfo struct {
+	Port      int    `json:"port"`
+	ProxyType string `json:"proxy_type"`
+}
+
 func (s *tunnelServer) notifyConnected(deviceID, vpnIP string) {
 	url := s.apiURL + "/api/internal/vpn/connected"
 	body := fmt.Sprintf(`{"device_id":"%s","vpn_ip":"%s"}`, deviceID, vpnIP)
@@ -423,18 +428,17 @@ func (s *tunnelServer) notifyConnected(deviceID, vpnIP string) {
 	}
 	defer resp.Body.Close()
 
-	// Parse base_port and connection_ports from API response to set up DNAT rules
+	// Parse base_port and per-connection details from API response
 	var result struct {
-		BasePort        int   `json:"base_port"`
-		ConnectionPorts []int `json:"connection_ports"`
+		BasePort    int        `json:"base_port"`
+		Connections []connInfo `json:"connections"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.BasePort > 0 {
 		setupDNAT(result.BasePort, vpnIP)
-		// Also set up DNAT for each connection's ports
-		for _, cp := range result.ConnectionPorts {
-			setupDNAT(cp, vpnIP)
+		for _, ci := range result.Connections {
+			setupSingleDNAT(ci.Port, vpnIP, ci.ProxyType)
 		}
-		log.Printf("Notified API + DNAT setup: device %s vpn_ip=%s base_port=%d conn_ports=%v", deviceID, vpnIP, result.BasePort, result.ConnectionPorts)
+		log.Printf("Notified API + DNAT setup: device %s vpn_ip=%s base_port=%d connections=%v", deviceID, vpnIP, result.BasePort, result.Connections)
 	} else {
 		log.Printf("Notified API: device %s connected (status=%d, no DNAT: base_port=%d)", deviceID, resp.StatusCode, result.BasePort)
 	}
@@ -450,17 +454,16 @@ func (s *tunnelServer) notifyDisconnected(deviceID, vpnIP string) {
 	}
 	defer resp.Body.Close()
 
-	// Parse base_port and connection_ports from API response to tear down DNAT rules
 	var result struct {
-		BasePort        int   `json:"base_port"`
-		ConnectionPorts []int `json:"connection_ports"`
+		BasePort    int        `json:"base_port"`
+		Connections []connInfo `json:"connections"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.BasePort > 0 {
 		teardownDNAT(result.BasePort, vpnIP)
-		for _, cp := range result.ConnectionPorts {
-			teardownDNAT(cp, vpnIP)
+		for _, ci := range result.Connections {
+			teardownSingleDNAT(ci.Port, vpnIP, ci.ProxyType)
 		}
-		log.Printf("Notified API + DNAT teardown: device %s vpn_ip=%s base_port=%d conn_ports=%v", deviceID, vpnIP, result.BasePort, result.ConnectionPorts)
+		log.Printf("Notified API + DNAT teardown: device %s vpn_ip=%s base_port=%d connections=%v", deviceID, vpnIP, result.BasePort, result.Connections)
 	} else {
 		log.Printf("Notified API: device %s disconnected (status=%d)", deviceID, resp.StatusCode)
 	}
@@ -507,6 +510,36 @@ func teardownDNAT(basePort int, vpnIP string) {
 		}
 	}
 	log.Printf("DNAT teardown: ports %d-%d -> %s", basePort, basePort+2, vpnIP)
+}
+
+// setupSingleDNAT creates a single-port DNAT rule based on proxy type.
+func setupSingleDNAT(extPort int, vpnIP string, proxyType string) {
+	devPort := 8080 // HTTP proxy on device
+	if proxyType == "socks5" {
+		devPort = 1080
+	}
+	for _, proto := range []string{"tcp", "udp"} {
+		args := fmt.Sprintf("-t nat -A PREROUTING -p %s --dport %d -j DNAT --to-destination %s:%d",
+			proto, extPort, vpnIP, devPort)
+		if out, err := runCmd("iptables", splitArgs(args)...); err != nil {
+			log.Printf("DNAT add %d->%s:%d (%s) failed: %s: %v", extPort, vpnIP, devPort, proto, string(out), err)
+		}
+	}
+	log.Printf("DNAT setup: port %d -> %s:%d (type=%s)", extPort, vpnIP, devPort, proxyType)
+}
+
+// teardownSingleDNAT removes a single-port DNAT rule based on proxy type.
+func teardownSingleDNAT(extPort int, vpnIP string, proxyType string) {
+	devPort := 8080
+	if proxyType == "socks5" {
+		devPort = 1080
+	}
+	for _, proto := range []string{"tcp", "udp"} {
+		args := fmt.Sprintf("-t nat -D PREROUTING -p %s --dport %d -j DNAT --to-destination %s:%d",
+			proto, extPort, vpnIP, devPort)
+		runCmd("iptables", splitArgs(args)...) // best effort
+	}
+	log.Printf("DNAT teardown: port %d -> %s:%d (type=%s)", extPort, vpnIP, devPort, proxyType)
 }
 
 func splitArgs(s string) []string {
@@ -705,9 +738,10 @@ func (s *tunnelServer) handleRefreshDNAT(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req struct {
-		DeviceID string `json:"device_id"`
-		BasePort int    `json:"base_port"`
-		VpnIP    string `json:"vpn_ip"`
+		DeviceID  string `json:"device_id"`
+		BasePort  int    `json:"base_port"`
+		VpnIP     string `json:"vpn_ip"`
+		ProxyType string `json:"proxy_type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -715,8 +749,12 @@ func (s *tunnelServer) handleRefreshDNAT(w http.ResponseWriter, r *http.Request)
 	}
 
 	if req.BasePort > 0 && req.VpnIP != "" {
-		setupDNAT(req.BasePort, req.VpnIP)
-		log.Printf("Refresh DNAT: device=%s base_port=%d vpn_ip=%s", req.DeviceID, req.BasePort, req.VpnIP)
+		if req.ProxyType != "" {
+			setupSingleDNAT(req.BasePort, req.VpnIP, req.ProxyType)
+		} else {
+			setupDNAT(req.BasePort, req.VpnIP)
+		}
+		log.Printf("Refresh DNAT: device=%s base_port=%d vpn_ip=%s type=%s", req.DeviceID, req.BasePort, req.VpnIP, req.ProxyType)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -730,9 +768,10 @@ func (s *tunnelServer) handleTeardownDNAT(w http.ResponseWriter, r *http.Request
 	}
 
 	var req struct {
-		DeviceID string `json:"device_id"`
-		BasePort int    `json:"base_port"`
-		VpnIP    string `json:"vpn_ip"`
+		DeviceID  string `json:"device_id"`
+		BasePort  int    `json:"base_port"`
+		VpnIP     string `json:"vpn_ip"`
+		ProxyType string `json:"proxy_type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -740,8 +779,12 @@ func (s *tunnelServer) handleTeardownDNAT(w http.ResponseWriter, r *http.Request
 	}
 
 	if req.BasePort > 0 && req.VpnIP != "" {
-		teardownDNAT(req.BasePort, req.VpnIP)
-		log.Printf("Teardown DNAT: device=%s base_port=%d vpn_ip=%s", req.DeviceID, req.BasePort, req.VpnIP)
+		if req.ProxyType != "" {
+			teardownSingleDNAT(req.BasePort, req.VpnIP, req.ProxyType)
+		} else {
+			teardownDNAT(req.BasePort, req.VpnIP)
+		}
+		log.Printf("Teardown DNAT: device=%s base_port=%d vpn_ip=%s type=%s", req.DeviceID, req.BasePort, req.VpnIP, req.ProxyType)
 	}
 
 	w.WriteHeader(http.StatusOK)

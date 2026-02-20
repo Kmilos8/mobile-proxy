@@ -288,6 +288,32 @@ export default function ConnectionDetailPage() {
   )
 }
 
+// ============= COPIABLE FIELD =============
+function CopyField({ label, value, copyId, copyToClipboard, copiedId, mono }: {
+  label: string
+  value: string
+  copyId: string
+  copyToClipboard: (text: string, id: string) => void
+  copiedId: string | null
+  mono?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-xs text-zinc-500">{label}</span>
+      <div className="flex items-center gap-1.5">
+        <span className={cn('text-sm text-zinc-200', mono && 'font-mono text-xs')}>{value}</span>
+        <button
+          onClick={() => copyToClipboard(value, copyId)}
+          className="text-zinc-600 hover:text-white transition-colors p-0.5"
+          title={`Copy ${label}`}
+        >
+          {copiedId === copyId ? <span className="text-green-400 text-[10px]">Copied</span> : <Copy className="w-3 h-3" />}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ============= PRIMARY TAB =============
 function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboard, copiedId, onConnectionsChange }: {
   device: Device
@@ -298,10 +324,10 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
   copiedId: string | null
   onConnectionsChange: (conns: ProxyConnection[]) => void
 }) {
-  const [subTab, setSubTab] = useState<'proxy' | 'info'>('proxy')
   const [showAddForm, setShowAddForm] = useState(false)
   const [formUsername, setFormUsername] = useState('')
   const [formPassword, setFormPassword] = useState('')
+  const [formType, setFormType] = useState<'http' | 'socks5'>('http')
 
   async function handleCreateConnection(e: FormEvent) {
     e.preventDefault()
@@ -312,6 +338,7 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
         device_id: device.id,
         username: formUsername,
         password: formPassword,
+        proxy_type: formType,
       })
       onConnectionsChange([conn, ...connections])
       setFormUsername('')
@@ -345,209 +372,173 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
     }
   }
 
-  function getHttpPort(conn: ProxyConnection): number {
-    return conn.http_port ?? device.http_port
+  function getPort(conn: ProxyConnection): number {
+    if (conn.proxy_type === 'socks5') {
+      return conn.socks5_port ?? conn.base_port ?? device.socks5_port
+    }
+    return conn.http_port ?? conn.base_port ?? device.http_port
   }
 
-  function getSocksPort(conn: ProxyConnection): number {
-    return conn.socks5_port ?? device.socks5_port
+  function getCopyAllString(conn: ProxyConnection): string {
+    const port = getPort(conn)
+    const type = conn.proxy_type === 'socks5' ? 'socks5' : 'http'
+    return `${type}:${serverHost}:${port}:${conn.username}:${conn.password || ''}`
   }
 
   return (
     <div>
-      {/* Sub-tabs */}
-      <div className="flex gap-1 border-b border-zinc-800 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-medium text-zinc-400">Access Points</h3>
         <button
-          onClick={() => setSubTab('proxy')}
-          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'proxy' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
-          )}
+          onClick={() => setShowAddForm(!showAddForm)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-medium rounded-lg transition-colors"
         >
-          Proxy
-        </button>
-        <button
-          onClick={() => setSubTab('info')}
-          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'info' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
-          )}
-        >
-          Basic Info
+          <Plus className="w-3.5 h-3.5" />
+          Add Access Point
         </button>
       </div>
 
-      {subTab === 'proxy' && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-zinc-400">Access Points</h3>
-            <button
-              onClick={() => setShowAddForm(!showAddForm)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-medium rounded-lg transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Access Point
-            </button>
-          </div>
-
-          {/* Add form */}
-          {showAddForm && (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 mb-4">
-              <form onSubmit={handleCreateConnection} className="flex gap-3 items-end">
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Username</label>
-                  <input
-                    value={formUsername}
-                    onChange={e => setFormUsername(e.target.value)}
-                    className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-white text-sm"
-                    required
-                  />
+      {/* Add form */}
+      {showAddForm && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 mb-4">
+          <form onSubmit={handleCreateConnection} className="space-y-3">
+            <div className="flex gap-3 items-end">
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Username</label>
+                <input
+                  value={formUsername}
+                  onChange={e => setFormUsername(e.target.value)}
+                  className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-white text-sm w-40"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Password</label>
+                <input
+                  value={formPassword}
+                  onChange={e => setFormPassword(e.target.value)}
+                  className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-white text-sm w-40"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Type</label>
+                <div className="flex rounded overflow-hidden border border-zinc-700">
+                  <button
+                    type="button"
+                    onClick={() => setFormType('http')}
+                    className={cn(
+                      'px-3 py-2 text-sm font-medium transition-colors',
+                      formType === 'http'
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                    )}
+                  >
+                    HTTP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormType('socks5')}
+                    className={cn(
+                      'px-3 py-2 text-sm font-medium transition-colors',
+                      formType === 'socks5'
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                    )}
+                  >
+                    SOCKS5
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Password</label>
-                  <input
-                    value={formPassword}
-                    onChange={e => setFormPassword(e.target.value)}
-                    className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-white text-sm"
-                    required
-                  />
-                </div>
-                <button type="submit" className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded text-sm">
-                  Create
-                </button>
-                <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-sm">
-                  Cancel
-                </button>
-              </form>
-            </div>
-          )}
-
-          {connections.length === 0 ? (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center text-zinc-500">
-              No access points configured. Click &quot;Add Access Point&quot; to create one.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {connections.map(conn => (
-                <div key={conn.id} className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-                  <div className="px-4 py-2.5 bg-zinc-800/50 border-b border-zinc-800 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium font-mono">{conn.username}</span>
-                      <span className={cn('text-xs px-2 py-0.5 rounded', conn.active ? 'bg-green-900/30 text-green-400' : 'bg-zinc-800 text-zinc-500')}>
-                        {conn.active ? 'Active' : 'Disabled'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleToggle(conn.id, conn.active)}
-                        className="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-white rounded"
-                      >
-                        {conn.active ? 'Disable' : 'Enable'}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(conn.id)}
-                        className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-px bg-zinc-800/30">
-                    {/* HTTP */}
-                    <div className="bg-zinc-900 p-3">
-                      <div className="text-xs text-zinc-500 mb-2">HTTP Proxy</div>
-                      <div className="font-mono text-xs text-zinc-300 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span>{serverHost}:{getHttpPort(conn)}</span>
-                          <button
-                            onClick={() => copyToClipboard(`${serverHost}:${getHttpPort(conn)}:${conn.username}:${conn.password || ''}`, `http-${conn.id}`)}
-                            className="text-zinc-500 hover:text-white transition-colors"
-                            title="Copy proxy string"
-                          >
-                            {copiedId === `http-${conn.id}` ? <span className="text-green-400 text-xs">Copied!</span> : <Copy className="w-3 h-3" />}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* SOCKS5 */}
-                    <div className="bg-zinc-900 p-3">
-                      <div className="text-xs text-zinc-500 mb-2">SOCKS5 Proxy</div>
-                      <div className="font-mono text-xs text-zinc-300 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span>{serverHost}:{getSocksPort(conn)}</span>
-                          <button
-                            onClick={() => copyToClipboard(`${serverHost}:${getSocksPort(conn)}:${conn.username}:${conn.password || ''}`, `socks-${conn.id}`)}
-                            className="text-zinc-500 hover:text-white transition-colors"
-                            title="Copy proxy string"
-                          >
-                            {copiedId === `socks-${conn.id}` ? <span className="text-green-400 text-xs">Copied!</span> : <Copy className="w-3 h-3" />}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* External IP */}
-          <div className="mt-6 bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-            <div className="text-sm text-zinc-400 mb-2">External IP (Cellular)</div>
-            <div className="font-mono text-lg">{device.cellular_ip || 'Unknown'}</div>
-          </div>
-        </div>
-      )}
-
-      {subTab === 'info' && (
-        <div className="space-y-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-zinc-400 mb-4">Device Information</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <InfoRow label="Name" value={device.name || '-'} />
-              <InfoRow label="Model" value={device.device_model || '-'} />
-              <InfoRow label="Android ID" value={device.android_id} mono />
-              <InfoRow label="Android Version" value={device.android_version || '-'} />
-              <InfoRow label="App Version" value={device.app_version || '-'} />
-              <InfoRow label="Registered" value={formatDate(device.created_at)} />
-            </div>
-          </div>
-
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-zinc-400 mb-4">Network</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <InfoRow label="Cellular IP" value={device.cellular_ip || '-'} mono />
-              <InfoRow label="WiFi IP" value={device.wifi_ip || '-'} mono />
-              <InfoRow label="VPN IP" value={device.vpn_ip || '-'} mono />
-              <InfoRow label="Carrier" value={device.carrier || '-'} />
-              <InfoRow label="Network Type" value={device.network_type || '-'} />
-              <InfoRow label="Last Heartbeat" value={timeAgo(device.last_heartbeat)} />
-            </div>
-          </div>
-
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-zinc-400 mb-4">Device Ports</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <InfoRow label="HTTP Proxy" value={`${device.http_port}`} mono />
-              <InfoRow label="SOCKS5 Proxy" value={`${device.socks5_port}`} mono />
-              <InfoRow label="Base Port" value={`${device.base_port}`} mono />
-            </div>
-          </div>
-
-          {bandwidth && (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-zinc-400 mb-4">Bandwidth</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <InfoRow label="Today In" value={formatBytes(bandwidth.today_in)} />
-                <InfoRow label="Today Out" value={formatBytes(bandwidth.today_out)} />
-                <InfoRow label="Month In" value={formatBytes(bandwidth.month_in)} />
-                <InfoRow label="Month Out" value={formatBytes(bandwidth.month_out)} />
               </div>
             </div>
-          )}
+            <div className="flex gap-2">
+              <button type="submit" className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded text-sm">
+                Create
+              </button>
+              <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-sm">
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       )}
+
+      {connections.length === 0 ? (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center text-zinc-500">
+          No access points configured. Click &quot;Add Access Point&quot; to create one.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {connections.map(conn => {
+            const port = getPort(conn)
+            const typeLabel = conn.proxy_type === 'socks5' ? 'SOCKS5' : 'HTTP'
+            const typeBadgeColor = conn.proxy_type === 'socks5' ? 'bg-purple-900/30 text-purple-400' : 'bg-blue-900/30 text-blue-400'
+
+            return (
+              <div key={conn.id} className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+                {/* Header row */}
+                <div className="px-4 py-2.5 bg-zinc-800/50 border-b border-zinc-800 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className={cn('text-xs px-2 py-0.5 rounded font-medium', typeBadgeColor)}>
+                      {typeLabel}
+                    </span>
+                    <span className="text-sm font-medium font-mono">{conn.username}</span>
+                    <span className={cn('text-xs px-2 py-0.5 rounded', conn.active ? 'bg-green-900/30 text-green-400' : 'bg-zinc-800 text-zinc-500')}>
+                      {conn.active ? 'Active' : 'Disabled'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleToggle(conn.id, conn.active)}
+                      className="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-white rounded"
+                    >
+                      {conn.active ? 'Disable' : 'Enable'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(conn.id)}
+                      className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Connection details */}
+                <div className="p-4 space-y-0">
+                  <CopyField label="IP" value={serverHost} copyId={`ip-${conn.id}`} copyToClipboard={copyToClipboard} copiedId={copiedId} mono />
+                  <CopyField label="Port" value={String(port)} copyId={`port-${conn.id}`} copyToClipboard={copyToClipboard} copiedId={copiedId} mono />
+                  <CopyField label="Username" value={conn.username} copyId={`user-${conn.id}`} copyToClipboard={copyToClipboard} copiedId={copiedId} mono />
+                  <CopyField label="Password" value={conn.password || '••••••'} copyId={`pass-${conn.id}`} copyToClipboard={copyToClipboard} copiedId={copiedId} mono />
+
+                  {/* Copy All button */}
+                  <div className="pt-2 mt-2 border-t border-zinc-800/50">
+                    <button
+                      onClick={() => copyToClipboard(getCopyAllString(conn), `all-${conn.id}`)}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-mono rounded transition-colors"
+                    >
+                      {copiedId === `all-${conn.id}` ? (
+                        <span className="text-green-400">Copied!</span>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          {getCopyAllString(conn)}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* External IP */}
+      <div className="mt-6 bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="text-sm text-zinc-400 mb-2">External IP (Cellular)</div>
+        <div className="font-mono text-lg">{device.cellular_ip || 'Unknown'}</div>
+      </div>
     </div>
   )
 }

@@ -87,11 +87,13 @@ type ProxyConnection struct {
 	CustomerID     *uuid.UUID `json:"customer_id" db:"customer_id"`
 	Username       string     `json:"username" db:"username"`
 	PasswordHash   string     `json:"-" db:"password_hash"`
-	Password       string     `json:"password,omitempty" db:"-"` // plaintext only on creation
+	PasswordPlain  string     `json:"-" db:"password_plain"`
+	Password       string     `json:"password,omitempty" db:"-"` // plaintext only on creation response
 	IPWhitelist    []string   `json:"ip_whitelist" db:"ip_whitelist"`
 	BandwidthLimit int64      `json:"bandwidth_limit" db:"bandwidth_limit"` // bytes, 0 = unlimited
 	BandwidthUsed  int64      `json:"bandwidth_used" db:"bandwidth_used"`
 	Active         bool       `json:"active" db:"active"`
+	ProxyType      string     `json:"proxy_type" db:"proxy_type"` // "http" or "socks5"
 	BasePort       *int       `json:"base_port" db:"base_port"`
 	HTTPPort       *int       `json:"http_port" db:"http_port"`
 	SOCKS5Port     *int       `json:"socks5_port" db:"socks5_port"`
@@ -198,8 +200,14 @@ type HeartbeatRequest struct {
 	BytesOut        int64  `json:"bytes_out"`
 }
 
+type ProxyCredential struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 type HeartbeatResponse struct {
-	Commands []DeviceCommand `json:"commands"`
+	Commands    []DeviceCommand  `json:"commands"`
+	Credentials []ProxyCredential `json:"credentials,omitempty"`
 }
 
 type LoginRequest struct {
@@ -217,6 +225,7 @@ type CreateConnectionRequest struct {
 	CustomerID     *uuid.UUID `json:"customer_id"`
 	Username       string     `json:"username" binding:"required"`
 	Password       string     `json:"password" binding:"required"`
+	ProxyType      string     `json:"proxy_type"` // "http" or "socks5", defaults to "http"
 	IPWhitelist    []string   `json:"ip_whitelist"`
 	BandwidthLimit int64      `json:"bandwidth_limit"`
 }

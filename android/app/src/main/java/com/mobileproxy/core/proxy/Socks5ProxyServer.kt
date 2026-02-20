@@ -14,12 +14,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * SOCKS5 proxy server (RFC 1928).
- * Supports CONNECT and UDP ASSOCIATE commands with NO AUTH.
+ * SOCKS5 proxy server (RFC 1928) with username/password auth (RFC 1929).
+ * Supports CONNECT and UDP ASSOCIATE commands.
  */
 @Singleton
 class Socks5ProxyServer @Inject constructor(
-    private val networkManager: NetworkManager
+    private val networkManager: NetworkManager,
+    private val credentialStore: ProxyCredentialStore
 ) {
     companion object {
         private const val TAG = "Socks5ProxyServer"
@@ -30,6 +31,11 @@ class Socks5ProxyServer @Inject constructor(
         private const val ATYP_DOMAIN: Byte = 0x03
         private const val ATYP_IPV6: Byte = 0x04
         private const val AUTH_NONE: Byte = 0x00
+        private const val AUTH_USERPASS: Byte = 0x02
+        private const val AUTH_NO_ACCEPTABLE: Byte = 0xFF.toByte()
+        private const val USERPASS_VERSION: Byte = 0x01
+        private const val USERPASS_SUCCESS: Byte = 0x00
+        private const val USERPASS_FAILURE: Byte = 0x01
         private const val BUFFER_SIZE = 32768
         private const val UDP_BUFFER_SIZE = 65535
     }
@@ -110,9 +116,52 @@ class Socks5ProxyServer @Inject constructor(
             val methods = ByteArray(nMethods)
             input.readFully(methods)
 
-            // Select NO AUTH
-            output.write(byteArrayOf(SOCKS_VERSION, AUTH_NONE))
-            output.flush()
+            if (credentialStore.hasCredentials()) {
+                // Require username/password auth (RFC 1929)
+                val hasUserPass = methods.any { it == AUTH_USERPASS }
+                if (!hasUserPass) {
+                    output.write(byteArrayOf(SOCKS_VERSION, AUTH_NO_ACCEPTABLE))
+                    output.flush()
+                    return
+                }
+
+                // Select username/password auth
+                output.write(byteArrayOf(SOCKS_VERSION, AUTH_USERPASS))
+                output.flush()
+
+                // RFC 1929 subnegotiation
+                val authVersion = input.readByte()
+                if (authVersion != USERPASS_VERSION) {
+                    output.write(byteArrayOf(USERPASS_VERSION, USERPASS_FAILURE))
+                    output.flush()
+                    return
+                }
+
+                val uLen = input.readByte().toInt() and 0xFF
+                val usernameBytes = ByteArray(uLen)
+                input.readFully(usernameBytes)
+                val username = String(usernameBytes)
+
+                val pLen = input.readByte().toInt() and 0xFF
+                val passwordBytes = ByteArray(pLen)
+                input.readFully(passwordBytes)
+                val password = String(passwordBytes)
+
+                if (!credentialStore.validate(username, password)) {
+                    output.write(byteArrayOf(USERPASS_VERSION, USERPASS_FAILURE))
+                    output.flush()
+                    Log.w(TAG, "Auth failed for user: $username")
+                    return
+                }
+
+                // Auth success
+                output.write(byteArrayOf(USERPASS_VERSION, USERPASS_SUCCESS))
+                output.flush()
+            } else {
+                // No credentials configured — allow without auth
+                output.write(byteArrayOf(SOCKS_VERSION, AUTH_NONE))
+                output.flush()
+            }
 
             // Request
             val reqVersion = input.readByte()

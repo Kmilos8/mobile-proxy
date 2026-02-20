@@ -30,6 +30,11 @@ type vpnConnectRequest struct {
 	VpnIP      string `json:"vpn_ip"`
 }
 
+type connectionPortInfo struct {
+	Port      int    `json:"port"`
+	ProxyType string `json:"proxy_type"`
+}
+
 // Connected is called by the tunnel server or OpenVPN client-connect script
 func (h *VPNHandler) Connected(c *gin.Context) {
 	var req vpnConnectRequest
@@ -71,14 +76,17 @@ func (h *VPNHandler) Connected(c *gin.Context) {
 		return
 	}
 
-	// Get connection ports for this device
-	var connectionPorts []int
+	// Get connection details for this device
+	var connections []connectionPortInfo
 	if h.connService != nil {
 		conns, err := h.connService.ListByDevice(c.Request.Context(), device.ID)
 		if err == nil {
 			for _, conn := range conns {
 				if conn.BasePort != nil {
-					connectionPorts = append(connectionPorts, *conn.BasePort)
+					connections = append(connections, connectionPortInfo{
+						Port:      *conn.BasePort,
+						ProxyType: conn.ProxyType,
+					})
 				}
 			}
 		}
@@ -88,8 +96,8 @@ func (h *VPNHandler) Connected(c *gin.Context) {
 	if identifier == "" {
 		identifier = req.CommonName
 	}
-	log.Printf("VPN connected: %s (vpn_ip=%s, base_port=%d, conn_ports=%v)", identifier, req.VpnIP, device.BasePort, connectionPorts)
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "base_port": device.BasePort, "connection_ports": connectionPorts})
+	log.Printf("VPN connected: %s (vpn_ip=%s, base_port=%d, connections=%v)", identifier, req.VpnIP, device.BasePort, connections)
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "base_port": device.BasePort, "connections": connections})
 }
 
 // Disconnected is called by the tunnel server or OpenVPN client-disconnect script
@@ -125,14 +133,17 @@ func (h *VPNHandler) Disconnected(c *gin.Context) {
 		}
 	}
 
-	// Get connection ports for teardown
-	var connectionPorts []int
+	// Get connection details for teardown
+	var connections []connectionPortInfo
 	if h.connService != nil {
 		conns, err := h.connService.ListByDevice(c.Request.Context(), device.ID)
 		if err == nil {
 			for _, conn := range conns {
 				if conn.BasePort != nil {
-					connectionPorts = append(connectionPorts, *conn.BasePort)
+					connections = append(connections, connectionPortInfo{
+						Port:      *conn.BasePort,
+						ProxyType: conn.ProxyType,
+					})
 				}
 			}
 		}
@@ -142,6 +153,6 @@ func (h *VPNHandler) Disconnected(c *gin.Context) {
 	if identifier == "" {
 		identifier = req.CommonName
 	}
-	log.Printf("VPN disconnected: %s (conn_ports=%v)", identifier, connectionPorts)
-	c.JSON(http.StatusOK, gin.H{"status": "ok", "base_port": device.BasePort, "connection_ports": connectionPorts})
+	log.Printf("VPN disconnected: %s (connections=%v)", identifier, connections)
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "base_port": device.BasePort, "connections": connections})
 }
