@@ -17,6 +17,7 @@ class CredentialManager @Inject constructor(
         private const val KEY_AUTH_TOKEN = "auth_token"
         private const val KEY_VPN_CONFIG = "vpn_config"
         private const val KEY_BASE_PORT = "base_port"
+        private const val KEY_RELAY_SERVER_IP = "relay_server_ip"
         private const val KEY_MIGRATION_DONE = "migration_done"
     }
 
@@ -32,7 +33,8 @@ class CredentialManager @Inject constructor(
         deviceId: String,
         authToken: String,
         vpnConfig: String,
-        basePort: Int
+        basePort: Int,
+        relayServerIP: String = ""
     ) {
         prefs.edit()
             .putString(KEY_SERVER_URL, serverUrl)
@@ -40,6 +42,7 @@ class CredentialManager @Inject constructor(
             .putString(KEY_AUTH_TOKEN, authToken)
             .putString(KEY_VPN_CONFIG, vpnConfig)
             .putInt(KEY_BASE_PORT, basePort)
+            .putString(KEY_RELAY_SERVER_IP, relayServerIP)
             .apply()
     }
 
@@ -48,6 +51,10 @@ class CredentialManager @Inject constructor(
     fun getAuthToken(): String = prefs.getString(KEY_AUTH_TOKEN, "") ?: ""
     fun getVpnConfig(): String = prefs.getString(KEY_VPN_CONFIG, "") ?: ""
     fun getBasePort(): Int = prefs.getInt(KEY_BASE_PORT, 0)
+    fun getRelayServerIP(): String {
+        val ip = prefs.getString(KEY_RELAY_SERVER_IP, null)
+        return if (ip.isNullOrEmpty()) "178.156.210.156" else ip
+    }
 
     fun isMigrationDone(): Boolean = prefs.getBoolean(KEY_MIGRATION_DONE, false)
 

@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { RotateCw, ChevronRight, Plus, X, Copy, Check, Trash2 } from 'lucide-react'
-import { api, Device, PairingCode } from '@/lib/api'
+import { RotateCw, ChevronRight, Plus, X, Copy, Check, Trash2, Server } from 'lucide-react'
+import { api, Device, PairingCode, RelayServer } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
 import { timeAgo, cn } from '@/lib/utils'
@@ -11,27 +11,59 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import BatteryIndicator from '@/components/ui/BatteryIndicator'
 import { QRCodeSVG } from 'qrcode.react'
 
-const SERVER_HOST = process.env.NEXT_PUBLIC_SERVER_HOST || '178.156.240.184'
-
 function formatCodeDisplay(code: string): string {
   if (code.length === 8) return code.slice(0, 4) + '-' + code.slice(4)
   return code
 }
 
 function PairingModal({ onClose }: { onClose: () => void }) {
+  const [step, setStep] = useState<'server' | 'code'>('server')
+  const [relayServers, setRelayServers] = useState<RelayServer[]>([])
+  const [selectedRelay, setSelectedRelay] = useState<RelayServer | null>(null)
+  const [loadingServers, setLoadingServers] = useState(true)
+
   const [code, setCode] = useState<string | null>(null)
   const [codeId, setCodeId] = useState<string | null>(null)
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Fetch relay servers on mount
   useEffect(() => {
-    async function create() {
+    async function fetchServers() {
       const token = getToken()
       if (!token) return
       try {
-        const res = await api.pairingCodes.create(token)
+        const res = await api.relayServers.listActive(token)
+        const servers = res.relay_servers || []
+        setRelayServers(servers)
+        // If only 1 relay, auto-select and skip step
+        if (servers.length === 1) {
+          setSelectedRelay(servers[0])
+          setStep('code')
+        } else if (servers.length === 0) {
+          // No servers, skip to code step (will use default)
+          setStep('code')
+        }
+      } catch (err) {
+        setError('Failed to load relay servers')
+      } finally {
+        setLoadingServers(false)
+      }
+    }
+    fetchServers()
+  }, [])
+
+  // Create pairing code when entering code step
+  useEffect(() => {
+    if (step !== 'code') return
+    async function create() {
+      const token = getToken()
+      if (!token) return
+      setLoading(true)
+      try {
+        const res = await api.pairingCodes.create(token, 5, selectedRelay?.id)
         setCode(res.code)
         setCodeId(res.id)
         setExpiresAt(res.expires_at)
@@ -42,15 +74,21 @@ function PairingModal({ onClose }: { onClose: () => void }) {
       }
     }
     create()
-  }, [])
+  }, [step, selectedRelay])
 
-  const qrValue = code ? `pocketproxy://pair?server=http://${SERVER_HOST}:8080&code=${code}` : ''
+  const serverHost = selectedRelay?.ip || process.env.NEXT_PUBLIC_SERVER_HOST || '178.156.240.184'
+  const qrValue = code ? `pocketproxy://pair?server=http://${serverHost}:8080&code=${code}` : ''
 
   function handleCopy() {
     if (!code) return
     navigator.clipboard.writeText(formatCodeDisplay(code))
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  function handleSelectRelay(relay: RelayServer) {
+    setSelectedRelay(relay)
+    setStep('code')
   }
 
   // Countdown to expiry
@@ -75,13 +113,42 @@ function PairingModal({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Add Device</h2>
+          <h2 className="text-lg font-semibold text-white">
+            {step === 'server' ? 'Select Server' : 'Add Device'}
+          </h2>
           <button onClick={onClose} className="text-zinc-400 hover:text-white p-1">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {loading && (
+        {/* Server Selection Step */}
+        {step === 'server' && !loadingServers && (
+          <div className="space-y-3">
+            <p className="text-sm text-zinc-400">
+              Select a relay server for this device.
+            </p>
+            {relayServers.map(server => (
+              <button
+                key={server.id}
+                onClick={() => handleSelectRelay(server)}
+                className="w-full flex items-center gap-3 p-4 bg-zinc-800 border border-zinc-700 rounded-lg hover:border-brand-500 hover:bg-zinc-800/80 transition-colors text-left"
+              >
+                <Server className="w-5 h-5 text-brand-400 flex-shrink-0" />
+                <div>
+                  <div className="text-sm font-medium text-white">{server.name}</div>
+                  <div className="text-xs text-zinc-500">{server.location || server.ip}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {step === 'server' && loadingServers && (
+          <div className="text-center py-8 text-zinc-500">Loading servers...</div>
+        )}
+
+        {/* Code Step */}
+        {step === 'code' && loading && (
           <div className="text-center py-8 text-zinc-500">Generating pairing code...</div>
         )}
 
@@ -89,10 +156,15 @@ function PairingModal({ onClose }: { onClose: () => void }) {
           <div className="text-center py-8 text-red-400">{error}</div>
         )}
 
-        {code && !loading && (
+        {step === 'code' && code && !loading && (
           <div className="space-y-6">
             <p className="text-sm text-zinc-400">
               Scan this QR code with the PocketProxy app, or enter the code manually.
+              {selectedRelay && (
+                <span className="block mt-1 text-xs text-zinc-500">
+                  Server: {selectedRelay.name} ({selectedRelay.location || selectedRelay.ip})
+                </span>
+              )}
             </p>
 
             {/* QR Code */}
@@ -283,6 +355,12 @@ export default function ConnectionsPage() {
                       <span>{device.carrier || 'No carrier'}</span>
                       <span className="text-zinc-700">|</span>
                       <span>{device.network_type || '-'}</span>
+                      {device.relay_server_ip && (
+                        <>
+                          <span className="text-zinc-700">|</span>
+                          <span className="text-zinc-500">{device.relay_server_ip}</span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

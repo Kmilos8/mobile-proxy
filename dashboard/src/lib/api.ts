@@ -30,6 +30,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return res.json()
 }
 
+export interface RelayServer {
+  id: string
+  name: string
+  ip: string
+  location: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface Device {
   id: string
   name: string
@@ -51,6 +61,8 @@ export interface Device {
   app_version: string
   device_model: string
   android_version: string
+  relay_server_id: string | null
+  relay_server_ip: string
   created_at: string
 }
 
@@ -122,6 +134,7 @@ export interface PairingCode {
   claimed_at: string | null
   expires_at: string
   created_by: string | null
+  relay_server_id: string | null
   created_at: string
 }
 
@@ -207,11 +220,22 @@ export const api = {
   pairingCodes: {
     list: (token: string) =>
       request<{ pairing_codes: PairingCode[] }>('/pairing-codes', { token }),
-    create: (token: string, expiresInMinutes?: number) =>
+    create: (token: string, expiresInMinutes?: number, relayServerId?: string) =>
       request<{ id: string; code: string; expires_at: string }>('/pairing-codes', {
-        method: 'POST', token, body: { expires_in_minutes: expiresInMinutes || 5 }
+        method: 'POST', token, body: {
+          expires_in_minutes: expiresInMinutes || 5,
+          ...(relayServerId ? { relay_server_id: relayServerId } : {}),
+        }
       }),
     delete: (token: string, id: string) =>
       request(`/pairing-codes/${id}`, { method: 'DELETE', token }),
+  },
+  relayServers: {
+    list: (token: string) =>
+      request<{ relay_servers: RelayServer[] }>('/relay-servers', { token }),
+    listActive: (token: string) =>
+      request<{ relay_servers: RelayServer[] }>('/relay-servers/active', { token }),
+    create: (token: string, data: { name: string; ip: string; location?: string }) =>
+      request<RelayServer>('/relay-servers', { method: 'POST', token, body: data }),
   },
 }

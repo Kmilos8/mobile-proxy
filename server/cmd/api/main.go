@@ -31,6 +31,7 @@ func main() {
 	customerRepo := repository.NewCustomerRepository(db)
 	rotationLinkRepo := repository.NewRotationLinkRepository(db)
 	pairingRepo := repository.NewPairingCodeRepository(db)
+	relayServerRepo := repository.NewRelayServerRepository(db)
 
 	// Services
 	iptablesService := service.NewIPTablesService()
@@ -40,24 +41,27 @@ func main() {
 	statusLogRepo := repository.NewStatusLogRepository(db)
 	deviceService := service.NewDeviceService(deviceRepo, ipHistRepo, commandRepo, portService, vpnService)
 	deviceService.SetStatusLogRepo(statusLogRepo)
+	deviceService.SetRelayServerRepo(relayServerRepo)
 	if v := os.Getenv("TUNNEL_PUSH_URL"); v != "" {
 		deviceService.SetTunnelPushURL(v)
 		log.Printf("Tunnel push URL configured: %s", v)
 	}
 	connService := service.NewConnectionService(connRepo, deviceRepo)
 	connService.SetPortService(portService)
+	connService.SetRelayServerRepo(relayServerRepo)
 	if v := os.Getenv("TUNNEL_PUSH_URL"); v != "" {
 		connService.SetTunnelPushURL(v)
 	}
 	bwRepo := repository.NewBandwidthRepository(db)
 	bwService := service.NewBandwidthService(bwRepo)
+	relayServerService := service.NewRelayServerService(relayServerRepo)
 
 	// Build server URL for pairing responses
 	serverURL := fmt.Sprintf("http://%s:%d", cfg.VPN.ServerIP, cfg.Server.Port)
 	if v := os.Getenv("PUBLIC_SERVER_URL"); v != "" {
 		serverURL = v
 	}
-	pairingService := service.NewPairingService(pairingRepo, deviceService, deviceRepo, serverURL)
+	pairingService := service.NewPairingService(pairingRepo, deviceService, deviceRepo, relayServerRepo, serverURL)
 
 	// WebSocket hub
 	wsHub := handler.NewWSHub()
@@ -68,9 +72,10 @@ func main() {
 	statsHandler := handler.NewStatsHandler(deviceRepo, connRepo, bwService)
 	rotationLinkHandler := handler.NewRotationLinkHandler(rotationLinkRepo, deviceService)
 	pairingHandler := handler.NewPairingHandler(pairingService)
+	relayServerHandler := handler.NewRelayServerHandler(relayServerService)
 
 	// Router
-	router := handler.SetupRouter(authService, deviceService, connService, bwService, customerHandler, vpnHandler, statsHandler, rotationLinkHandler, pairingHandler, wsHub)
+	router := handler.SetupRouter(authService, deviceService, connService, bwService, customerHandler, vpnHandler, statsHandler, rotationLinkHandler, pairingHandler, relayServerHandler, wsHub)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

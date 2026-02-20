@@ -45,6 +45,16 @@ type User struct {
 	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
 }
 
+type RelayServer struct {
+	ID        uuid.UUID `json:"id" db:"id"`
+	Name      string    `json:"name" db:"name"`
+	IP        string    `json:"ip" db:"ip"`
+	Location  string    `json:"location" db:"location"`
+	Active    bool      `json:"active" db:"active"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+
 type Device struct {
 	ID              uuid.UUID    `json:"id" db:"id"`
 	Name            string       `json:"name" db:"name"`
@@ -68,6 +78,8 @@ type Device struct {
 	AppVersion      string       `json:"app_version" db:"app_version"`
 	DeviceModel     string       `json:"device_model" db:"device_model"`
 	AndroidVersion  string       `json:"android_version" db:"android_version"`
+	RelayServerID   *uuid.UUID   `json:"relay_server_id" db:"relay_server_id"`
+	RelayServerIP   string       `json:"relay_server_ip" db:"-"`
 	CreatedAt       time.Time    `json:"created_at" db:"created_at"`
 	UpdatedAt       time.Time    `json:"updated_at" db:"updated_at"`
 }
@@ -141,14 +153,15 @@ type RotationLink struct {
 }
 
 type PairingCode struct {
-	ID               uuid.UUID  `json:"id" db:"id"`
-	Code             string     `json:"code" db:"code"`
-	DeviceAuthToken  string     `json:"-" db:"device_auth_token"`
+	ID                uuid.UUID  `json:"id" db:"id"`
+	Code              string     `json:"code" db:"code"`
+	DeviceAuthToken   string     `json:"-" db:"device_auth_token"`
 	ClaimedByDeviceID *uuid.UUID `json:"claimed_by_device_id" db:"claimed_by_device_id"`
-	ClaimedAt        *time.Time `json:"claimed_at" db:"claimed_at"`
-	ExpiresAt        time.Time  `json:"expires_at" db:"expires_at"`
-	CreatedBy        *uuid.UUID `json:"created_by" db:"created_by"`
-	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
+	ClaimedAt         *time.Time `json:"claimed_at" db:"claimed_at"`
+	ExpiresAt         time.Time  `json:"expires_at" db:"expires_at"`
+	CreatedBy         *uuid.UUID `json:"created_by" db:"created_by"`
+	RelayServerID     *uuid.UUID `json:"relay_server_id" db:"relay_server_id"`
+	CreatedAt         time.Time  `json:"created_at" db:"created_at"`
 }
 
 type DeviceStatusLog struct {
@@ -236,7 +249,8 @@ type CommandRequest struct {
 }
 
 type CreatePairingCodeRequest struct {
-	ExpiresInMinutes int `json:"expires_in_minutes"`
+	ExpiresInMinutes int        `json:"expires_in_minutes"`
+	RelayServerID    *uuid.UUID `json:"relay_server_id"`
 }
 
 type CreatePairingCodeResponse struct {
@@ -254,11 +268,12 @@ type ClaimPairingCodeRequest struct {
 }
 
 type ClaimPairingCodeResponse struct {
-	DeviceID  uuid.UUID `json:"device_id"`
-	AuthToken string    `json:"auth_token"`
-	ServerURL string    `json:"server_url"`
-	VpnConfig string    `json:"vpn_config"`
-	BasePort  int       `json:"base_port"`
+	DeviceID      uuid.UUID `json:"device_id"`
+	AuthToken     string    `json:"auth_token"`
+	ServerURL     string    `json:"server_url"`
+	VpnConfig     string    `json:"vpn_config"`
+	BasePort      int       `json:"base_port"`
+	RelayServerIP string    `json:"relay_server_ip"`
 }
 
 // WebSocket message types

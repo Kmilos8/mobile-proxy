@@ -20,8 +20,6 @@ import UptimeTimeline from '@/components/UptimeTimeline'
 
 type SidebarTab = 'primary' | 'advanced' | 'change-ip' | 'history' | 'metrics' | 'usage'
 
-const SERVER_HOST = process.env.NEXT_PUBLIC_SERVER_HOST || '178.156.210.156'
-
 export default function ConnectionDetailPage() {
   const params = useParams()
   const id = params.id as string
@@ -156,7 +154,7 @@ export default function ConnectionDetailPage() {
   }
 
   function getRotationUrl(token: string) {
-    const base = process.env.NEXT_PUBLIC_API_URL || `http://${SERVER_HOST}:8080/api`
+    const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
     return `${base}/public/rotate/${token}`
   }
 
@@ -238,6 +236,9 @@ export default function ConnectionDetailPage() {
 
         <div className="text-sm text-zinc-500 mt-1">
           {device.device_model} &middot; ID: {device.id.slice(0, 8)}
+          {device.relay_server_ip && (
+            <span> &middot; Relay: {device.relay_server_ip}</span>
+          )}
         </div>
       </div>
 
@@ -276,7 +277,7 @@ export default function ConnectionDetailPage() {
 
         {/* Content Area */}
         <div className="flex-1 min-w-0">
-          {activeTab === 'primary' && <PrimaryTab device={device} connections={connections} bandwidth={bandwidth} serverHost={SERVER_HOST} copyToClipboard={copyToClipboard} copiedId={copiedId} onConnectionsChange={setConnections} />}
+          {activeTab === 'primary' && <PrimaryTab device={device} connections={connections} bandwidth={bandwidth} serverHost={device.relay_server_ip || '178.156.210.156'} copyToClipboard={copyToClipboard} copiedId={copiedId} onConnectionsChange={setConnections} />}
           {activeTab === 'advanced' && <AdvancedTab device={device} commands={commands} sendCommand={sendCommand} />}
           {activeTab === 'change-ip' && <ChangeIPTab device={device} rotationLinks={rotationLinks} onCreateLink={handleCreateRotationLink} onDeleteLink={handleDeleteRotationLink} getRotationUrl={getRotationUrl} copyToClipboard={copyToClipboard} copiedId={copiedId} />}
           {activeTab === 'history' && <HistoryTab ipHistory={ipHistory} commands={commands} />}

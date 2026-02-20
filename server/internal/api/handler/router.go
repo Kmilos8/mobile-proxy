@@ -16,6 +16,7 @@ func SetupRouter(
 	statsHandler *StatsHandler,
 	rotationLinkHandler *RotationLinkHandler,
 	pairingHandler *PairingHandler,
+	relayServerHandler *RelayServerHandler,
 	wsHub *WSHub,
 ) *gin.Engine {
 	r := gin.Default()
@@ -80,6 +81,10 @@ func SetupRouter(
 		dashboard.GET("/pairing-codes", pairingHandler.ListCodes)
 		dashboard.POST("/pairing-codes", pairingHandler.CreateCode)
 		dashboard.DELETE("/pairing-codes/:id", pairingHandler.DeleteCode)
+
+		dashboard.GET("/relay-servers", relayServerHandler.List)
+		dashboard.GET("/relay-servers/active", relayServerHandler.ListActive)
+		dashboard.POST("/relay-servers", relayServerHandler.Create)
 	}
 
 	// Internal VPN routes (called by OpenVPN scripts)

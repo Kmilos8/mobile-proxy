@@ -19,64 +19,44 @@ func NewDeviceRepository(db *DB) *DeviceRepository {
 }
 
 func (r *DeviceRepository) Create(ctx context.Context, d *domain.Device) error {
-	query := `INSERT INTO devices (id, name, android_id, status, base_port, http_port, socks5_port, udp_relay_port, ovpn_port, device_model, android_version, app_version)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	query := `INSERT INTO devices (id, name, android_id, status, base_port, http_port, socks5_port, udp_relay_port, ovpn_port, device_model, android_version, app_version, relay_server_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
 	_, err := r.db.Pool.Exec(ctx, query,
 		d.ID, d.Name, d.AndroidID, d.Status, d.BasePort,
 		d.HTTPPort, d.SOCKS5Port, d.UDPRelayPort, d.OVPNPort,
-		d.DeviceModel, d.AndroidVersion, d.AppVersion)
+		d.DeviceModel, d.AndroidVersion, d.AppVersion, d.RelayServerID)
 	return err
 }
 
+const deviceSelectColumns = `d.id, d.name, d.description, d.android_id, d.status,
+		COALESCE(host(d.cellular_ip),'') as cellular_ip,
+		COALESCE(host(d.wifi_ip),'') as wifi_ip,
+		COALESCE(host(d.vpn_ip),'') as vpn_ip,
+		d.carrier, d.network_type, d.battery_level, d.battery_charging, d.signal_strength,
+		d.base_port, d.http_port, d.socks5_port, d.udp_relay_port, d.ovpn_port,
+		d.last_heartbeat, d.app_version, d.device_model, d.android_version,
+		d.relay_server_id, COALESCE(rs.ip, '') as relay_server_ip,
+		d.created_at, d.updated_at`
+
+const deviceFromJoin = `FROM devices d LEFT JOIN relay_servers rs ON d.relay_server_id = rs.id`
+
 func (r *DeviceRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Device, error) {
-	query := `SELECT id, name, description, android_id, status,
-		COALESCE(host(cellular_ip),'') as cellular_ip,
-		COALESCE(host(wifi_ip),'') as wifi_ip,
-		COALESCE(host(vpn_ip),'') as vpn_ip,
-		carrier, network_type, battery_level, battery_charging, signal_strength,
-		base_port, http_port, socks5_port, udp_relay_port, ovpn_port,
-		last_heartbeat, app_version, device_model, android_version,
-		created_at, updated_at
-		FROM devices WHERE id = $1`
+	query := `SELECT ` + deviceSelectColumns + ` ` + deviceFromJoin + ` WHERE d.id = $1`
 	return r.scanDevice(r.db.Pool.QueryRow(ctx, query, id))
 }
 
 func (r *DeviceRepository) GetByAndroidID(ctx context.Context, androidID string) (*domain.Device, error) {
-	query := `SELECT id, name, description, android_id, status,
-		COALESCE(host(cellular_ip),'') as cellular_ip,
-		COALESCE(host(wifi_ip),'') as wifi_ip,
-		COALESCE(host(vpn_ip),'') as vpn_ip,
-		carrier, network_type, battery_level, battery_charging, signal_strength,
-		base_port, http_port, socks5_port, udp_relay_port, ovpn_port,
-		last_heartbeat, app_version, device_model, android_version,
-		created_at, updated_at
-		FROM devices WHERE android_id = $1`
+	query := `SELECT ` + deviceSelectColumns + ` ` + deviceFromJoin + ` WHERE d.android_id = $1`
 	return r.scanDevice(r.db.Pool.QueryRow(ctx, query, androidID))
 }
 
 func (r *DeviceRepository) GetByName(ctx context.Context, name string) (*domain.Device, error) {
-	query := `SELECT id, name, description, android_id, status,
-		COALESCE(host(cellular_ip),'') as cellular_ip,
-		COALESCE(host(wifi_ip),'') as wifi_ip,
-		COALESCE(host(vpn_ip),'') as vpn_ip,
-		carrier, network_type, battery_level, battery_charging, signal_strength,
-		base_port, http_port, socks5_port, udp_relay_port, ovpn_port,
-		last_heartbeat, app_version, device_model, android_version,
-		created_at, updated_at
-		FROM devices WHERE name = $1`
+	query := `SELECT ` + deviceSelectColumns + ` ` + deviceFromJoin + ` WHERE d.name = $1`
 	return r.scanDevice(r.db.Pool.QueryRow(ctx, query, name))
 }
 
 func (r *DeviceRepository) List(ctx context.Context) ([]domain.Device, error) {
-	query := `SELECT id, name, description, android_id, status,
-		COALESCE(host(cellular_ip),'') as cellular_ip,
-		COALESCE(host(wifi_ip),'') as wifi_ip,
-		COALESCE(host(vpn_ip),'') as vpn_ip,
-		carrier, network_type, battery_level, battery_charging, signal_strength,
-		base_port, http_port, socks5_port, udp_relay_port, ovpn_port,
-		last_heartbeat, app_version, device_model, android_version,
-		created_at, updated_at
-		FROM devices ORDER BY name ASC`
+	query := `SELECT ` + deviceSelectColumns + ` ` + deviceFromJoin + ` ORDER BY d.name ASC`
 	rows, err := r.db.Pool.Query(ctx, query)
 	if err != nil {
 		return nil, err
@@ -154,6 +134,12 @@ func (r *DeviceRepository) SetAuthToken(ctx context.Context, id uuid.UUID, token
 	return err
 }
 
+func (r *DeviceRepository) UpdateRelayServer(ctx context.Context, id uuid.UUID, relayServerID uuid.UUID) error {
+	query := `UPDATE devices SET relay_server_id = $2, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, id, relayServerID)
+	return err
+}
+
 func (r *DeviceRepository) CountByStatus(ctx context.Context) (total int, online int, err error) {
 	query := `SELECT COUNT(*), COUNT(*) FILTER (WHERE status = 'online') FROM devices`
 	err = r.db.Pool.QueryRow(ctx, query).Scan(&total, &online)
@@ -174,6 +160,7 @@ func (r *DeviceRepository) scanDevice(row pgx.Row) (*domain.Device, error) {
 		&d.Carrier, &d.NetworkType, &d.BatteryLevel, &d.BatteryCharging, &d.SignalStrength,
 		&d.BasePort, &d.HTTPPort, &d.SOCKS5Port, &d.UDPRelayPort, &d.OVPNPort,
 		&d.LastHeartbeat, &d.AppVersion, &d.DeviceModel, &d.AndroidVersion,
+		&d.RelayServerID, &d.RelayServerIP,
 		&d.CreatedAt, &d.UpdatedAt,
 	)
 	if err != nil {
@@ -190,6 +177,7 @@ func (r *DeviceRepository) scanDeviceRow(rows pgx.Rows) (*domain.Device, error) 
 		&d.Carrier, &d.NetworkType, &d.BatteryLevel, &d.BatteryCharging, &d.SignalStrength,
 		&d.BasePort, &d.HTTPPort, &d.SOCKS5Port, &d.UDPRelayPort, &d.OVPNPort,
 		&d.LastHeartbeat, &d.AppVersion, &d.DeviceModel, &d.AndroidVersion,
+		&d.RelayServerID, &d.RelayServerIP,
 		&d.CreatedAt, &d.UpdatedAt,
 	)
 	if err != nil {

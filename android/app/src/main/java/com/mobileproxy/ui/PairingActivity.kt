@@ -234,7 +234,8 @@ class PairingActivity : AppCompatActivity() {
                             deviceId = resp.getString("device_id"),
                             authToken = resp.getString("auth_token"),
                             vpnConfig = resp.optString("vpn_config", ""),
-                            basePort = resp.optInt("base_port", 0)
+                            basePort = resp.optInt("base_port", 0),
+                            relayServerIP = resp.optString("relay_server_ip", "")
                         )
 
                         statusText.text = "Paired successfully!"

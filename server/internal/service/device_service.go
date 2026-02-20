@@ -15,13 +15,14 @@ import (
 )
 
 type DeviceService struct {
-	deviceRepo     *repository.DeviceRepository
-	ipHistRepo     *repository.IPHistoryRepository
-	commandRepo    *repository.CommandRepository
-	statusLogRepo  *repository.StatusLogRepository
-	portService    *PortService
-	vpnService     *VPNService
-	tunnelPushURL  string // URL of tunnel server's push API (e.g. http://178.156.210.156:8081)
+	deviceRepo      *repository.DeviceRepository
+	ipHistRepo      *repository.IPHistoryRepository
+	commandRepo     *repository.CommandRepository
+	statusLogRepo   *repository.StatusLogRepository
+	relayServerRepo *repository.RelayServerRepository
+	portService     *PortService
+	vpnService      *VPNService
+	tunnelPushURL   string // fallback static URL (e.g. http://178.156.210.156:8081)
 }
 
 func NewDeviceService(
@@ -48,6 +49,24 @@ func (s *DeviceService) SetTunnelPushURL(url string) {
 // SetStatusLogRepo configures the status log repository for tracking status transitions.
 func (s *DeviceService) SetStatusLogRepo(repo *repository.StatusLogRepository) {
 	s.statusLogRepo = repo
+}
+
+// SetRelayServerRepo configures the relay server repository for dynamic tunnel URL resolution.
+func (s *DeviceService) SetRelayServerRepo(repo *repository.RelayServerRepository) {
+	s.relayServerRepo = repo
+}
+
+// getTunnelPushURL resolves the tunnel push URL for a device based on its relay server.
+func (s *DeviceService) getTunnelPushURL(ctx context.Context, deviceID uuid.UUID) string {
+	if s.relayServerRepo != nil {
+		device, err := s.deviceRepo.GetByID(ctx, deviceID)
+		if err == nil && device.RelayServerID != nil {
+			if rs, err := s.relayServerRepo.GetByID(ctx, *device.RelayServerID); err == nil {
+				return fmt.Sprintf("http://%s:8081", rs.IP)
+			}
+		}
+	}
+	return s.tunnelPushURL
 }
 
 func (s *DeviceService) Register(ctx context.Context, req *domain.DeviceRegistrationRequest) (*domain.DeviceRegistrationResponse, error) {
@@ -187,15 +206,16 @@ func (s *DeviceService) SendCommand(ctx context.Context, deviceID uuid.UUID, req
 	}
 
 	// Push command to device via tunnel for instant delivery (fire-and-forget)
-	if s.tunnelPushURL != "" {
-		go s.pushCommandToTunnel(deviceID, cmd)
+	tunnelURL := s.getTunnelPushURL(ctx, deviceID)
+	if tunnelURL != "" {
+		go s.pushCommandToTunnel(tunnelURL, deviceID, cmd)
 	}
 
 	return cmd, nil
 }
 
 // pushCommandToTunnel sends a command to the tunnel server's push API for instant delivery.
-func (s *DeviceService) pushCommandToTunnel(deviceID uuid.UUID, cmd *domain.DeviceCommand) {
+func (s *DeviceService) pushCommandToTunnel(tunnelURL string, deviceID uuid.UUID, cmd *domain.DeviceCommand) {
 	body, _ := json.Marshal(map[string]string{
 		"device_id": deviceID.String(),
 		"id":        cmd.ID.String(),
@@ -204,14 +224,14 @@ func (s *DeviceService) pushCommandToTunnel(deviceID uuid.UUID, cmd *domain.Devi
 	})
 
 	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Post(s.tunnelPushURL+"/push-command", "application/json", strings.NewReader(string(body)))
+	resp, err := client.Post(tunnelURL+"/push-command", "application/json", strings.NewReader(string(body)))
 	if err != nil {
 		log.Printf("Push command to tunnel failed (device=%s): %v", deviceID, err)
 		return
 	}
 	resp.Body.Close()
 	if resp.StatusCode == http.StatusOK {
-		log.Printf("Command %s pushed to device %s via tunnel", cmd.ID, deviceID)
+		log.Printf("Command %s pushed to device %s via tunnel (%s)", cmd.ID, deviceID, tunnelURL)
 	} else {
 		log.Printf("Push command returned %d for device %s (device may be offline, will deliver via heartbeat)", resp.StatusCode, deviceID)
 	}

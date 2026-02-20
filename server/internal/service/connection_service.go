@@ -16,10 +16,11 @@ import (
 )
 
 type ConnectionService struct {
-	connRepo      *repository.ConnectionRepository
-	deviceRepo    *repository.DeviceRepository
-	portService   *PortService
-	tunnelPushURL string
+	connRepo        *repository.ConnectionRepository
+	deviceRepo      *repository.DeviceRepository
+	relayServerRepo *repository.RelayServerRepository
+	portService     *PortService
+	tunnelPushURL   string // fallback static URL
 }
 
 func NewConnectionService(connRepo *repository.ConnectionRepository, deviceRepo *repository.DeviceRepository) *ConnectionService {
@@ -35,6 +36,21 @@ func (s *ConnectionService) SetPortService(ps *PortService) {
 
 func (s *ConnectionService) SetTunnelPushURL(url string) {
 	s.tunnelPushURL = url
+}
+
+func (s *ConnectionService) SetRelayServerRepo(repo *repository.RelayServerRepository) {
+	s.relayServerRepo = repo
+}
+
+// getTunnelPushURL resolves the tunnel push URL for a device based on its relay server.
+// Falls back to the static tunnelPushURL if relay server is not available.
+func (s *ConnectionService) getTunnelPushURL(ctx context.Context, device *domain.Device) string {
+	if device.RelayServerID != nil && s.relayServerRepo != nil {
+		if rs, err := s.relayServerRepo.GetByID(ctx, *device.RelayServerID); err == nil {
+			return fmt.Sprintf("http://%s:8081", rs.IP)
+		}
+	}
+	return s.tunnelPushURL
 }
 
 func (s *ConnectionService) Create(ctx context.Context, req *domain.CreateConnectionRequest) (*domain.ProxyConnection, error) {
@@ -95,8 +111,9 @@ func (s *ConnectionService) Create(ctx context.Context, req *domain.CreateConnec
 	}
 
 	// If device is online, trigger DNAT refresh for the new connection port
-	if conn.BasePort != nil && device.VpnIP != "" && s.tunnelPushURL != "" {
-		go s.refreshDNAT(device.ID.String(), *conn.BasePort, device.VpnIP, proxyType)
+	tunnelURL := s.getTunnelPushURL(ctx, device)
+	if conn.BasePort != nil && device.VpnIP != "" && tunnelURL != "" {
+		go s.refreshDNAT(tunnelURL, device.ID.String(), *conn.BasePort, device.VpnIP, proxyType)
 	}
 
 	return conn, nil
@@ -149,17 +166,20 @@ func (s *ConnectionService) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 
 	// Tear down DNAT for the connection's port
-	if conn.BasePort != nil && s.tunnelPushURL != "" {
+	if conn.BasePort != nil {
 		device, err := s.deviceRepo.GetByID(ctx, conn.DeviceID)
 		if err == nil && device.VpnIP != "" {
-			go s.teardownDNAT(device.ID.String(), *conn.BasePort, device.VpnIP, conn.ProxyType)
+			tunnelURL := s.getTunnelPushURL(ctx, device)
+			if tunnelURL != "" {
+				go s.teardownDNAT(tunnelURL, device.ID.String(), *conn.BasePort, device.VpnIP, conn.ProxyType)
+			}
 		}
 	}
 
 	return nil
 }
 
-func (s *ConnectionService) refreshDNAT(deviceID string, basePort int, vpnIP string, proxyType string) {
+func (s *ConnectionService) refreshDNAT(tunnelURL string, deviceID string, basePort int, vpnIP string, proxyType string) {
 	body, _ := json.Marshal(map[string]interface{}{
 		"device_id":  deviceID,
 		"base_port":  basePort,
@@ -167,16 +187,16 @@ func (s *ConnectionService) refreshDNAT(deviceID string, basePort int, vpnIP str
 		"proxy_type": proxyType,
 	})
 	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Post(s.tunnelPushURL+"/refresh-dnat", "application/json", strings.NewReader(string(body)))
+	resp, err := client.Post(tunnelURL+"/refresh-dnat", "application/json", strings.NewReader(string(body)))
 	if err != nil {
 		log.Printf("Refresh DNAT failed (device=%s port=%d): %v", deviceID, basePort, err)
 		return
 	}
 	resp.Body.Close()
-	log.Printf("Refresh DNAT sent for device=%s port=%d type=%s", deviceID, basePort, proxyType)
+	log.Printf("Refresh DNAT sent for device=%s port=%d type=%s via %s", deviceID, basePort, proxyType, tunnelURL)
 }
 
-func (s *ConnectionService) teardownDNAT(deviceID string, basePort int, vpnIP string, proxyType string) {
+func (s *ConnectionService) teardownDNAT(tunnelURL string, deviceID string, basePort int, vpnIP string, proxyType string) {
 	body, _ := json.Marshal(map[string]interface{}{
 		"device_id":  deviceID,
 		"base_port":  basePort,
@@ -184,11 +204,11 @@ func (s *ConnectionService) teardownDNAT(deviceID string, basePort int, vpnIP st
 		"proxy_type": proxyType,
 	})
 	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Post(s.tunnelPushURL+"/teardown-dnat", "application/json", strings.NewReader(string(body)))
+	resp, err := client.Post(tunnelURL+"/teardown-dnat", "application/json", strings.NewReader(string(body)))
 	if err != nil {
 		log.Printf("Teardown DNAT failed (device=%s port=%d): %v", deviceID, basePort, err)
 		return
 	}
 	resp.Body.Close()
-	log.Printf("Teardown DNAT sent for device=%s port=%d type=%s", deviceID, basePort, proxyType)
+	log.Printf("Teardown DNAT sent for device=%s port=%d type=%s via %s", deviceID, basePort, proxyType, tunnelURL)
 }

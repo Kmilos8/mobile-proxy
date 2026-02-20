@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.mobileproxy.MobileProxyApp
 import com.mobileproxy.R
+import com.mobileproxy.core.config.CredentialManager
 import com.mobileproxy.core.network.NetworkManager
 import com.mobileproxy.core.proxy.HttpProxyServer
 import com.mobileproxy.core.proxy.Socks5ProxyServer
@@ -31,6 +32,7 @@ class ProxyForegroundService : Service() {
         const val EXTRA_AUTH_TOKEN = "auth_token"
     }
 
+    @Inject lateinit var credentialManager: CredentialManager
     @Inject lateinit var networkManager: NetworkManager
     @Inject lateinit var httpProxy: HttpProxyServer
     @Inject lateinit var socks5Proxy: Socks5ProxyServer
@@ -78,9 +80,10 @@ class ProxyForegroundService : Service() {
         ProxyVpnService.commandCallback = { json -> statusReporter.handlePushedCommand(json) }
 
         // Start VPN tunnel first
+        val relayIP = credentialManager.getRelayServerIP()
         val vpnIntent = Intent(this, ProxyVpnService::class.java).apply {
             action = ProxyVpnService.ACTION_START
-            putExtra(ProxyVpnService.EXTRA_SERVER_IP, "178.156.210.156")
+            putExtra(ProxyVpnService.EXTRA_SERVER_IP, relayIP)
             putExtra(ProxyVpnService.EXTRA_DEVICE_ID, deviceId)
         }
         startService(vpnIntent)
