@@ -158,7 +158,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun migrateFromBuildConfig() {
-        // If BuildConfig has credentials and CredentialManager doesn't, migrate
+        // Only migrate once — skip if already done or user has unpaired
+        if (credentialManager.isMigrationDone()) return
+
         if (!credentialManager.isPaired() &&
             BuildConfig.DEVICE_ID.isNotEmpty() &&
             BuildConfig.DEFAULT_SERVER_URL.isNotEmpty()
@@ -171,6 +173,7 @@ class MainActivity : AppCompatActivity() {
                 basePort = 0
             )
         }
+        credentialManager.setMigrationDone()
     }
 
     private fun updateServerUrlFromCredentials() {

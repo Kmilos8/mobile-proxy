@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -399,8 +400,18 @@ func (s *tunnelServer) notifyConnected(deviceID, vpnIP string) {
 		log.Printf("Failed to notify connected for %s: %v", deviceID, err)
 		return
 	}
-	resp.Body.Close()
-	log.Printf("Notified API: device %s connected with VPN IP %s (status=%d)", deviceID, vpnIP, resp.StatusCode)
+	defer resp.Body.Close()
+
+	// Parse base_port from API response to set up DNAT rules
+	var result struct {
+		BasePort int `json:"base_port"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.BasePort > 0 {
+		setupDNAT(result.BasePort, vpnIP)
+		log.Printf("Notified API + DNAT setup: device %s vpn_ip=%s base_port=%d", deviceID, vpnIP, result.BasePort)
+	} else {
+		log.Printf("Notified API: device %s connected (status=%d, no DNAT: base_port=%d)", deviceID, resp.StatusCode, result.BasePort)
+	}
 }
 
 func (s *tunnelServer) notifyDisconnected(deviceID, vpnIP string) {
@@ -411,8 +422,69 @@ func (s *tunnelServer) notifyDisconnected(deviceID, vpnIP string) {
 		log.Printf("Failed to notify disconnected for %s: %v", deviceID, err)
 		return
 	}
-	resp.Body.Close()
-	log.Printf("Notified API: device %s disconnected (status=%d)", deviceID, resp.StatusCode)
+	defer resp.Body.Close()
+
+	// Parse base_port from API response to tear down DNAT rules
+	var result struct {
+		BasePort int `json:"base_port"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.BasePort > 0 {
+		teardownDNAT(result.BasePort, vpnIP)
+		log.Printf("Notified API + DNAT teardown: device %s vpn_ip=%s base_port=%d", deviceID, vpnIP, result.BasePort)
+	} else {
+		log.Printf("Notified API: device %s disconnected (status=%d)", deviceID, resp.StatusCode)
+	}
+}
+
+// setupDNAT creates iptables DNAT rules to forward external ports to the device's VPN IP.
+// Runs in the host network namespace (tunnel container uses network_mode: host).
+func setupDNAT(basePort int, vpnIP string) {
+	rules := []struct {
+		extPort int
+		devPort int
+	}{
+		{basePort, 8080},     // HTTP proxy
+		{basePort + 1, 1080}, // SOCKS5
+		{basePort + 2, 1081}, // UDP relay
+	}
+	for _, r := range rules {
+		for _, proto := range []string{"tcp", "udp"} {
+			args := fmt.Sprintf("-t nat -A PREROUTING -p %s --dport %d -j DNAT --to-destination %s:%d",
+				proto, r.extPort, vpnIP, r.devPort)
+			if out, err := runCmd("iptables", splitArgs(args)...); err != nil {
+				log.Printf("DNAT add %s:%d->%s:%d (%s) failed: %s: %v", "ext", r.extPort, vpnIP, r.devPort, proto, string(out), err)
+			}
+		}
+	}
+	log.Printf("DNAT setup: ports %d-%d -> %s", basePort, basePort+2, vpnIP)
+}
+
+// teardownDNAT removes iptables DNAT rules for a device.
+func teardownDNAT(basePort int, vpnIP string) {
+	rules := []struct {
+		extPort int
+		devPort int
+	}{
+		{basePort, 8080},
+		{basePort + 1, 1080},
+		{basePort + 2, 1081},
+	}
+	for _, r := range rules {
+		for _, proto := range []string{"tcp", "udp"} {
+			args := fmt.Sprintf("-t nat -D PREROUTING -p %s --dport %d -j DNAT --to-destination %s:%d",
+				proto, r.extPort, vpnIP, r.devPort)
+			runCmd("iptables", splitArgs(args)...) // best effort
+		}
+	}
+	log.Printf("DNAT teardown: ports %d-%d -> %s", basePort, basePort+2, vpnIP)
+}
+
+func splitArgs(s string) []string {
+	var args []string
+	for _, part := range strings.Fields(s) {
+		args = append(args, part)
+	}
+	return args
 }
 
 func (s *tunnelServer) sendAuthFail(addr *net.UDPAddr) {

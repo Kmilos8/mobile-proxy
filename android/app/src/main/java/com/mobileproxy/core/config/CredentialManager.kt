@@ -17,6 +17,7 @@ class CredentialManager @Inject constructor(
         private const val KEY_AUTH_TOKEN = "auth_token"
         private const val KEY_VPN_CONFIG = "vpn_config"
         private const val KEY_BASE_PORT = "base_port"
+        private const val KEY_MIGRATION_DONE = "migration_done"
     }
 
     private val prefs: SharedPreferences =
@@ -48,7 +49,17 @@ class CredentialManager @Inject constructor(
     fun getVpnConfig(): String = prefs.getString(KEY_VPN_CONFIG, "") ?: ""
     fun getBasePort(): Int = prefs.getInt(KEY_BASE_PORT, 0)
 
+    fun isMigrationDone(): Boolean = prefs.getBoolean(KEY_MIGRATION_DONE, false)
+
+    fun setMigrationDone() {
+        prefs.edit().putBoolean(KEY_MIGRATION_DONE, true).apply()
+    }
+
     fun clear() {
-        prefs.edit().clear().apply()
+        // Preserve migration flag so BuildConfig values don't re-migrate after unpair
+        prefs.edit()
+            .clear()
+            .putBoolean(KEY_MIGRATION_DONE, true)
+            .apply()
     }
 }

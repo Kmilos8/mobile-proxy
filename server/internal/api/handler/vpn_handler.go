@@ -69,18 +69,12 @@ func (h *VPNHandler) Connected(c *gin.Context) {
 		return
 	}
 
-	if err := h.vpnService.OnDeviceConnected(device.BasePort, req.VpnIP); err != nil {
-		log.Printf("VPN connected: failed to setup iptables: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to setup iptables"})
-		return
-	}
-
 	identifier := req.DeviceID
 	if identifier == "" {
 		identifier = req.CommonName
 	}
 	log.Printf("VPN connected: %s (vpn_ip=%s, base_port=%d)", identifier, req.VpnIP, device.BasePort)
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "base_port": device.BasePort})
 }
 
 // Disconnected is called by the tunnel server or OpenVPN client-disconnect script
@@ -116,14 +110,10 @@ func (h *VPNHandler) Disconnected(c *gin.Context) {
 		}
 	}
 
-	if err := h.vpnService.OnDeviceDisconnected(device.BasePort, req.VpnIP); err != nil {
-		log.Printf("VPN disconnected: failed to teardown iptables: %v", err)
-	}
-
 	identifier := req.DeviceID
 	if identifier == "" {
 		identifier = req.CommonName
 	}
 	log.Printf("VPN disconnected: %s", identifier)
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "base_port": device.BasePort})
 }
