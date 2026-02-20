@@ -62,18 +62,21 @@ func (r *BandwidthRepository) GetTotalMonth(ctx context.Context, year int, month
 	return bytesIn, bytesOut, err
 }
 
-func (r *BandwidthRepository) GetDeviceHourly(ctx context.Context, deviceID uuid.UUID, date time.Time) ([]domain.BandwidthHourly, error) {
-	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
-	end := start.AddDate(0, 0, 1)
+func (r *BandwidthRepository) GetDeviceHourly(ctx context.Context, deviceID uuid.UUID, date time.Time, tzOffsetMinutes int) ([]domain.BandwidthHourly, error) {
+	// Compute UTC start/end for the local day.
+	// tzOffsetMinutes matches JS getTimezoneOffset(): minutes from local→UTC.
+	// E.g. EST (UTC-5) = 300, CET (UTC+1) = -60.
+	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC).Add(time.Duration(tzOffsetMinutes) * time.Minute)
+	end := start.Add(24 * time.Hour)
 
-	query := `SELECT EXTRACT(HOUR FROM interval_start)::int AS hour,
+	query := `SELECT EXTRACT(HOUR FROM interval_start - $4 * interval '1 minute')::int AS hour,
 		COALESCE(SUM(bytes_in), 0) AS download_bytes,
 		COALESCE(SUM(bytes_out), 0) AS upload_bytes
 		FROM bandwidth_logs
 		WHERE device_id = $1 AND interval_start >= $2 AND interval_start < $3
 		GROUP BY hour ORDER BY hour`
 
-	rows, err := r.db.Pool.Query(ctx, query, deviceID, start, end)
+	rows, err := r.db.Pool.Query(ctx, query, deviceID, start, end, tzOffsetMinutes)
 	if err != nil {
 		return nil, err
 	}

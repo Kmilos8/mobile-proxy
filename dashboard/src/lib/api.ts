@@ -162,10 +162,10 @@ export const api = {
       request<DeviceBandwidth>(`/devices/${id}/bandwidth`, { token }),
     commands: (token: string, id: string) =>
       request<{ commands: DeviceCommand[] }>(`/devices/${id}/commands`, { token }),
-    bandwidthHourly: (token: string, id: string, date: string) =>
-      request<{ hourly: BandwidthHourly[] }>(`/devices/${id}/bandwidth/hourly?date=${date}`, { token }),
-    uptime: (token: string, id: string, date: string) =>
-      request<{ segments: UptimeSegment[] }>(`/devices/${id}/uptime?date=${date}`, { token }),
+    bandwidthHourly: (token: string, id: string, date: string, tzOffset?: number) =>
+      request<{ hourly: BandwidthHourly[] }>(`/devices/${id}/bandwidth/hourly?date=${date}&tz_offset=${tzOffset ?? 0}`, { token }),
+    uptime: (token: string, id: string, date: string, tzOffset?: number) =>
+      request<{ segments: UptimeSegment[] }>(`/devices/${id}/uptime?date=${date}&tz_offset=${tzOffset ?? 0}`, { token }),
   },
   stats: {
     overview: (token: string) =>

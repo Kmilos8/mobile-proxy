@@ -275,18 +275,14 @@ func (s *DeviceService) MarkStaleOfflineWithLogs(ctx context.Context) (int64, er
 	return count, nil
 }
 
-func (s *DeviceService) GetUptimeSegments(ctx context.Context, deviceID uuid.UUID, date time.Time) ([]domain.UptimeSegment, error) {
+func (s *DeviceService) GetUptimeSegments(ctx context.Context, deviceID uuid.UUID, date time.Time, tzOffsetMinutes int) ([]domain.UptimeSegment, error) {
 	if s.statusLogRepo == nil {
 		return nil, nil
 	}
 
-	logs, err := s.statusLogRepo.GetByDeviceAndDate(ctx, deviceID, date)
-	if err != nil {
-		return nil, err
-	}
-
-	dayStart := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
-	dayEnd := dayStart.AddDate(0, 0, 1)
+	// Compute day boundaries in UTC adjusted for timezone
+	dayStart := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC).Add(time.Duration(tzOffsetMinutes) * time.Minute)
+	dayEnd := dayStart.Add(24 * time.Hour)
 
 	// Cap dayEnd to now if the date is today
 	now := time.Now().UTC()
@@ -294,16 +290,25 @@ func (s *DeviceService) GetUptimeSegments(ctx context.Context, deviceID uuid.UUI
 		dayEnd = now
 	}
 
+	logs, err := s.statusLogRepo.GetByDeviceAndRange(ctx, deviceID, dayStart, dayEnd)
+	if err != nil {
+		return nil, err
+	}
+
 	if len(logs) == 0 {
-		// No transitions this day - return a single segment with unknown status
+		// No transitions in this range — try to find the last known status before this range
+		initialStatus := "unknown"
+		if lastLog, err := s.statusLogRepo.GetLastStatusBefore(ctx, deviceID, dayStart); err == nil && lastLog != nil {
+			initialStatus = lastLog.Status
+		}
 		return []domain.UptimeSegment{
-			{Status: "unknown", StartTime: dayStart, EndTime: dayEnd},
+			{Status: initialStatus, StartTime: dayStart, EndTime: dayEnd},
 		}, nil
 	}
 
 	var segments []domain.UptimeSegment
 
-	// First segment: from midnight to first transition, using previous_status of first log
+	// First segment: from day start to first transition
 	if logs[0].ChangedAt.After(dayStart) {
 		segments = append(segments, domain.UptimeSegment{
 			Status:    logs[0].PreviousStatus,

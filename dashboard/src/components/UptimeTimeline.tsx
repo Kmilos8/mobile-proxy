@@ -43,11 +43,10 @@ function buildGrid(segments: UptimeSegment[]): Bucket[] {
       }))
     : null
 
+  // The backend returns segments for the correct timezone-adjusted day.
+  // dayStart is the earliest segment start (which is midnight in the selected timezone).
   const dayStart = parsed
-    ? (() => {
-        const d = new Date(segments[0].start_time)
-        return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
-      })()
+    ? parsed[0].start
     : 0
 
   const grid: Bucket[] = []

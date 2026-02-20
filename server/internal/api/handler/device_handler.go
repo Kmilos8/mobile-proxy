@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -249,7 +250,12 @@ func (h *DeviceHandler) GetBandwidthHourly(c *gin.Context) {
 		return
 	}
 
-	hourly, err := h.bwService.GetDeviceHourly(c.Request.Context(), id, date)
+	tzOffset := 0
+	if tzStr := c.Query("tz_offset"); tzStr != "" {
+		fmt.Sscanf(tzStr, "%d", &tzOffset)
+	}
+
+	hourly, err := h.bwService.GetDeviceHourly(c.Request.Context(), id, date, tzOffset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -272,7 +278,12 @@ func (h *DeviceHandler) GetUptime(c *gin.Context) {
 		return
 	}
 
-	segments, err := h.deviceService.GetUptimeSegments(c.Request.Context(), id, date)
+	tzOffset := 0
+	if tzStr := c.Query("tz_offset"); tzStr != "" {
+		fmt.Sscanf(tzStr, "%d", &tzOffset)
+	}
+
+	segments, err := h.deviceService.GetUptimeSegments(c.Request.Context(), id, date, tzOffset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

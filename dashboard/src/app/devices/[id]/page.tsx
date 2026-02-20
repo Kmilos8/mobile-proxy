@@ -899,12 +899,33 @@ function MetricsTab({ device, bandwidth }: {
 }
 
 // ============= USAGE TAB =============
+
+const TIMEZONE_OPTIONS = [
+  { label: 'Local', value: 'local' },
+  { label: 'UTC', value: '0' },
+  { label: 'EST (UTC-5)', value: '300' },
+  { label: 'CST (UTC-6)', value: '360' },
+  { label: 'MST (UTC-7)', value: '420' },
+  { label: 'PST (UTC-8)', value: '480' },
+  { label: 'CET (UTC+1)', value: '-60' },
+  { label: 'EET (UTC+2)', value: '-120' },
+  { label: 'IST (UTC+5:30)', value: '-330' },
+  { label: 'JST (UTC+9)', value: '-540' },
+]
+
+function getLocalOffset() {
+  return new Date().getTimezoneOffset()
+}
+
 function UsageTab({ deviceId }: { deviceId: string }) {
   const today = new Date().toISOString().split('T')[0]
   const [date, setDate] = useState(today)
+  const [tzSelection, setTzSelection] = useState('local')
   const [hourlyData, setHourlyData] = useState<BandwidthHourly[]>([])
   const [uptimeSegments, setUptimeSegments] = useState<UptimeSegment[]>([])
   const [loading, setLoading] = useState(true)
+
+  const tzOffset = tzSelection === 'local' ? getLocalOffset() : parseInt(tzSelection, 10)
 
   const fetchUsageData = useCallback(async () => {
     const token = getToken()
@@ -912,8 +933,8 @@ function UsageTab({ deviceId }: { deviceId: string }) {
     setLoading(true)
     try {
       const [bwRes, uptimeRes] = await Promise.all([
-        api.devices.bandwidthHourly(token, deviceId, date),
-        api.devices.uptime(token, deviceId, date),
+        api.devices.bandwidthHourly(token, deviceId, date, tzOffset),
+        api.devices.uptime(token, deviceId, date, tzOffset),
       ])
       setHourlyData(bwRes.hourly || [])
       setUptimeSegments(uptimeRes.segments || [])
@@ -922,23 +943,41 @@ function UsageTab({ deviceId }: { deviceId: string }) {
     } finally {
       setLoading(false)
     }
-  }, [deviceId, date])
+  }, [deviceId, date, tzOffset])
 
   useEffect(() => {
     fetchUsageData()
   }, [fetchUsageData])
 
+  // Compute timezone label for display
+  const offsetHours = -tzOffset / 60
+  const tzLabel = tzOffset === 0 ? 'UTC' : `UTC${offsetHours >= 0 ? '+' : ''}${offsetHours % 1 === 0 ? offsetHours.toFixed(0) : offsetHours.toFixed(1)}`
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h3 className="text-sm font-medium text-zinc-400">Usage & Uptime</h3>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          max={today}
-          className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        />
+        <h3 className="text-sm font-medium text-zinc-400">
+          Usage & Uptime
+          <span className="text-zinc-600 ml-2 text-xs">({tzLabel})</span>
+        </h3>
+        <div className="flex items-center gap-3">
+          <select
+            value={tzSelection}
+            onChange={(e) => setTzSelection(e.target.value)}
+            className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            {TIMEZONE_OPTIONS.map(tz => (
+              <option key={tz.value} value={tz.value}>{tz.label}</option>
+            ))}
+          </select>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            max={today}
+            className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
       </div>
 
       {loading ? (

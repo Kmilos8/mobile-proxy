@@ -35,7 +35,10 @@ func (r *StatusLogRepository) HasLogsForDate(ctx context.Context, deviceID uuid.
 func (r *StatusLogRepository) GetByDeviceAndDate(ctx context.Context, deviceID uuid.UUID, date time.Time) ([]domain.DeviceStatusLog, error) {
 	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(0, 0, 1)
+	return r.GetByDeviceAndRange(ctx, deviceID, start, end)
+}
 
+func (r *StatusLogRepository) GetByDeviceAndRange(ctx context.Context, deviceID uuid.UUID, start, end time.Time) ([]domain.DeviceStatusLog, error) {
 	query := `SELECT id, device_id, status, previous_status, changed_at
 		FROM device_status_logs
 		WHERE device_id = $1 AND changed_at >= $2 AND changed_at < $3
@@ -56,4 +59,20 @@ func (r *StatusLogRepository) GetByDeviceAndDate(ctx context.Context, deviceID u
 		logs = append(logs, l)
 	}
 	return logs, nil
+}
+
+// GetLastStatusBefore returns the most recent status log before a given time, used to determine
+// the initial status at the start of a timezone-adjusted day.
+func (r *StatusLogRepository) GetLastStatusBefore(ctx context.Context, deviceID uuid.UUID, before time.Time) (*domain.DeviceStatusLog, error) {
+	query := `SELECT id, device_id, status, previous_status, changed_at
+		FROM device_status_logs
+		WHERE device_id = $1 AND changed_at < $2
+		ORDER BY changed_at DESC LIMIT 1`
+
+	var l domain.DeviceStatusLog
+	err := r.db.Pool.QueryRow(ctx, query, deviceID, before).Scan(&l.ID, &l.DeviceID, &l.Status, &l.PreviousStatus, &l.ChangedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &l, nil
 }
