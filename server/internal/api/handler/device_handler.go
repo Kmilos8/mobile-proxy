@@ -85,6 +85,11 @@ func (h *DeviceHandler) Heartbeat(c *gin.Context) {
 		return
 	}
 
+	// Record bandwidth if reported
+	if req.BytesIn > 0 || req.BytesOut > 0 {
+		_ = h.bwService.Record(c.Request.Context(), id, nil, req.BytesIn, req.BytesOut)
+	}
+
 	// Broadcast device update via WebSocket
 	device, _ := h.deviceService.GetByID(c.Request.Context(), id)
 	if device != nil {
