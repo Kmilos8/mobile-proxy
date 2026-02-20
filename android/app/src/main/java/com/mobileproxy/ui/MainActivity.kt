@@ -53,8 +53,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            // Pairing complete — update UI with stored credentials
-            updateServerUrlFromCredentials()
+            // Pairing complete
         }
     }
 
@@ -70,8 +69,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         setContentView(R.layout.activity_main)
-
-        updateServerUrlFromCredentials()
 
         val statusText = findViewById<TextView>(R.id.textStatus)
         val cellularText = findViewById<TextView>(R.id.textCellular)
@@ -176,23 +173,11 @@ class MainActivity : AppCompatActivity() {
         credentialManager.setMigrationDone()
     }
 
-    private fun updateServerUrlFromCredentials() {
-        val serverUrlEdit = findViewById<EditText>(R.id.editServerUrl) ?: return
-        val url = credentialManager.getServerUrl()
-        if (url.isNotEmpty()) {
-            serverUrlEdit.setText(url)
-        } else if (serverUrlEdit.text.isNullOrEmpty() && BuildConfig.DEFAULT_SERVER_URL.isNotEmpty()) {
-            serverUrlEdit.setText(BuildConfig.DEFAULT_SERVER_URL)
-        }
-    }
-
     private fun startProxyService() {
         val statusText = findViewById<TextView>(R.id.textStatus)
 
         // Use CredentialManager values
-        val serverUrl = credentialManager.getServerUrl().ifEmpty {
-            findViewById<EditText>(R.id.editServerUrl).text.toString()
-        }
+        val serverUrl = credentialManager.getServerUrl().ifEmpty { BuildConfig.DEFAULT_SERVER_URL }
         val deviceId = credentialManager.getDeviceId().ifEmpty { BuildConfig.DEVICE_ID }
         val authToken = credentialManager.getAuthToken().ifEmpty { BuildConfig.DEVICE_AUTH_TOKEN }
 
