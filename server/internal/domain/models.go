@@ -145,6 +145,26 @@ type PairingCode struct {
 	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
 }
 
+type DeviceStatusLog struct {
+	ID             uuid.UUID `json:"id" db:"id"`
+	DeviceID       uuid.UUID `json:"device_id" db:"device_id"`
+	Status         string    `json:"status" db:"status"`
+	PreviousStatus string    `json:"previous_status" db:"previous_status"`
+	ChangedAt      time.Time `json:"changed_at" db:"changed_at"`
+}
+
+type BandwidthHourly struct {
+	Hour          int   `json:"hour"`
+	DownloadBytes int64 `json:"download_bytes"`
+	UploadBytes   int64 `json:"upload_bytes"`
+}
+
+type UptimeSegment struct {
+	Status    string    `json:"status"`
+	StartTime time.Time `json:"start_time"`
+	EndTime   time.Time `json:"end_time"`
+}
+
 // API request/response types
 
 type DeviceRegistrationRequest struct {

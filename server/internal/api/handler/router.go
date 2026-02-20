@@ -56,6 +56,8 @@ func SetupRouter(
 		dashboard.POST("/devices/:id/commands", deviceHandler.SendCommand)
 		dashboard.GET("/devices/:id/ip-history", deviceHandler.GetIPHistory)
 		dashboard.GET("/devices/:id/bandwidth", deviceHandler.GetBandwidth)
+		dashboard.GET("/devices/:id/bandwidth/hourly", deviceHandler.GetBandwidthHourly)
+		dashboard.GET("/devices/:id/uptime", deviceHandler.GetUptime)
 		dashboard.GET("/devices/:id/commands", deviceHandler.GetCommands)
 
 		dashboard.GET("/connections", connHandler.List)

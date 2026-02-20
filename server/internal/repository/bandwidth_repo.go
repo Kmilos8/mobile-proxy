@@ -62,6 +62,44 @@ func (r *BandwidthRepository) GetTotalMonth(ctx context.Context, year int, month
 	return bytesIn, bytesOut, err
 }
 
+func (r *BandwidthRepository) GetDeviceHourly(ctx context.Context, deviceID uuid.UUID, date time.Time) ([]domain.BandwidthHourly, error) {
+	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, 0, 1)
+
+	query := `SELECT EXTRACT(HOUR FROM interval_start)::int AS hour,
+		COALESCE(SUM(bytes_in), 0) AS download_bytes,
+		COALESCE(SUM(bytes_out), 0) AS upload_bytes
+		FROM bandwidth_logs
+		WHERE device_id = $1 AND interval_start >= $2 AND interval_start < $3
+		GROUP BY hour ORDER BY hour`
+
+	rows, err := r.db.Pool.Query(ctx, query, deviceID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	hourMap := make(map[int]domain.BandwidthHourly)
+	for rows.Next() {
+		var h domain.BandwidthHourly
+		if err := rows.Scan(&h.Hour, &h.DownloadBytes, &h.UploadBytes); err != nil {
+			return nil, err
+		}
+		hourMap[h.Hour] = h
+	}
+
+	// Fill all 24 hours
+	result := make([]domain.BandwidthHourly, 24)
+	for i := 0; i < 24; i++ {
+		if h, ok := hourMap[i]; ok {
+			result[i] = h
+		} else {
+			result[i] = domain.BandwidthHourly{Hour: i}
+		}
+	}
+	return result, nil
+}
+
 func (r *BandwidthRepository) EnsurePartition(ctx context.Context, year int, month time.Month) error {
 	tableName := fmt.Sprintf("bandwidth_logs_%d_%02d", year, month)
 	start := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)

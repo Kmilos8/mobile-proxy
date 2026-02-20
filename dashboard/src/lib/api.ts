@@ -120,6 +120,18 @@ export interface PairingCode {
   created_at: string
 }
 
+export interface BandwidthHourly {
+  hour: number
+  download_bytes: number
+  upload_bytes: number
+}
+
+export interface UptimeSegment {
+  status: string
+  start_time: string
+  end_time: string
+}
+
 export interface OverviewStats {
   devices_total: number
   devices_online: number
@@ -150,6 +162,10 @@ export const api = {
       request<DeviceBandwidth>(`/devices/${id}/bandwidth`, { token }),
     commands: (token: string, id: string) =>
       request<{ commands: DeviceCommand[] }>(`/devices/${id}/commands`, { token }),
+    bandwidthHourly: (token: string, id: string, date: string) =>
+      request<{ hourly: BandwidthHourly[] }>(`/devices/${id}/bandwidth/hourly?date=${date}`, { token }),
+    uptime: (token: string, id: string, date: string) =>
+      request<{ segments: UptimeSegment[] }>(`/devices/${id}/uptime?date=${date}`, { token }),
   },
   stats: {
     overview: (token: string) =>

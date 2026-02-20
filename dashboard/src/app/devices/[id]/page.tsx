@@ -6,16 +6,18 @@ import Link from 'next/link'
 import {
   ArrowLeft, Smartphone, Settings, Link2, Clock, Activity,
   RotateCw, Power, Search, Wifi, WifiOff, Copy, Trash2, Plus,
-  Battery, Signal, Globe, Cpu, RefreshCw, ChevronRight
+  Battery, Signal, Globe, Cpu, RefreshCw, ChevronRight, BarChart3
 } from 'lucide-react'
-import { api, Device, DeviceBandwidth, DeviceCommand, ProxyConnection, IPHistoryEntry, RotationLink } from '@/lib/api'
+import { api, Device, DeviceBandwidth, DeviceCommand, ProxyConnection, IPHistoryEntry, RotationLink, BandwidthHourly, UptimeSegment } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
 import { formatBytes, formatDate, timeAgo, cn } from '@/lib/utils'
 import StatusBadge from '@/components/ui/StatusBadge'
 import BatteryIndicator from '@/components/ui/BatteryIndicator'
+import BandwidthChart from '@/components/BandwidthChart'
+import UptimeTimeline from '@/components/UptimeTimeline'
 
-type SidebarTab = 'primary' | 'advanced' | 'change-ip' | 'history' | 'metrics'
+type SidebarTab = 'primary' | 'advanced' | 'change-ip' | 'history' | 'metrics' | 'usage'
 
 const SERVER_HOST = process.env.NEXT_PUBLIC_SERVER_HOST || '178.156.240.184'
 
@@ -140,6 +142,7 @@ export default function DeviceDetailPage() {
     { id: 'change-ip', label: 'Change IP', icon: Link2 },
     { id: 'history', label: 'History', icon: Clock },
     { id: 'metrics', label: 'Device Metrics', icon: Activity },
+    { id: 'usage', label: 'Usage', icon: BarChart3 },
   ]
 
   return (
@@ -203,6 +206,7 @@ export default function DeviceDetailPage() {
           {activeTab === 'change-ip' && <ChangeIPTab device={device} rotationLinks={rotationLinks} onCreateLink={handleCreateRotationLink} onDeleteLink={handleDeleteRotationLink} getRotationUrl={getRotationUrl} copyToClipboard={copyToClipboard} copiedId={copiedId} />}
           {activeTab === 'history' && <HistoryTab ipHistory={ipHistory} commands={commands} />}
           {activeTab === 'metrics' && <MetricsTab device={device} bandwidth={bandwidth} />}
+          {activeTab === 'usage' && <UsageTab deviceId={device.id} />}
         </div>
       </div>
     </div>
@@ -888,6 +892,61 @@ function MetricsTab({ device, bandwidth }: {
               </div>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============= USAGE TAB =============
+function UsageTab({ deviceId }: { deviceId: string }) {
+  const today = new Date().toISOString().split('T')[0]
+  const [date, setDate] = useState(today)
+  const [hourlyData, setHourlyData] = useState<BandwidthHourly[]>([])
+  const [uptimeSegments, setUptimeSegments] = useState<UptimeSegment[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchUsageData = useCallback(async () => {
+    const token = getToken()
+    if (!token) return
+    setLoading(true)
+    try {
+      const [bwRes, uptimeRes] = await Promise.all([
+        api.devices.bandwidthHourly(token, deviceId, date),
+        api.devices.uptime(token, deviceId, date),
+      ])
+      setHourlyData(bwRes.hourly || [])
+      setUptimeSegments(uptimeRes.segments || [])
+    } catch (err) {
+      console.error('Failed to fetch usage data:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [deviceId, date])
+
+  useEffect(() => {
+    fetchUsageData()
+  }, [fetchUsageData])
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-sm font-medium text-zinc-400">Usage & Uptime</h3>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          max={today}
+          className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+      </div>
+
+      {loading ? (
+        <div className="text-zinc-500 text-center py-8">Loading usage data...</div>
+      ) : (
+        <div className="space-y-6">
+          <BandwidthChart data={hourlyData} />
+          <UptimeTimeline segments={uptimeSegments} />
         </div>
       )}
     </div>

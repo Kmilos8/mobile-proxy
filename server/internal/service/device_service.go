@@ -18,6 +18,7 @@ type DeviceService struct {
 	deviceRepo     *repository.DeviceRepository
 	ipHistRepo     *repository.IPHistoryRepository
 	commandRepo    *repository.CommandRepository
+	statusLogRepo  *repository.StatusLogRepository
 	portService    *PortService
 	vpnService     *VPNService
 	tunnelPushURL  string // URL of tunnel server's push API (e.g. http://178.156.210.156:8081)
@@ -42,6 +43,11 @@ func NewDeviceService(
 // SetTunnelPushURL configures the tunnel server push endpoint for instant command delivery.
 func (s *DeviceService) SetTunnelPushURL(url string) {
 	s.tunnelPushURL = url
+}
+
+// SetStatusLogRepo configures the status log repository for tracking status transitions.
+func (s *DeviceService) SetStatusLogRepo(repo *repository.StatusLogRepository) {
+	s.statusLogRepo = repo
 }
 
 func (s *DeviceService) Register(ctx context.Context, req *domain.DeviceRegistrationRequest) (*domain.DeviceRegistrationResponse, error) {
@@ -107,6 +113,11 @@ func (s *DeviceService) Heartbeat(ctx context.Context, deviceID uuid.UUID, req *
 	device, err := s.deviceRepo.GetByID(ctx, deviceID)
 	if err != nil {
 		return nil, fmt.Errorf("get device: %w", err)
+	}
+
+	// Log status transition if changed (device was not online, heartbeat sets it online)
+	if s.statusLogRepo != nil && device.Status != domain.DeviceStatusOnline {
+		_ = s.statusLogRepo.Insert(ctx, deviceID, string(domain.DeviceStatusOnline), string(device.Status), time.Now().UTC())
 	}
 
 	// Update heartbeat
@@ -225,4 +236,85 @@ func (s *DeviceService) SetVpnIP(ctx context.Context, id uuid.UUID, vpnIP string
 
 func (s *DeviceService) MarkStaleOffline(ctx context.Context) (int64, error) {
 	return s.deviceRepo.MarkStaleOffline(ctx, 2*time.Minute)
+}
+
+// MarkStaleOfflineWithLogs marks stale devices offline and logs the status transitions.
+func (s *DeviceService) MarkStaleOfflineWithLogs(ctx context.Context) (int64, error) {
+	if s.statusLogRepo == nil {
+		return s.MarkStaleOffline(ctx)
+	}
+
+	// Get online devices that are stale
+	devices, err := s.deviceRepo.List(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	now := time.Now().UTC()
+	threshold := now.Add(-2 * time.Minute)
+	var count int64
+	for _, d := range devices {
+		if d.Status == domain.DeviceStatusOnline && d.LastHeartbeat != nil && d.LastHeartbeat.Before(threshold) {
+			if err := s.deviceRepo.UpdateStatus(ctx, d.ID, domain.DeviceStatusOffline); err != nil {
+				log.Printf("Error updating device %s status: %v", d.ID, err)
+				continue
+			}
+			_ = s.statusLogRepo.Insert(ctx, d.ID, string(domain.DeviceStatusOffline), string(d.Status), now)
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (s *DeviceService) GetUptimeSegments(ctx context.Context, deviceID uuid.UUID, date time.Time) ([]domain.UptimeSegment, error) {
+	if s.statusLogRepo == nil {
+		return nil, nil
+	}
+
+	logs, err := s.statusLogRepo.GetByDeviceAndDate(ctx, deviceID, date)
+	if err != nil {
+		return nil, err
+	}
+
+	dayStart := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+	dayEnd := dayStart.AddDate(0, 0, 1)
+
+	// Cap dayEnd to now if the date is today
+	now := time.Now().UTC()
+	if dayEnd.After(now) {
+		dayEnd = now
+	}
+
+	if len(logs) == 0 {
+		// No transitions this day - return a single segment with unknown status
+		return []domain.UptimeSegment{
+			{Status: "unknown", StartTime: dayStart, EndTime: dayEnd},
+		}, nil
+	}
+
+	var segments []domain.UptimeSegment
+
+	// First segment: from midnight to first transition, using previous_status of first log
+	if logs[0].ChangedAt.After(dayStart) {
+		segments = append(segments, domain.UptimeSegment{
+			Status:    logs[0].PreviousStatus,
+			StartTime: dayStart,
+			EndTime:   logs[0].ChangedAt,
+		})
+	}
+
+	// Build segments between transitions
+	for i, l := range logs {
+		end := dayEnd
+		if i+1 < len(logs) {
+			end = logs[i+1].ChangedAt
+		}
+		segments = append(segments, domain.UptimeSegment{
+			Status:    l.Status,
+			StartTime: l.ChangedAt,
+			EndTime:   end,
+		})
+	}
+
+	return segments, nil
 }

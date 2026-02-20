@@ -37,7 +37,9 @@ func main() {
 	vpnService := service.NewVPNService(cfg.VPN, iptablesService)
 	portService := service.NewPortService(deviceRepo, cfg.Ports)
 	authService := service.NewAuthService(userRepo, cfg.JWT)
+	statusLogRepo := repository.NewStatusLogRepository(db)
 	deviceService := service.NewDeviceService(deviceRepo, ipHistRepo, commandRepo, portService, vpnService)
+	deviceService.SetStatusLogRepo(statusLogRepo)
 	if v := os.Getenv("TUNNEL_PUSH_URL"); v != "" {
 		deviceService.SetTunnelPushURL(v)
 		log.Printf("Tunnel push URL configured: %s", v)

@@ -29,8 +29,10 @@ func main() {
 	commandRepo := repository.NewCommandRepository(db)
 	bwRepo := repository.NewBandwidthRepository(db)
 
+	statusLogRepo := repository.NewStatusLogRepository(db)
 	portService := service.NewPortService(deviceRepo, cfg.Ports)
 	deviceService := service.NewDeviceService(deviceRepo, ipHistRepo, commandRepo, portService, nil)
+	deviceService.SetStatusLogRepo(statusLogRepo)
 	bwService := service.NewBandwidthService(bwRepo)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -49,7 +51,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				count, err := deviceService.MarkStaleOffline(ctx)
+				count, err := deviceService.MarkStaleOfflineWithLogs(ctx)
 				if err != nil {
 					log.Printf("Error marking stale devices: %v", err)
 				} else if count > 0 {
