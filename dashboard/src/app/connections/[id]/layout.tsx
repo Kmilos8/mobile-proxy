@@ -1,5 +1,3 @@
-import DashboardLayout from '@/components/dashboard/DashboardLayout'
-
 export default function ConnectionDetailLayout({ children }: { children: React.ReactNode }) {
-  return <DashboardLayout>{children}</DashboardLayout>
+  return <>{children}</>
 }
