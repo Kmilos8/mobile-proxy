@@ -44,7 +44,10 @@ function buildGrid(segments: UptimeSegment[]): Bucket[] {
     : null
 
   const dayStart = parsed
-    ? new Date(new Date(segments[0].start_time).toDateString()).getTime()
+    ? (() => {
+        const d = new Date(segments[0].start_time)
+        return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+      })()
     : 0
 
   const grid: Bucket[] = []
