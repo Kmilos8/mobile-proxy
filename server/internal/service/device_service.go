@@ -179,7 +179,7 @@ func (s *DeviceService) pushCommandToTunnel(deviceID uuid.UUID, cmd *domain.Devi
 	body, _ := json.Marshal(map[string]string{
 		"device_id": deviceID.String(),
 		"id":        cmd.ID.String(),
-		"type":      cmd.Type,
+		"type":      string(cmd.Type),
 		"payload":   cmd.Payload,
 	})
 
