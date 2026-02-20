@@ -187,7 +187,7 @@ export default function DeviceDetailPage() {
                   className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left',
                     activeTab === item.id
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-brand-600 text-white'
                       : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
                   )}
                 >
@@ -231,7 +231,7 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
         <button
           onClick={() => setSubTab('proxy')}
           className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'proxy' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+            subTab === 'proxy' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
           )}
         >
           Proxy
@@ -239,7 +239,7 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
         <button
           onClick={() => setSubTab('info')}
           className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'info' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+            subTab === 'info' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
           )}
         >
           Basic Info
@@ -254,7 +254,7 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
             <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center text-zinc-500">
               No proxy connections configured.
               <div className="mt-2">
-                <Link href="/connections" className="text-blue-400 hover:text-blue-300 text-sm">
+                <Link href="/connections" className="text-brand-400 hover:text-brand-300 text-sm">
                   Create a connection
                 </Link>
               </div>
@@ -418,7 +418,7 @@ function AdvancedTab({ device, commands, sendCommand }: {
   const [subTab, setSubTab] = useState<'actions' | 'config'>('actions')
 
   const actionButtons = [
-    { type: 'rotate_ip', label: 'Rotate IP', icon: RotateCw, color: 'bg-blue-600 hover:bg-blue-700', description: 'Change cellular IP via airplane mode' },
+    { type: 'rotate_ip', label: 'Rotate IP', icon: RotateCw, color: 'bg-brand-600 hover:bg-brand-500', description: 'Change cellular IP via airplane mode' },
     { type: 'reboot', label: 'Reboot Device', icon: Power, color: 'bg-orange-600 hover:bg-orange-700', description: 'Restart the Android device' },
     { type: 'find_phone', label: 'Find Phone', icon: Search, color: 'bg-purple-600 hover:bg-purple-700', description: 'Play sound on the device' },
     { type: 'wifi_on', label: 'WiFi On', icon: Wifi, color: 'bg-green-600 hover:bg-green-700', description: 'Enable WiFi' },
@@ -431,7 +431,7 @@ function AdvancedTab({ device, commands, sendCommand }: {
         <button
           onClick={() => setSubTab('actions')}
           className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'actions' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+            subTab === 'actions' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
           )}
         >
           Actions
@@ -439,7 +439,7 @@ function AdvancedTab({ device, commands, sendCommand }: {
         <button
           onClick={() => setSubTab('config')}
           className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'config' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+            subTab === 'config' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
           )}
         >
           Configuration
@@ -568,7 +568,7 @@ function ChangeIPTab({ device, rotationLinks, onCreateLink, onDeleteLink, getRot
         <button
           onClick={() => setSubTab('url')}
           className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'url' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+            subTab === 'url' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
           )}
         >
           URL
@@ -576,7 +576,7 @@ function ChangeIPTab({ device, rotationLinks, onCreateLink, onDeleteLink, getRot
         <button
           onClick={() => setSubTab('rotation')}
           className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'rotation' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+            subTab === 'rotation' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
           )}
         >
           About
@@ -589,7 +589,7 @@ function ChangeIPTab({ device, rotationLinks, onCreateLink, onDeleteLink, getRot
             <h3 className="text-sm font-medium text-zinc-400">URL for IP address change</h3>
             <button
               onClick={onCreateLink}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm transition-colors"
             >
               <Plus className="w-4 h-4" />
               Add URL
@@ -615,7 +615,7 @@ function ChangeIPTab({ device, rotationLinks, onCreateLink, onDeleteLink, getRot
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-400 hover:text-blue-300 text-sm font-mono truncate block"
+                        className="text-brand-400 hover:text-brand-300 text-sm font-mono truncate block"
                       >
                         {url}
                       </a>
@@ -676,7 +676,7 @@ function HistoryTab({ ipHistory, commands }: {
         <button
           onClick={() => setSubTab('ip')}
           className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'ip' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+            subTab === 'ip' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
           )}
         >
           IP History
@@ -684,7 +684,7 @@ function HistoryTab({ ipHistory, commands }: {
         <button
           onClick={() => setSubTab('commands')}
           className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'commands' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+            subTab === 'commands' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
           )}
         >
           Command History
@@ -779,7 +779,7 @@ function MetricsTab({ device, bandwidth }: {
         <button
           onClick={() => setSubTab('battery')}
           className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'battery' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+            subTab === 'battery' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
           )}
         >
           Battery
@@ -787,7 +787,7 @@ function MetricsTab({ device, bandwidth }: {
         <button
           onClick={() => setSubTab('device')}
           className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'device' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+            subTab === 'device' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
           )}
         >
           Device
@@ -795,7 +795,7 @@ function MetricsTab({ device, bandwidth }: {
         <button
           onClick={() => setSubTab('network')}
           className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'network' ? 'border-blue-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+            subTab === 'network' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
           )}
         >
           Network
@@ -964,7 +964,7 @@ function UsageTab({ deviceId }: { deviceId: string }) {
           <select
             value={tzSelection}
             onChange={(e) => setTzSelection(e.target.value)}
-            className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand-500"
           >
             {TIMEZONE_OPTIONS.map(tz => (
               <option key={tz.value} value={tz.value}>{tz.label}</option>
@@ -975,7 +975,7 @@ function UsageTab({ deviceId }: { deviceId: string }) {
             value={date}
             onChange={(e) => setDate(e.target.value)}
             max={today}
-            className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
         </div>
       </div>

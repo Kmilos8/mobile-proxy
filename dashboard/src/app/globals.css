@@ -5,10 +5,54 @@
 :root {
   --background: #0a0a0a;
   --foreground: #ededed;
+  --brand: #10b981;
+  --brand-dark: #059669;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Interactive element transitions */
+button, a, input, select, textarea {
+  transition: all 150ms ease;
+}
+
+/* Card utilities */
+@layer components {
+  .card {
+    @apply bg-zinc-900 border border-zinc-800 rounded-lg;
+  }
+
+  .card-glow {
+    @apply bg-zinc-900 border border-zinc-800 rounded-lg transition-shadow;
+  }
+
+  .card-glow:hover {
+    @apply border-zinc-700 shadow-glow-sm;
+  }
+
+  .focus-brand {
+    @apply focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/50;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
 }

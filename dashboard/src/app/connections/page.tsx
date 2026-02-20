@@ -95,7 +95,7 @@ export default function ConnectionsPage() {
         <h1 className="text-2xl font-bold">Proxy Connections</h1>
         <button
           onClick={() => setShowCreate(!showCreate)}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded text-sm"
         >
           {showCreate ? 'Cancel' : 'New Connection'}
         </button>
@@ -136,7 +136,7 @@ export default function ConnectionsPage() {
                 required
               />
             </div>
-            <button type="submit" className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm">
+            <button type="submit" className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded text-sm">
               Create
             </button>
           </form>
@@ -173,7 +173,7 @@ export default function ConnectionsPage() {
                 <tr key={conn.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <Link href={`/devices/${conn.device_id}`} className="text-blue-400 hover:text-blue-300">
+                      <Link href={`/devices/${conn.device_id}`} className="text-brand-400 hover:text-brand-300">
                         {device?.name || conn.device_id.slice(0, 8)}
                       </Link>
                       {device && <StatusBadge status={device.status} />}

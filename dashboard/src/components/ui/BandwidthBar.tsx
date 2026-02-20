@@ -11,7 +11,7 @@ export default function BandwidthBar({ used, limit }: BandwidthBarProps) {
   }
 
   const pct = Math.min((used / limit) * 100, 100)
-  const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-500' : 'bg-blue-500'
+  const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-500' : 'bg-brand-500'
 
   return (
     <div className="w-full">

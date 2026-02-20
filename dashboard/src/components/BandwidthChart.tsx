@@ -60,8 +60,8 @@ export default function BandwidthChart({ data }: BandwidthChartProps) {
               formatter={(value: number | undefined) => formatBytesShort(value ?? 0)}
             />
             <Legend wrapperStyle={{ fontSize: '12px' }} />
-            <Bar dataKey="Download" fill="#3b82f6" radius={[2, 2, 0, 0]} stackId="stack" />
-            <Bar dataKey="Upload" fill="#22c55e" radius={[2, 2, 0, 0]} stackId="stack" />
+            <Bar dataKey="Download" fill="#10b981" radius={[2, 2, 0, 0]} stackId="stack" />
+            <Bar dataKey="Upload" fill="#a78bfa" radius={[2, 2, 0, 0]} stackId="stack" />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -69,11 +69,11 @@ export default function BandwidthChart({ data }: BandwidthChartProps) {
       <div className="flex gap-6 mt-4 text-sm">
         <div>
           <span className="text-zinc-500">Total Download: </span>
-          <span className="text-blue-400 font-medium">{formatBytesShort(totalDownload)}</span>
+          <span className="text-brand-400 font-medium">{formatBytesShort(totalDownload)}</span>
         </div>
         <div>
           <span className="text-zinc-500">Total Upload: </span>
-          <span className="text-green-400 font-medium">{formatBytesShort(totalUpload)}</span>
+          <span className="text-violet-400 font-medium">{formatBytesShort(totalUpload)}</span>
         </div>
         <div>
           <span className="text-zinc-500">Total: </span>

@@ -44,7 +44,7 @@ function PairingModal({ onClose }: { onClose: () => void }) {
     create()
   }, [])
 
-  const qrValue = code ? `mobileproxy://pair?server=http://${SERVER_HOST}:8080&code=${code}` : ''
+  const qrValue = code ? `pocketproxy://pair?server=http://${SERVER_HOST}:8080&code=${code}` : ''
 
   function handleCopy() {
     if (!code) return
@@ -92,7 +92,7 @@ function PairingModal({ onClose }: { onClose: () => void }) {
         {code && !loading && (
           <div className="space-y-6">
             <p className="text-sm text-zinc-400">
-              Scan this QR code with the MobileProxy app, or enter the code manually.
+              Scan this QR code with the PocketProxy app, or enter the code manually.
             </p>
 
             {/* QR Code */}
@@ -109,7 +109,7 @@ function PairingModal({ onClose }: { onClose: () => void }) {
               </div>
               <button
                 onClick={handleCopy}
-                className="mt-2 inline-flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300"
+                className="mt-2 inline-flex items-center gap-1 text-sm text-brand-400 hover:text-brand-300"
               >
                 {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 {copied ? 'Copied!' : 'Copy code'}
@@ -218,7 +218,7 @@ export default function DevicesPage() {
         </div>
         <button
           onClick={() => { setShowPairingModal(true) }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors"
         >
           <Plus className="w-4 h-4" />
           Add Device
@@ -315,7 +315,7 @@ export default function DevicesPage() {
                     className={cn(
                       'p-2 rounded-lg transition-colors',
                       device.status === 'online' && rotatingId !== device.id
-                        ? 'text-blue-400 hover:bg-blue-600/20'
+                        ? 'text-brand-400 hover:bg-brand-600/20'
                         : 'text-zinc-600 cursor-not-allowed'
                     )}
                     title="Rotate IP"

@@ -52,7 +52,7 @@ export default function CustomersPage() {
         <h1 className="text-2xl font-bold">Customers</h1>
         <button
           onClick={() => setShowCreate(!showCreate)}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded text-sm"
         >
           {showCreate ? 'Cancel' : 'New Customer'}
         </button>
@@ -80,7 +80,7 @@ export default function CustomersPage() {
                 required
               />
             </div>
-            <button type="submit" className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm">
+            <button type="submit" className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded text-sm">
               Create
             </button>
           </form>

@@ -1,7 +1,7 @@
 'use client'
 
-const TOKEN_KEY = 'mobileproxy_token'
-const USER_KEY = 'mobileproxy_user'
+const TOKEN_KEY = 'pocketproxy_token'
+const USER_KEY = 'pocketproxy_user'
 
 export function getToken(): string | null {
   if (typeof window === 'undefined') return null
