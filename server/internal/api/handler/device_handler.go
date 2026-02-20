@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -10,10 +11,17 @@ import (
 	"github.com/mobileproxy/server/internal/service"
 )
 
+type lastBytes struct {
+	bytesIn  int64
+	bytesOut int64
+}
+
 type DeviceHandler struct {
 	deviceService *service.DeviceService
 	bwService     *service.BandwidthService
 	wsHub         *WSHub
+	lastBytesMu   sync.Mutex
+	lastBytesMap  map[uuid.UUID]lastBytes
 }
 
 func NewDeviceHandler(deviceService *service.DeviceService, bwService *service.BandwidthService, wsHub *WSHub) *DeviceHandler {
@@ -21,6 +29,7 @@ func NewDeviceHandler(deviceService *service.DeviceService, bwService *service.B
 		deviceService: deviceService,
 		bwService:     bwService,
 		wsHub:         wsHub,
+		lastBytesMap:  make(map[uuid.UUID]lastBytes),
 	}
 }
 
@@ -85,9 +94,27 @@ func (h *DeviceHandler) Heartbeat(c *gin.Context) {
 		return
 	}
 
-	// Record bandwidth if reported
+	// Record bandwidth delta (device sends cumulative bytes)
 	if req.BytesIn > 0 || req.BytesOut > 0 {
-		_ = h.bwService.Record(c.Request.Context(), id, nil, req.BytesIn, req.BytesOut)
+		h.lastBytesMu.Lock()
+		prev, exists := h.lastBytesMap[id]
+		h.lastBytesMap[id] = lastBytes{bytesIn: req.BytesIn, bytesOut: req.BytesOut}
+		h.lastBytesMu.Unlock()
+
+		if exists {
+			deltaIn := req.BytesIn - prev.bytesIn
+			deltaOut := req.BytesOut - prev.bytesOut
+			// Only record if positive delta (counter may reset on app restart)
+			if deltaIn > 0 || deltaOut > 0 {
+				if deltaIn < 0 {
+					deltaIn = req.BytesIn
+				}
+				if deltaOut < 0 {
+					deltaOut = req.BytesOut
+				}
+				_ = h.bwService.Record(c.Request.Context(), id, nil, deltaIn, deltaOut)
+			}
+		}
 	}
 
 	// Broadcast device update via WebSocket
