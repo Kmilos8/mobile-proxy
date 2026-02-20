@@ -144,6 +144,12 @@ func (r *DeviceRepository) MarkStaleOffline(ctx context.Context, threshold time.
 	return tag.RowsAffected(), nil
 }
 
+func (r *DeviceRepository) SetAuthToken(ctx context.Context, id uuid.UUID, token string) error {
+	query := `UPDATE devices SET auth_token = $2, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, id, token)
+	return err
+}
+
 func (r *DeviceRepository) CountByStatus(ctx context.Context) (total int, online int, err error) {
 	query := `SELECT COUNT(*), COUNT(*) FILTER (WHERE status = 'online') FROM devices`
 	err = r.db.Pool.QueryRow(ctx, query).Scan(&total, &online)

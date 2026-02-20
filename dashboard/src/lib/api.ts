@@ -110,6 +110,16 @@ export interface RotationLink {
   last_used_at: string | null
 }
 
+export interface PairingCode {
+  id: string
+  code: string
+  claimed_by_device_id: string | null
+  claimed_at: string | null
+  expires_at: string
+  created_by: string | null
+  created_at: string
+}
+
 export interface OverviewStats {
   devices_total: number
   devices_online: number
@@ -170,5 +180,15 @@ export const api = {
       request<RotationLink>('/rotation-links', { method: 'POST', token, body: data }),
     delete: (token: string, id: string) =>
       request(`/rotation-links/${id}`, { method: 'DELETE', token }),
+  },
+  pairingCodes: {
+    list: (token: string) =>
+      request<{ pairing_codes: PairingCode[] }>('/pairing-codes', { token }),
+    create: (token: string, expiresInHours?: number) =>
+      request<{ id: string; code: string; expires_at: string }>('/pairing-codes', {
+        method: 'POST', token, body: { expires_in_hours: expiresInHours || 24 }
+      }),
+    delete: (token: string, id: string) =>
+      request(`/pairing-codes/${id}`, { method: 'DELETE', token }),
   },
 }

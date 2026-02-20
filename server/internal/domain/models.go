@@ -134,6 +134,17 @@ type RotationLink struct {
 	LastUsedAt *time.Time `json:"last_used_at" db:"last_used_at"`
 }
 
+type PairingCode struct {
+	ID               uuid.UUID  `json:"id" db:"id"`
+	Code             string     `json:"code" db:"code"`
+	DeviceAuthToken  string     `json:"-" db:"device_auth_token"`
+	ClaimedByDeviceID *uuid.UUID `json:"claimed_by_device_id" db:"claimed_by_device_id"`
+	ClaimedAt        *time.Time `json:"claimed_at" db:"claimed_at"`
+	ExpiresAt        time.Time  `json:"expires_at" db:"expires_at"`
+	CreatedBy        *uuid.UUID `json:"created_by" db:"created_by"`
+	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
+}
+
 // API request/response types
 
 type DeviceRegistrationRequest struct {
@@ -189,6 +200,32 @@ type CreateConnectionRequest struct {
 type CommandRequest struct {
 	Type    CommandType `json:"type" binding:"required"`
 	Payload string      `json:"payload"`
+}
+
+type CreatePairingCodeRequest struct {
+	ExpiresInHours int `json:"expires_in_hours"`
+}
+
+type CreatePairingCodeResponse struct {
+	ID        uuid.UUID `json:"id"`
+	Code      string    `json:"code"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type ClaimPairingCodeRequest struct {
+	Code           string `json:"code" binding:"required"`
+	AndroidID      string `json:"android_id" binding:"required"`
+	DeviceModel    string `json:"device_model" binding:"required"`
+	AndroidVersion string `json:"android_version" binding:"required"`
+	AppVersion     string `json:"app_version" binding:"required"`
+}
+
+type ClaimPairingCodeResponse struct {
+	DeviceID  uuid.UUID `json:"device_id"`
+	AuthToken string    `json:"auth_token"`
+	ServerURL string    `json:"server_url"`
+	VpnConfig string    `json:"vpn_config"`
+	BasePort  int       `json:"base_port"`
 }
 
 // WebSocket message types

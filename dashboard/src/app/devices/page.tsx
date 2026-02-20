@@ -2,20 +2,137 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { RotateCw, ChevronRight, Signal, Wifi } from 'lucide-react'
-import { api, Device } from '@/lib/api'
+import { RotateCw, ChevronRight, Plus, X, Copy, Check, Trash2 } from 'lucide-react'
+import { api, Device, PairingCode } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
 import { timeAgo, cn } from '@/lib/utils'
 import StatusBadge from '@/components/ui/StatusBadge'
 import BatteryIndicator from '@/components/ui/BatteryIndicator'
+import { QRCodeSVG } from 'qrcode.react'
 
 const SERVER_HOST = process.env.NEXT_PUBLIC_SERVER_HOST || '178.156.240.184'
+
+function formatCodeDisplay(code: string): string {
+  if (code.length === 8) return code.slice(0, 4) + '-' + code.slice(4)
+  return code
+}
+
+function PairingModal({ onClose }: { onClose: () => void }) {
+  const [code, setCode] = useState<string | null>(null)
+  const [codeId, setCodeId] = useState<string | null>(null)
+  const [expiresAt, setExpiresAt] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function create() {
+      const token = getToken()
+      if (!token) return
+      try {
+        const res = await api.pairingCodes.create(token)
+        setCode(res.code)
+        setCodeId(res.id)
+        setExpiresAt(res.expires_at)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to create pairing code')
+      } finally {
+        setLoading(false)
+      }
+    }
+    create()
+  }, [])
+
+  const qrValue = code ? `mobileproxy://pair?server=http://${SERVER_HOST}:8080&code=${code}` : ''
+
+  function handleCopy() {
+    if (!code) return
+    navigator.clipboard.writeText(formatCodeDisplay(code))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  // Countdown to expiry
+  const [timeLeft, setTimeLeft] = useState('')
+  useEffect(() => {
+    if (!expiresAt) return
+    const timer = setInterval(() => {
+      const diff = new Date(expiresAt).getTime() - Date.now()
+      if (diff <= 0) {
+        setTimeLeft('Expired')
+        clearInterval(timer)
+        return
+      }
+      const hours = Math.floor(diff / 3600000)
+      const minutes = Math.floor((diff % 3600000) / 60000)
+      setTimeLeft(`${hours}h ${minutes}m remaining`)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [expiresAt])
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Add Device</h2>
+          <button onClick={onClose} className="text-zinc-400 hover:text-white p-1">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {loading && (
+          <div className="text-center py-8 text-zinc-500">Generating pairing code...</div>
+        )}
+
+        {error && (
+          <div className="text-center py-8 text-red-400">{error}</div>
+        )}
+
+        {code && !loading && (
+          <div className="space-y-6">
+            <p className="text-sm text-zinc-400">
+              Scan this QR code with the MobileProxy app, or enter the code manually.
+            </p>
+
+            {/* QR Code */}
+            <div className="flex justify-center">
+              <div className="bg-white p-4 rounded-lg">
+                <QRCodeSVG value={qrValue} size={200} />
+              </div>
+            </div>
+
+            {/* Text Code */}
+            <div className="text-center">
+              <div className="text-3xl font-mono font-bold tracking-widest text-white">
+                {formatCodeDisplay(code)}
+              </div>
+              <button
+                onClick={handleCopy}
+                className="mt-2 inline-flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300"
+              >
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copied ? 'Copied!' : 'Copy code'}
+              </button>
+            </div>
+
+            {/* Expiry */}
+            <div className="text-center text-xs text-zinc-500">
+              {timeLeft}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export default function DevicesPage() {
   const [devices, setDevices] = useState<Device[]>([])
   const [loading, setLoading] = useState(true)
   const [rotatingId, setRotatingId] = useState<string | null>(null)
+  const [showPairingModal, setShowPairingModal] = useState(false)
+  const [pairingCodes, setPairingCodes] = useState<PairingCode[]>([])
 
   const fetchDevices = useCallback(async () => {
     const token = getToken()
@@ -30,8 +147,20 @@ export default function DevicesPage() {
     }
   }, [])
 
+  const fetchPairingCodes = useCallback(async () => {
+    const token = getToken()
+    if (!token) return
+    try {
+      const res = await api.pairingCodes.list(token)
+      setPairingCodes((res.pairing_codes || []).filter(pc => !pc.claimed_at && new Date(pc.expires_at) > new Date()))
+    } catch (err) {
+      console.error('Failed to fetch pairing codes:', err)
+    }
+  }, [])
+
   useEffect(() => {
     fetchDevices()
+    fetchPairingCodes()
     const unsub = addWSHandler((msg) => {
       if (msg.type === 'device_update') {
         const updated = msg.payload as Device
@@ -40,7 +169,7 @@ export default function DevicesPage() {
     })
     const interval = setInterval(fetchDevices, 15000)
     return () => { unsub(); clearInterval(interval) }
-  }, [fetchDevices])
+  }, [fetchDevices, fetchPairingCodes])
 
   async function handleRotateIP(e: React.MouseEvent, deviceId: string) {
     e.preventDefault()
@@ -54,6 +183,17 @@ export default function DevicesPage() {
       console.error('Failed to send rotate command:', err)
     } finally {
       setTimeout(() => setRotatingId(null), 2000)
+    }
+  }
+
+  async function handleRevokePairingCode(id: string) {
+    const token = getToken()
+    if (!token) return
+    try {
+      await api.pairingCodes.delete(token, id)
+      setPairingCodes(prev => prev.filter(pc => pc.id !== id))
+    } catch (err) {
+      console.error('Failed to revoke pairing code:', err)
     }
   }
 
@@ -76,12 +216,42 @@ export default function DevicesPage() {
             <span className="text-green-400">{onlineCount} online</span> / {devices.length} total
           </p>
         </div>
+        <button
+          onClick={() => { setShowPairingModal(true) }}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Add Device
+        </button>
       </div>
 
-      {devices.length === 0 ? (
+      {/* Active pairing codes */}
+      {pairingCodes.length > 0 && (
+        <div className="mb-4 space-y-2">
+          {pairingCodes.map(pc => (
+            <div key={pc.id} className="flex items-center justify-between bg-zinc-900 border border-dashed border-zinc-700 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-3">
+                <div className="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse" />
+                <span className="text-sm text-zinc-400">Waiting for device...</span>
+                <span className="font-mono text-sm text-white font-medium">{formatCodeDisplay(pc.code)}</span>
+                <span className="text-xs text-zinc-600">expires {timeAgo(pc.expires_at)}</span>
+              </div>
+              <button
+                onClick={() => handleRevokePairingCode(pc.id)}
+                className="p-1.5 text-zinc-500 hover:text-red-400 transition-colors"
+                title="Revoke code"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {devices.length === 0 && pairingCodes.length === 0 ? (
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-12 text-center">
           <p className="text-zinc-500">No devices registered yet</p>
-          <p className="text-zinc-600 text-sm mt-1">Install the MobileProxy app on an Android device to get started.</p>
+          <p className="text-zinc-600 text-sm mt-1">Click "Add Device" to generate a pairing code.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -158,6 +328,10 @@ export default function DevicesPage() {
             </Link>
           ))}
         </div>
+      )}
+
+      {showPairingModal && (
+        <PairingModal onClose={() => { setShowPairingModal(false); fetchPairingCodes() }} />
       )}
     </div>
   )

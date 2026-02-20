@@ -15,6 +15,7 @@ func SetupRouter(
 	vpnHandler *VPNHandler,
 	statsHandler *StatsHandler,
 	rotationLinkHandler *RotationLinkHandler,
+	pairingHandler *PairingHandler,
 	wsHub *WSHub,
 ) *gin.Engine {
 	r := gin.Default()
@@ -32,8 +33,9 @@ func SetupRouter(
 	// Public routes
 	r.POST("/api/auth/login", authHandler.Login)
 
-	// Public rotation link endpoint (no auth)
+	// Public endpoints (no auth)
 	r.GET("/api/public/rotate/:token", rotationLinkHandler.Rotate)
+	r.POST("/api/public/pair", pairingHandler.ClaimCode)
 
 	// Device routes (authenticated by device token in future, open for MVP)
 	deviceAPI := r.Group("/api/devices")
@@ -70,6 +72,10 @@ func SetupRouter(
 		dashboard.GET("/rotation-links", rotationLinkHandler.List)
 		dashboard.POST("/rotation-links", rotationLinkHandler.Create)
 		dashboard.DELETE("/rotation-links/:id", rotationLinkHandler.Delete)
+
+		dashboard.GET("/pairing-codes", pairingHandler.ListCodes)
+		dashboard.POST("/pairing-codes", pairingHandler.CreateCode)
+		dashboard.DELETE("/pairing-codes/:id", pairingHandler.DeleteCode)
 	}
 
 	// Internal VPN routes (called by OpenVPN scripts)

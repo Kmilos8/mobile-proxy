@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.mobileproxy.BuildConfig
 import com.mobileproxy.R
+import com.mobileproxy.core.config.CredentialManager
 import com.mobileproxy.core.network.NetworkManager
 import com.mobileproxy.core.network.NetworkState
 import com.mobileproxy.core.rotation.IPRotationManager
@@ -23,6 +24,7 @@ class MainActivity : AppCompatActivity() {
 
     @Inject lateinit var networkManager: NetworkManager
     @Inject lateinit var rotationManager: IPRotationManager
+    @Inject lateinit var credentialManager: CredentialManager
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var pendingStart = false
@@ -47,14 +49,31 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val pairingLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            // Pairing complete — update UI with stored credentials
+            updateServerUrlFromCredentials()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Migrate from BuildConfig if paired via old method
+        migrateFromBuildConfig()
+
+        // If not paired, launch PairingActivity
+        if (!credentialManager.isPaired()) {
+            pairingLauncher.launch(Intent(this, PairingActivity::class.java))
+        }
+
         setContentView(R.layout.activity_main)
 
         val serverUrlEdit = findViewById<EditText>(R.id.editServerUrl)
-        if (serverUrlEdit.text.isNullOrEmpty() && BuildConfig.DEFAULT_SERVER_URL.isNotEmpty()) {
-            serverUrlEdit.setText(BuildConfig.DEFAULT_SERVER_URL)
-        }
+        updateServerUrlFromCredentials()
+
         val statusText = findViewById<TextView>(R.id.textStatus)
         val cellularText = findViewById<TextView>(R.id.textCellular)
         val wifiText = findViewById<TextView>(R.id.textWifi)
@@ -64,6 +83,12 @@ class MainActivity : AppCompatActivity() {
         val setupButton = findViewById<Button>(R.id.buttonSetupWizard)
 
         startButton.setOnClickListener {
+            // Must be paired first
+            if (!credentialManager.isPaired()) {
+                pairingLauncher.launch(Intent(this, PairingActivity::class.java))
+                return@setOnClickListener
+            }
+
             // Redirect to setup wizard if not completed
             if (!SetupActivity.isSetupComplete(this)) {
                 setupLauncher.launch(Intent(this, SetupActivity::class.java))
@@ -127,16 +152,47 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun migrateFromBuildConfig() {
+        // If BuildConfig has credentials and CredentialManager doesn't, migrate
+        if (!credentialManager.isPaired() &&
+            BuildConfig.DEVICE_ID.isNotEmpty() &&
+            BuildConfig.DEFAULT_SERVER_URL.isNotEmpty()
+        ) {
+            credentialManager.saveCredentials(
+                serverUrl = BuildConfig.DEFAULT_SERVER_URL,
+                deviceId = BuildConfig.DEVICE_ID,
+                authToken = BuildConfig.DEVICE_AUTH_TOKEN,
+                vpnConfig = "",
+                basePort = 0
+            )
+        }
+    }
+
+    private fun updateServerUrlFromCredentials() {
+        val serverUrlEdit = findViewById<EditText>(R.id.editServerUrl) ?: return
+        val url = credentialManager.getServerUrl()
+        if (url.isNotEmpty()) {
+            serverUrlEdit.setText(url)
+        } else if (serverUrlEdit.text.isNullOrEmpty() && BuildConfig.DEFAULT_SERVER_URL.isNotEmpty()) {
+            serverUrlEdit.setText(BuildConfig.DEFAULT_SERVER_URL)
+        }
+    }
+
     private fun startProxyService() {
-        val serverUrlEdit = findViewById<EditText>(R.id.editServerUrl)
         val statusText = findViewById<TextView>(R.id.textStatus)
 
-        val serverUrl = serverUrlEdit.text.toString()
+        // Use CredentialManager values
+        val serverUrl = credentialManager.getServerUrl().ifEmpty {
+            findViewById<EditText>(R.id.editServerUrl).text.toString()
+        }
+        val deviceId = credentialManager.getDeviceId().ifEmpty { BuildConfig.DEVICE_ID }
+        val authToken = credentialManager.getAuthToken().ifEmpty { BuildConfig.DEVICE_AUTH_TOKEN }
+
         val intent = Intent(this, ProxyForegroundService::class.java).apply {
             action = ProxyForegroundService.ACTION_START
             putExtra(ProxyForegroundService.EXTRA_SERVER_URL, serverUrl)
-            putExtra(ProxyForegroundService.EXTRA_DEVICE_ID, BuildConfig.DEVICE_ID)
-            putExtra(ProxyForegroundService.EXTRA_AUTH_TOKEN, BuildConfig.DEVICE_AUTH_TOKEN)
+            putExtra(ProxyForegroundService.EXTRA_DEVICE_ID, deviceId)
+            putExtra(ProxyForegroundService.EXTRA_AUTH_TOKEN, authToken)
         }
         startForegroundService(intent)
         statusText.text = "Status: Running"
