@@ -35,6 +35,7 @@ class VpnTunnelManager(
         private const val TYPE_AUTH_OK: Byte = 0x01
         private const val TYPE_AUTH_FAIL: Byte = 0x03
         private const val TYPE_PONG: Byte = 0x04
+        private const val TYPE_COMMAND: Byte = 0x05 // Server→device command push
     }
 
     private var tunFd: ParcelFileDescriptor? = null
@@ -56,6 +57,9 @@ class VpnTunnelManager(
     @Volatile
     var shouldRun = false
         private set
+
+    // Callback for server-pushed commands received via tunnel
+    var commandListener: ((String) -> Unit)? = null
 
     suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
         shouldRun = true
@@ -270,6 +274,17 @@ class VpnTunnelManager(
                         if (packet.length < 2) continue
                         // Write raw IP packet to TUN (skip type byte)
                         output.write(buffer, 1, packet.length - 1)
+                    }
+                    TYPE_COMMAND -> {
+                        if (packet.length < 2) continue
+                        // Server pushed a command — extract JSON and dispatch
+                        val json = String(buffer, 1, packet.length - 1, Charsets.UTF_8)
+                        Log.i(TAG, "Received pushed command: $json")
+                        try {
+                            commandListener?.invoke(json)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Command listener error", e)
+                        }
                     }
                 }
             }

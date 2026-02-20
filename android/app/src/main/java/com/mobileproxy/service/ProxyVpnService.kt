@@ -41,6 +41,9 @@ class ProxyVpnService : VpnService() {
             Log.i(TAG, "VPN tunnel reconnected")
             _vpnState.value = true
         }
+
+        // Callback for commands pushed through VPN tunnel (set by ProxyForegroundService)
+        var commandCallback: ((String) -> Unit)? = null
     }
 
     private var tunnelManager: VpnTunnelManager? = null
@@ -80,6 +83,7 @@ class ProxyVpnService : VpnService() {
             serverPort = 1194,
             deviceId = deviceId
         )
+        manager.commandListener = { json -> commandCallback?.invoke(json) }
         tunnelManager = manager
 
         scope.launch {

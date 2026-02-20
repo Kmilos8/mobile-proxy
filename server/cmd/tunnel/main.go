@@ -25,6 +25,7 @@ const (
 	TypeAuthOK   = 0x01
 	TypeAuthFail = 0x03
 	TypePong     = 0x04
+	TypeCommand  = 0x05 // Server→device command push
 )
 
 const (
@@ -67,6 +68,10 @@ type tunnelServer struct {
 	mu      sync.RWMutex
 	clients map[string]*client // vpnIP string -> client
 	addrMap map[string]string  // udpAddr string -> vpnIP string
+
+	// Device ID → client lookup for command push
+	deviceMap   map[string]*client // deviceID string -> client
+	deviceMapMu sync.RWMutex
 
 	ipPool   []bool // true = in use, index 0 = .2
 	ipPoolMu sync.Mutex
@@ -115,13 +120,14 @@ func main() {
 		port, udpRecvBufSize/1024, udpSendBufSize/1024)
 
 	srv := &tunnelServer{
-		udpConn:  conn,
-		tunIface: iface,
-		apiURL:   apiURL,
-		clients:  make(map[string]*client),
-		addrMap:  make(map[string]string),
-		ipPool:   make([]bool, ipPoolEnd-ipPoolStart+1),
-		tunBuf:   make([]byte, maxPacketSize+1), // +1 for type prefix
+		udpConn:   conn,
+		tunIface:  iface,
+		apiURL:    apiURL,
+		clients:   make(map[string]*client),
+		addrMap:   make(map[string]string),
+		deviceMap: make(map[string]*client),
+		ipPool:    make([]bool, ipPoolEnd-ipPoolStart+1),
+		tunBuf:    make([]byte, maxPacketSize+1), // +1 for type prefix
 	}
 
 	// Start goroutines
@@ -129,6 +135,7 @@ func main() {
 	go srv.tunToUdp()
 	go srv.cleanupLoop()
 	go srv.tcpAuthListener(port)
+	go srv.startPushAPI()
 
 	// Block forever
 	select {}
@@ -274,6 +281,11 @@ func (s *tunnelServer) handleAuth(data []byte, addr *net.UDPAddr) {
 			s.addrMap[addr.String()] = ipStr
 			s.mu.Unlock()
 
+			// Update device map
+			s.deviceMapMu.Lock()
+			s.deviceMap[deviceID] = c
+			s.deviceMapMu.Unlock()
+
 			// Send AUTH_OK with existing IP
 			resp := make([]byte, 5)
 			resp[0] = TypeAuthOK
@@ -305,6 +317,10 @@ func (s *tunnelServer) handleAuth(data []byte, addr *net.UDPAddr) {
 	s.clients[ipStr] = c
 	s.addrMap[addr.String()] = ipStr
 	s.mu.Unlock()
+
+	s.deviceMapMu.Lock()
+	s.deviceMap[deviceID] = c
+	s.deviceMapMu.Unlock()
 
 	// Send AUTH_OK with assigned IP
 	resp := make([]byte, 5)
@@ -385,6 +401,11 @@ func (s *tunnelServer) cleanupLoop() {
 				delete(s.addrMap, c.udpAddr.String())
 				delete(s.clients, ipStr)
 				s.releaseIP(c.vpnIP)
+
+				s.deviceMapMu.Lock()
+				delete(s.deviceMap, c.deviceID)
+				s.deviceMapMu.Unlock()
+
 				go s.notifyDisconnected(c.deviceID, ipStr)
 			}
 			s.mu.Unlock()
@@ -548,6 +569,10 @@ func (s *tunnelServer) handleTCPAuth(conn net.Conn) {
 			s.addrMap[udpAddr.String()] = ipStr
 			s.mu.Unlock()
 
+			s.deviceMapMu.Lock()
+			s.deviceMap[deviceID] = c
+			s.deviceMapMu.Unlock()
+
 			resp := make([]byte, 5)
 			resp[0] = TypeAuthOK
 			copy(resp[1:5], c.vpnIP)
@@ -579,6 +604,10 @@ func (s *tunnelServer) handleTCPAuth(conn net.Conn) {
 	s.addrMap[udpAddr.String()] = ipStr
 	s.mu.Unlock()
 
+	s.deviceMapMu.Lock()
+	s.deviceMap[deviceID] = c
+	s.deviceMapMu.Unlock()
+
 	// Send AUTH_OK
 	resp := make([]byte, 5)
 	resp[0] = TypeAuthOK
@@ -587,4 +616,73 @@ func (s *tunnelServer) handleTCPAuth(conn net.Conn) {
 
 	log.Printf("TCP AUTH_OK: device=%s assigned ip=%s udp=%s", deviceID, ipStr, udpAddr)
 	go s.notifyConnected(deviceID, ipStr)
+}
+
+// startPushAPI starts an HTTP server for receiving command push requests from the API server.
+// When a command is created, the API POSTs here and we relay it instantly to the device via UDP.
+func (s *tunnelServer) startPushAPI() {
+	pushPort := 8081
+	if v := os.Getenv("PUSH_PORT"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil {
+			pushPort = p
+		}
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/push-command", s.handlePushCommand)
+
+	log.Printf("Push API listening on port %d", pushPort)
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", pushPort), mux); err != nil {
+		log.Printf("Push API server failed: %v", err)
+	}
+}
+
+func (s *tunnelServer) handlePushCommand(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		DeviceID string `json:"device_id"`
+		ID       string `json:"id"`
+		Type     string `json:"type"`
+		Payload  string `json:"payload"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	// Look up the device's UDP address
+	s.deviceMapMu.RLock()
+	c, ok := s.deviceMap[req.DeviceID]
+	s.deviceMapMu.RUnlock()
+
+	if !ok {
+		http.Error(w, "device not connected", http.StatusNotFound)
+		return
+	}
+
+	// Build command JSON to send to device
+	cmdJSON, _ := json.Marshal(map[string]string{
+		"id":      req.ID,
+		"type":    req.Type,
+		"payload": req.Payload,
+	})
+
+	// Send [0x05][json] via UDP
+	pkt := make([]byte, 1+len(cmdJSON))
+	pkt[0] = TypeCommand
+	copy(pkt[1:], cmdJSON)
+
+	if _, err := s.udpConn.WriteToUDP(pkt, c.udpAddr); err != nil {
+		log.Printf("Push command to device %s failed: %v", req.DeviceID, err)
+		http.Error(w, "send failed", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Pushed command %s (%s) to device %s", req.ID, req.Type, req.DeviceID)
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"ok":true}`))
 }

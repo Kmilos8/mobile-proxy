@@ -74,6 +74,9 @@ class ProxyForegroundService : Service() {
         // Start foreground notification
         startForeground(MobileProxyApp.NOTIFICATION_ID, createNotification())
 
+        // Wire up command push callback — commands pushed via VPN tunnel are executed instantly
+        ProxyVpnService.commandCallback = { json -> statusReporter.handlePushedCommand(json) }
+
         // Start VPN tunnel first
         val vpnIntent = Intent(this, ProxyVpnService::class.java).apply {
             action = ProxyVpnService.ACTION_START

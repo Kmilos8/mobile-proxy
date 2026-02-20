@@ -171,6 +171,23 @@ class DeviceStatusReporter @Inject constructor(
         }
     }
 
+    /**
+     * Handle a command pushed through the VPN tunnel (instant delivery).
+     * Parses JSON, executes, and reports result back to server.
+     */
+    fun handlePushedCommand(commandJson: String) {
+        try {
+            val command = gson.fromJson(commandJson, DeviceCommand::class.java)
+            Log.i(TAG, "Executing pushed command: ${command.type} (${command.id})")
+            scope?.launch {
+                val result = commandExecutor.execute(command)
+                reportCommandResult(command.id, result)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to handle pushed command", e)
+        }
+    }
+
     @Volatile var cachedPublicIp: String = ""
     @Volatile var lastIpLookupTime: Long = 0
     private val IP_CACHE_DURATION = 60_000L // Re-check every 60s

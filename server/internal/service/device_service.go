@@ -2,7 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,11 +15,12 @@ import (
 )
 
 type DeviceService struct {
-	deviceRepo  *repository.DeviceRepository
-	ipHistRepo  *repository.IPHistoryRepository
-	commandRepo *repository.CommandRepository
-	portService *PortService
-	vpnService  *VPNService
+	deviceRepo     *repository.DeviceRepository
+	ipHistRepo     *repository.IPHistoryRepository
+	commandRepo    *repository.CommandRepository
+	portService    *PortService
+	vpnService     *VPNService
+	tunnelPushURL  string // URL of tunnel server's push API (e.g. http://178.156.210.156:8081)
 }
 
 func NewDeviceService(
@@ -32,6 +37,11 @@ func NewDeviceService(
 		portService: portService,
 		vpnService:  vpnService,
 	}
+}
+
+// SetTunnelPushURL configures the tunnel server push endpoint for instant command delivery.
+func (s *DeviceService) SetTunnelPushURL(url string) {
+	s.tunnelPushURL = url
 }
 
 func (s *DeviceService) Register(ctx context.Context, req *domain.DeviceRegistrationRequest) (*domain.DeviceRegistrationResponse, error) {
@@ -156,7 +166,35 @@ func (s *DeviceService) SendCommand(ctx context.Context, deviceID uuid.UUID, req
 		return nil, fmt.Errorf("create command: %w", err)
 	}
 
+	// Push command to device via tunnel for instant delivery (fire-and-forget)
+	if s.tunnelPushURL != "" {
+		go s.pushCommandToTunnel(deviceID, cmd)
+	}
+
 	return cmd, nil
+}
+
+// pushCommandToTunnel sends a command to the tunnel server's push API for instant delivery.
+func (s *DeviceService) pushCommandToTunnel(deviceID uuid.UUID, cmd *domain.DeviceCommand) {
+	body, _ := json.Marshal(map[string]string{
+		"device_id": deviceID.String(),
+		"id":        cmd.ID.String(),
+		"type":      cmd.Type,
+		"payload":   cmd.Payload,
+	})
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Post(s.tunnelPushURL+"/push-command", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		log.Printf("Push command to tunnel failed (device=%s): %v", deviceID, err)
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		log.Printf("Command %s pushed to device %s via tunnel", cmd.ID, deviceID)
+	} else {
+		log.Printf("Push command returned %d for device %s (device may be offline, will deliver via heartbeat)", resp.StatusCode, deviceID)
+	}
 }
 
 func (s *DeviceService) UpdateCommandStatus(ctx context.Context, commandID uuid.UUID, status domain.CommandStatus, result string) error {

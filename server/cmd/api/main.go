@@ -38,6 +38,10 @@ func main() {
 	portService := service.NewPortService(deviceRepo, cfg.Ports)
 	authService := service.NewAuthService(userRepo, cfg.JWT)
 	deviceService := service.NewDeviceService(deviceRepo, ipHistRepo, commandRepo, portService, vpnService)
+	if v := os.Getenv("TUNNEL_PUSH_URL"); v != "" {
+		deviceService.SetTunnelPushURL(v)
+		log.Printf("Tunnel push URL configured: %s", v)
+	}
 	connService := service.NewConnectionService(connRepo, deviceRepo)
 	bwRepo := repository.NewBandwidthRepository(db)
 	bwService := service.NewBandwidthService(bwRepo)
