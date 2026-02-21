@@ -38,11 +38,7 @@ function PairingModal({ onClose }: { onClose: () => void }) {
         const res = await api.relayServers.listActive(token)
         const servers = res.relay_servers || []
         setRelayServers(servers)
-        // If only 1 relay, auto-select and skip step
-        if (servers.length === 1) {
-          setSelectedRelay(servers[0])
-          setStep('code')
-        } else if (servers.length === 0) {
+        if (servers.length === 0) {
           // No servers, skip to code step (will use default)
           setStep('code')
         }
