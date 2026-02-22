@@ -91,6 +91,14 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            // If VPN is down (e.g. after reboot/update), stop old service first
+            if (!ProxyVpnService.vpnState.value) {
+                val stopIntent = Intent(this, ProxyForegroundService::class.java).apply {
+                    action = ProxyForegroundService.ACTION_STOP
+                }
+                startService(stopIntent)
+            }
+
             val vpnIntent = VpnService.prepare(this)
             if (vpnIntent != null) {
                 pendingStart = true
