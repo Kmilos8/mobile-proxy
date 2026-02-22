@@ -6,7 +6,7 @@ import { RotateCw, ChevronRight, Plus, X, Copy, Check, Trash2, Server } from 'lu
 import { api, Device, PairingCode, RelayServer } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
-import { timeAgo, cn } from '@/lib/utils'
+import { timeAgo, cn, copyToClipboard } from '@/lib/utils'
 import StatusBadge from '@/components/ui/StatusBadge'
 import BatteryIndicator from '@/components/ui/BatteryIndicator'
 import { QRCodeSVG } from 'qrcode.react'
@@ -77,7 +77,7 @@ function PairingModal({ onClose }: { onClose: () => void }) {
 
   function handleCopy() {
     if (!code) return
-    navigator.clipboard.writeText(formatCodeDisplay(code))
+    copyToClipboard(formatCodeDisplay(code))
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

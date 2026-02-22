@@ -11,7 +11,7 @@ import {
 import { api, Device, DeviceBandwidth, DeviceCommand, ProxyConnection, IPHistoryEntry, RotationLink, BandwidthHourly, UptimeSegment } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
-import { formatBytes, formatDate, timeAgo, cn } from '@/lib/utils'
+import { formatBytes, formatDate, timeAgo, cn, copyToClipboard } from '@/lib/utils'
 import StatusBadge from '@/components/ui/StatusBadge'
 import BatteryIndicator from '@/components/ui/BatteryIndicator'
 import BandwidthChart from '@/components/BandwidthChart'
@@ -113,8 +113,8 @@ export default function DeviceDetailPage() {
     }
   }
 
-  function copyToClipboard(text: string, itemId: string) {
-    navigator.clipboard.writeText(text)
+  function handleCopy(text: string, itemId: string) {
+    copyToClipboard(text)
     setCopiedId(itemId)
     setTimeout(() => setCopiedId(null), 2000)
   }
@@ -201,9 +201,9 @@ export default function DeviceDetailPage() {
 
         {/* Content Area */}
         <div className="flex-1 min-w-0">
-          {activeTab === 'primary' && <PrimaryTab device={device} connections={connections} bandwidth={bandwidth} serverHost={SERVER_HOST} copyToClipboard={copyToClipboard} copiedId={copiedId} />}
+          {activeTab === 'primary' && <PrimaryTab device={device} connections={connections} bandwidth={bandwidth} serverHost={SERVER_HOST} copyToClipboard={handleCopy} copiedId={copiedId} />}
           {activeTab === 'advanced' && <AdvancedTab device={device} commands={commands} sendCommand={sendCommand} />}
-          {activeTab === 'change-ip' && <ChangeIPTab device={device} rotationLinks={rotationLinks} onCreateLink={handleCreateRotationLink} onDeleteLink={handleDeleteRotationLink} getRotationUrl={getRotationUrl} copyToClipboard={copyToClipboard} copiedId={copiedId} />}
+          {activeTab === 'change-ip' && <ChangeIPTab device={device} rotationLinks={rotationLinks} onCreateLink={handleCreateRotationLink} onDeleteLink={handleDeleteRotationLink} getRotationUrl={getRotationUrl} copyToClipboard={handleCopy} copiedId={copiedId} />}
           {activeTab === 'history' && <HistoryTab ipHistory={ipHistory} commands={commands} />}
           {activeTab === 'metrics' && <MetricsTab device={device} bandwidth={bandwidth} />}
           {activeTab === 'usage' && <UsageTab deviceId={device.id} />}
