@@ -55,8 +55,8 @@ class CommandExecutor @Inject constructor(
     }
 
     private suspend fun playFindPhoneAlert() {
+        // Vibrate (best-effort, may fail without permission)
         try {
-            // Vibrate for 10 seconds with pattern
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
                 vm.defaultVibrator
@@ -64,7 +64,6 @@ class CommandExecutor @Inject constructor(
                 @Suppress("DEPRECATION")
                 context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
             }
-
             val pattern = longArrayOf(0, 500, 200, 500, 200, 500, 200, 500, 200, 500)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
@@ -72,17 +71,24 @@ class CommandExecutor @Inject constructor(
                 @Suppress("DEPRECATION")
                 vibrator.vibrate(pattern, -1)
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Vibrate failed: ${e.message}")
+        }
 
-            // Play alarm sound at max volume for 10 seconds
+        // Play alarm sound at max volume for 10 seconds
+        var mediaPlayer: MediaPlayer? = null
+        var audioManager: AudioManager? = null
+        var originalVolume = 0
+        try {
             val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
 
-            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val originalVolume = audioManager.getStreamVolume(AudioManager.STREAM_ALARM)
+            audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            originalVolume = audioManager.getStreamVolume(AudioManager.STREAM_ALARM)
             val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
             audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVolume, 0)
 
-            val mediaPlayer = MediaPlayer().apply {
+            mediaPlayer = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_ALARM)
@@ -95,13 +101,13 @@ class CommandExecutor @Inject constructor(
             }
 
             delay(10_000)
-            mediaPlayer.stop()
-            mediaPlayer.release()
-            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, originalVolume, 0)
-
             Log.i(TAG, "Find phone alert completed")
         } catch (e: Exception) {
             Log.e(TAG, "Find phone alert error", e)
+        } finally {
+            try { mediaPlayer?.stop() } catch (_: Exception) {}
+            try { mediaPlayer?.release() } catch (_: Exception) {}
+            try { audioManager?.setStreamVolume(AudioManager.STREAM_ALARM, originalVolume, 0) } catch (_: Exception) {}
         }
     }
 }
