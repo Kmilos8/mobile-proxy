@@ -158,6 +158,7 @@ class MainActivity : AppCompatActivity() {
         scope.launch {
             ProxyVpnService.vpnState.collectLatest { connected ->
                 vpnText.text = if (connected) "VPN: Connected" else "VPN: Disconnected"
+                statusText.text = if (connected) "Status: Running" else "Status: Stopped"
             }
         }
     }
