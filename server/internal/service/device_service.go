@@ -267,6 +267,45 @@ func (s *DeviceService) SetVpnIP(ctx context.Context, id uuid.UUID, vpnIP string
 	return s.deviceRepo.SetVpnIP(ctx, id, vpnIP)
 }
 
+func (s *DeviceService) UpdateAutoRotate(ctx context.Context, id uuid.UUID, minutes int) error {
+	return s.deviceRepo.UpdateAutoRotate(ctx, id, minutes)
+}
+
+// RunAutoRotations checks all online devices with auto_rotate_minutes > 0 and sends
+// a rotate command if enough time has passed since the last rotation.
+func (s *DeviceService) RunAutoRotations(ctx context.Context) error {
+	devices, err := s.deviceRepo.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list devices: %w", err)
+	}
+
+	now := time.Now()
+	for _, d := range devices {
+		if d.Status != domain.DeviceStatusOnline || d.AutoRotateMinutes <= 0 {
+			continue
+		}
+
+		lastCmd, err := s.commandRepo.GetLastRotationCommand(ctx, d.ID)
+		if err == nil && lastCmd != nil {
+			nextRotation := lastCmd.CreatedAt.Add(time.Duration(d.AutoRotateMinutes) * time.Minute)
+			if now.Before(nextRotation) {
+				continue
+			}
+		}
+		// No previous command or interval has elapsed — send rotation
+		_, err = s.SendCommand(ctx, d.ID, &domain.CommandRequest{
+			Type:    "rotate_ip_airplane",
+			Payload: "{}",
+		})
+		if err != nil {
+			log.Printf("Auto-rotate failed for device %s: %v", d.ID, err)
+		} else {
+			log.Printf("Auto-rotate triggered for device %s (interval: %dm)", d.ID, d.AutoRotateMinutes)
+		}
+	}
+	return nil
+}
+
 func (s *DeviceService) MarkStaleOffline(ctx context.Context) (int64, error) {
 	return s.deviceRepo.MarkStaleOffline(ctx, 2*time.Minute)
 }

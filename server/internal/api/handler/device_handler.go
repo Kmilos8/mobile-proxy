@@ -73,8 +73,9 @@ func (h *DeviceHandler) Update(c *gin.Context) {
 	}
 
 	var body struct {
-		Name        *string `json:"name"`
-		Description *string `json:"description"`
+		Name               *string `json:"name"`
+		Description        *string `json:"description"`
+		AutoRotateMinutes  *int    `json:"auto_rotate_minutes"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -99,6 +100,13 @@ func (h *DeviceHandler) Update(c *gin.Context) {
 	if err := h.deviceService.UpdateNameDescription(c.Request.Context(), id, name, description); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	if body.AutoRotateMinutes != nil {
+		if err := h.deviceService.UpdateAutoRotate(c.Request.Context(), id, *body.AutoRotateMinutes); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	// Return updated device

@@ -36,6 +36,7 @@ const deviceSelectColumns = `d.id, d.name, d.description, d.android_id, d.status
 		d.base_port, d.http_port, d.socks5_port, d.udp_relay_port, d.ovpn_port,
 		d.last_heartbeat, d.app_version, d.device_model, d.android_version,
 		d.relay_server_id, COALESCE(rs.ip, '') as relay_server_ip,
+		d.auto_rotate_minutes,
 		d.created_at, d.updated_at`
 
 const deviceFromJoin = `FROM devices d LEFT JOIN relay_servers rs ON d.relay_server_id = rs.id`
@@ -161,6 +162,7 @@ func (r *DeviceRepository) scanDevice(row pgx.Row) (*domain.Device, error) {
 		&d.BasePort, &d.HTTPPort, &d.SOCKS5Port, &d.UDPRelayPort, &d.OVPNPort,
 		&d.LastHeartbeat, &d.AppVersion, &d.DeviceModel, &d.AndroidVersion,
 		&d.RelayServerID, &d.RelayServerIP,
+		&d.AutoRotateMinutes,
 		&d.CreatedAt, &d.UpdatedAt,
 	)
 	if err != nil {
@@ -178,10 +180,17 @@ func (r *DeviceRepository) scanDeviceRow(rows pgx.Rows) (*domain.Device, error) 
 		&d.BasePort, &d.HTTPPort, &d.SOCKS5Port, &d.UDPRelayPort, &d.OVPNPort,
 		&d.LastHeartbeat, &d.AppVersion, &d.DeviceModel, &d.AndroidVersion,
 		&d.RelayServerID, &d.RelayServerIP,
+		&d.AutoRotateMinutes,
 		&d.CreatedAt, &d.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan device: %w", err)
 	}
 	return &d, nil
+}
+
+func (r *DeviceRepository) UpdateAutoRotate(ctx context.Context, id uuid.UUID, minutes int) error {
+	query := `UPDATE devices SET auto_rotate_minutes = $2, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, id, minutes)
+	return err
 }

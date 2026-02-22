@@ -28,11 +28,16 @@ func main() {
 	ipHistRepo := repository.NewIPHistoryRepository(db)
 	commandRepo := repository.NewCommandRepository(db)
 	bwRepo := repository.NewBandwidthRepository(db)
+	relayServerRepo := repository.NewRelayServerRepository(db)
 
 	statusLogRepo := repository.NewStatusLogRepository(db)
 	portService := service.NewPortService(deviceRepo, cfg.Ports)
 	deviceService := service.NewDeviceService(deviceRepo, ipHistRepo, commandRepo, portService, nil)
 	deviceService.SetStatusLogRepo(statusLogRepo)
+	deviceService.SetRelayServerRepo(relayServerRepo)
+	if v := os.Getenv("TUNNEL_PUSH_URL"); v != "" {
+		deviceService.SetTunnelPushURL(v)
+	}
 	bwService := service.NewBandwidthService(bwRepo)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -76,6 +81,22 @@ func main() {
 			case <-ticker.C:
 				if err := bwService.EnsurePartitions(ctx); err != nil {
 					log.Printf("Error ensuring partitions: %v", err)
+				}
+			}
+		}
+	}()
+
+	// Auto-rotation checker - every 30 seconds
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := deviceService.RunAutoRotations(ctx); err != nil {
+					log.Printf("Error running auto-rotations: %v", err)
 				}
 			}
 		}

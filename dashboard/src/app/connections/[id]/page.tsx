@@ -279,7 +279,11 @@ export default function ConnectionDetailPage() {
         <div className="flex-1 min-w-0">
           {activeTab === 'primary' && <PrimaryTab device={device} connections={connections} bandwidth={bandwidth} serverHost={device.relay_server_ip || '178.156.210.156'} copyToClipboard={handleCopy} copiedId={copiedId} onConnectionsChange={setConnections} />}
           {activeTab === 'advanced' && <AdvancedTab device={device} commands={commands} sendCommand={sendCommand} />}
-          {activeTab === 'change-ip' && <ChangeIPTab device={device} rotationLinks={rotationLinks} onCreateLink={handleCreateRotationLink} onDeleteLink={handleDeleteRotationLink} getRotationUrl={getRotationUrl} copyToClipboard={handleCopy} copiedId={copiedId} />}
+          {activeTab === 'change-ip' && <ChangeIPTab device={device} rotationLinks={rotationLinks} onCreateLink={handleCreateRotationLink} onDeleteLink={handleDeleteRotationLink} getRotationUrl={getRotationUrl} copyToClipboard={handleCopy} copiedId={copiedId} onAutoRotateChange={(minutes) => {
+            const token = getToken()
+            if (!token) return
+            api.devices.update(token, device.id, { auto_rotate_minutes: minutes }).then(updated => setDevice(updated))
+          }} />}
           {activeTab === 'history' && <HistoryTab ipHistory={ipHistory} commands={commands} />}
           {activeTab === 'metrics' && <MetricsTab device={device} bandwidth={bandwidth} />}
           {activeTab === 'usage' && <UsageTab deviceId={device.id} />}
@@ -686,7 +690,7 @@ function AdvancedTab({ device, commands, sendCommand }: {
 }
 
 // ============= CHANGE IP TAB =============
-function ChangeIPTab({ device, rotationLinks, onCreateLink, onDeleteLink, getRotationUrl, copyToClipboard, copiedId }: {
+function ChangeIPTab({ device, rotationLinks, onCreateLink, onDeleteLink, getRotationUrl, copyToClipboard, copiedId, onAutoRotateChange }: {
   device: Device
   rotationLinks: RotationLink[]
   onCreateLink: () => void
@@ -694,104 +698,92 @@ function ChangeIPTab({ device, rotationLinks, onCreateLink, onDeleteLink, getRot
   getRotationUrl: (token: string) => string
   copyToClipboard: (text: string, id: string) => void
   copiedId: string | null
+  onAutoRotateChange: (minutes: number) => void
 }) {
-  const [subTab, setSubTab] = useState<'url' | 'rotation'>('url')
-
   return (
     <div>
-      <div className="flex gap-1 border-b border-zinc-800 mb-6">
+      {/* Auto-Rotation Interval */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-white">Auto-Rotation Interval</h3>
+            <p className="text-xs text-zinc-500 mt-1">Automatically rotate IP at a set interval</p>
+          </div>
+          <select
+            value={device.auto_rotate_minutes}
+            onChange={(e) => onAutoRotateChange(Number(e.target.value))}
+            className="bg-zinc-800 border border-zinc-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-brand-500"
+          >
+            <option value={0}>Disabled</option>
+            <option value={5}>Every 5 min</option>
+            <option value={10}>Every 10 min</option>
+            <option value={15}>Every 15 min</option>
+            <option value={30}>Every 30 min</option>
+            <option value={60}>Every 60 min</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Rotation Links */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-medium text-zinc-400">URL for IP address change</h3>
         <button
-          onClick={() => setSubTab('url')}
-          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'url' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
-          )}
+          onClick={onCreateLink}
+          className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm transition-colors"
         >
-          URL
-        </button>
-        <button
-          onClick={() => setSubTab('rotation')}
-          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'rotation' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
-          )}
-        >
-          About
+          <Plus className="w-4 h-4" />
+          Add URL
         </button>
       </div>
 
-      {subTab === 'url' && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-zinc-400">URL for IP address change</h3>
-            <button
-              onClick={onCreateLink}
-              className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Add URL
-            </button>
-          </div>
-
-          {rotationLinks.length === 0 ? (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
-              <Link2 className="w-8 h-8 text-zinc-600 mx-auto mb-3" />
-              <p className="text-zinc-500 text-sm">No rotation links yet.</p>
-              <p className="text-zinc-600 text-xs mt-1">
-                Create a link that anyone can use to trigger IP rotation on this device.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {rotationLinks.map(link => {
-                const url = getRotationUrl(link.token)
-                return (
-                  <div key={link.id} className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 flex items-center justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <a
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-brand-400 hover:text-brand-300 text-sm font-mono truncate block"
-                      >
-                        {url}
-                      </a>
-                      <div className="text-xs text-zinc-500 mt-1">
-                        {link.name && <span className="mr-3">{link.name}</span>}
-                        Created {formatDate(link.created_at)}
-                        {link.last_used_at && <span className="ml-3">Last used: {timeAgo(link.last_used_at)}</span>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => copyToClipboard(url, `link-${link.id}`)}
-                        className="p-2 text-zinc-500 hover:text-white transition-colors"
-                        title="Copy URL"
-                      >
-                        {copiedId === `link-${link.id}` ? <span className="text-green-400 text-xs">Copied!</span> : <Copy className="w-4 h-4" />}
-                      </button>
-                      <button
-                        onClick={() => onDeleteLink(link.id)}
-                        className="p-2 text-zinc-500 hover:text-red-400 transition-colors"
-                        title="Delete link"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+      {rotationLinks.length === 0 ? (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
+          <Link2 className="w-8 h-8 text-zinc-600 mx-auto mb-3" />
+          <p className="text-zinc-500 text-sm">No rotation links yet.</p>
+          <p className="text-zinc-600 text-xs mt-1">
+            Create a link that anyone can use to trigger IP rotation on this device.
+          </p>
         </div>
-      )}
-
-      {subTab === 'rotation' && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-zinc-400 mb-3">How Rotation Links Work</h3>
-          <div className="text-sm text-zinc-300 space-y-2">
-            <p>Rotation links are public URLs that trigger an IP rotation on this device when accessed.</p>
-            <p>When someone visits the link, the server sends a <code className="px-1.5 py-0.5 bg-zinc-800 rounded text-xs">rotate_ip</code> command to the device, which toggles airplane mode to get a new cellular IP.</p>
-            <p>No authentication is required to use a rotation link - share it with anyone who needs to trigger IP changes.</p>
-          </div>
+      ) : (
+        <div className="space-y-2">
+          {rotationLinks.map(link => {
+            const url = getRotationUrl(link.token)
+            return (
+              <div key={link.id} className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-brand-400 hover:text-brand-300 text-sm font-mono truncate block"
+                  >
+                    {url}
+                  </a>
+                  <div className="text-xs text-zinc-500 mt-1">
+                    {link.name && <span className="mr-3">{link.name}</span>}
+                    Created {formatDate(link.created_at)}
+                    {link.last_used_at && <span className="ml-3">Last used: {timeAgo(link.last_used_at)}</span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => copyToClipboard(url, `link-${link.id}`)}
+                    className="p-2 text-zinc-500 hover:text-white transition-colors"
+                    title="Copy URL"
+                  >
+                    {copiedId === `link-${link.id}` ? <span className="text-green-400 text-xs">Copied!</span> : <Copy className="w-4 h-4" />}
+                  </button>
+                  <button
+                    onClick={() => onDeleteLink(link.id)}
+                    className="p-2 text-zinc-500 hover:text-red-400 transition-colors"
+                    title="Delete link"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

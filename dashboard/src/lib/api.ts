@@ -63,6 +63,7 @@ export interface Device {
   android_version: string
   relay_server_id: string | null
   relay_server_ip: string
+  auto_rotate_minutes: number
   created_at: string
 }
 
@@ -172,7 +173,7 @@ export const api = {
       request<{ devices: Device[] }>('/devices', { token }),
     get: (token: string, id: string) =>
       request<Device>(`/devices/${id}`, { token }),
-    update: (token: string, id: string, data: { name?: string; description?: string }) =>
+    update: (token: string, id: string, data: { name?: string; description?: string; auto_rotate_minutes?: number }) =>
       request<Device>(`/devices/${id}`, { method: 'PATCH', token, body: data }),
     sendCommand: (token: string, id: string, type: string, payload?: string) =>
       request(`/devices/${id}/commands`, { method: 'POST', token, body: { type, payload: payload || '{}' } }),

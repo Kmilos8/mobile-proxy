@@ -79,9 +79,10 @@ type Device struct {
 	DeviceModel     string       `json:"device_model" db:"device_model"`
 	AndroidVersion  string       `json:"android_version" db:"android_version"`
 	RelayServerID   *uuid.UUID   `json:"relay_server_id" db:"relay_server_id"`
-	RelayServerIP   string       `json:"relay_server_ip" db:"-"`
-	CreatedAt       time.Time    `json:"created_at" db:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at" db:"updated_at"`
+	RelayServerIP     string       `json:"relay_server_ip" db:"-"`
+	AutoRotateMinutes int          `json:"auto_rotate_minutes" db:"auto_rotate_minutes"`
+	CreatedAt         time.Time    `json:"created_at" db:"created_at"`
+	UpdatedAt         time.Time    `json:"updated_at" db:"updated_at"`
 }
 
 type Customer struct {

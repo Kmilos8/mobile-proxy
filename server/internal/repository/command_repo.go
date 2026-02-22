@@ -86,3 +86,17 @@ func (r *CommandRepository) MarkAsSent(ctx context.Context, ids []uuid.UUID) err
 	_, err := r.db.Pool.Exec(ctx, query, ids)
 	return err
 }
+
+func (r *CommandRepository) GetLastRotationCommand(ctx context.Context, deviceID uuid.UUID) (*domain.DeviceCommand, error) {
+	query := `SELECT id, device_id, type, status, payload, result, created_at, executed_at
+		FROM device_commands WHERE device_id = $1 AND type IN ('rotate_ip', 'rotate_ip_airplane')
+		ORDER BY created_at DESC LIMIT 1`
+	row := r.db.Pool.QueryRow(ctx, query, deviceID)
+	var cmd domain.DeviceCommand
+	err := row.Scan(&cmd.ID, &cmd.DeviceID, &cmd.Type, &cmd.Status,
+		&cmd.Payload, &cmd.Result, &cmd.CreatedAt, &cmd.ExecutedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &cmd, nil
+}
