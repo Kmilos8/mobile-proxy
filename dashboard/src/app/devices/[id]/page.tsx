@@ -422,6 +422,7 @@ function AdvancedTab({ device, commands, sendCommand }: {
   const actionButtons = [
     { type: 'rotate_ip_airplane', label: 'Rotate IP', icon: RotateCw, color: 'bg-brand-600 hover:bg-brand-500', description: 'Change cellular IP via airplane mode toggle' },
     { type: 'find_phone', label: 'Find Phone', icon: Search, color: 'bg-purple-600 hover:bg-purple-700', description: 'Vibrate and flash light' },
+    { type: 'reboot', label: 'Reboot', icon: Power, color: 'bg-red-600 hover:bg-red-700', description: 'Reboot the device' },
   ]
 
   return (

@@ -1,8 +1,11 @@
 package com.mobileproxy.core.commands
 
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
 import android.hardware.camera2.CameraManager
 import android.os.Build
+import com.mobileproxy.core.admin.MobileProxyDeviceAdmin
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -45,9 +48,30 @@ class CommandExecutor @Inject constructor(
                 playFindPhoneAlert()
                 Result.success("Find phone alert playing")
             }
+            "reboot" -> {
+                rebootDevice()
+            }
             else -> {
                 Result.failure(Exception("Unknown command: ${command.type}"))
             }
+        }
+    }
+
+    private fun rebootDevice(): Result<String> {
+        return try {
+            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val admin = ComponentName(context, MobileProxyDeviceAdmin::class.java)
+            if (dpm.isDeviceOwnerApp(context.packageName)) {
+                Log.i(TAG, "Rebooting device via Device Owner")
+                dpm.reboot(admin)
+                Result.success("Reboot initiated")
+            } else {
+                Log.w(TAG, "App is not device owner, cannot reboot")
+                Result.failure(Exception("App is not device owner. Run: adb shell dpm set-device-owner com.mobileproxy/.core.admin.MobileProxyDeviceAdmin"))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Reboot failed", e)
+            Result.failure(e)
         }
     }
 
