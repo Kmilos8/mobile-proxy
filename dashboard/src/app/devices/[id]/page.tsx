@@ -419,134 +419,74 @@ function AdvancedTab({ device, commands, sendCommand }: {
   commands: DeviceCommand[]
   sendCommand: (type: string, label: string) => void
 }) {
-  const [subTab, setSubTab] = useState<'actions' | 'config'>('actions')
-
   const actionButtons = [
     { type: 'rotate_ip_airplane', label: 'Rotate IP', icon: RotateCw, color: 'bg-brand-600 hover:bg-brand-500', description: 'Change cellular IP via airplane mode toggle' },
-    { type: 'find_phone', label: 'Find Phone', icon: Search, color: 'bg-purple-600 hover:bg-purple-700', description: 'Play alarm sound and vibrate' },
+    { type: 'find_phone', label: 'Find Phone', icon: Search, color: 'bg-purple-600 hover:bg-purple-700', description: 'Vibrate and flash light' },
   ]
 
   return (
     <div>
-      <div className="flex gap-1 border-b border-zinc-800 mb-6">
-        <button
-          onClick={() => setSubTab('actions')}
-          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'actions' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
-          )}
-        >
-          Actions
-        </button>
-        <button
-          onClick={() => setSubTab('config')}
-          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'config' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
-          )}
-        >
-          Configuration
-        </button>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-8">
+        {actionButtons.map(action => {
+          const Icon = action.icon
+          const disabled = device.status !== 'online'
+          return (
+            <button
+              key={action.type}
+              onClick={() => sendCommand(action.type, action.label)}
+              disabled={disabled}
+              className={cn(
+                'flex items-center gap-3 px-4 py-3 rounded-lg text-white text-left transition-all',
+                disabled ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' : action.color
+              )}
+            >
+              <Icon className="w-5 h-5 flex-shrink-0" />
+              <div>
+                <div className="text-sm font-medium">{action.label}</div>
+                <div className={cn('text-xs', disabled ? 'text-zinc-600' : 'text-white/70')}>
+                  {action.description}
+                </div>
+              </div>
+            </button>
+          )
+        })}
       </div>
 
-      {subTab === 'actions' && (
-        <div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-8">
-            {actionButtons.map(action => {
-              const Icon = action.icon
-              const disabled = device.status !== 'online'
-              return (
-                <button
-                  key={action.type}
-                  onClick={() => sendCommand(action.type, action.label)}
-                  disabled={disabled}
-                  className={cn(
-                    'flex items-center gap-3 px-4 py-3 rounded-lg text-white text-left transition-all',
-                    disabled ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' : action.color
-                  )}
-                >
-                  <Icon className="w-5 h-5 flex-shrink-0" />
-                  <div>
-                    <div className="text-sm font-medium">{action.label}</div>
-                    <div className={cn('text-xs', disabled ? 'text-zinc-600' : 'text-white/70')}>
-                      {action.description}
-                    </div>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Recent commands */}
-          <h3 className="text-sm font-medium text-zinc-400 mb-3">Recent Commands</h3>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-800 text-zinc-500 text-left">
-                  <th className="px-4 py-2 font-medium text-xs">Command</th>
-                  <th className="px-4 py-2 font-medium text-xs">Status</th>
-                  <th className="px-4 py-2 font-medium text-xs">Sent</th>
-                  <th className="px-4 py-2 font-medium text-xs">Executed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {commands.slice(0, 10).map(cmd => (
-                  <tr key={cmd.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
-                    <td className="px-4 py-2">
-                      <span className="px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-300">
-                        {cmd.type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2"><StatusBadge status={cmd.status} /></td>
-                    <td className="px-4 py-2 text-xs text-zinc-400">{timeAgo(cmd.created_at)}</td>
-                    <td className="px-4 py-2 text-xs text-zinc-400">{cmd.executed_at ? timeAgo(cmd.executed_at) : '-'}</td>
-                  </tr>
-                ))}
-                {commands.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
-                      No commands sent yet
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {subTab === 'config' && (
-        <div className="space-y-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-zinc-400 mb-4">IP Rotation Method</h3>
-            <p className="text-sm text-zinc-300 mb-2">
-              Current method: <span className="font-medium text-white">Airplane Mode Toggle</span>
-            </p>
-            <p className="text-xs text-zinc-500">
-              Uses Settings.Global to toggle airplane mode ON/OFF with a 5-second delay.
-              Requires WRITE_SECURE_SETTINGS permission granted via ADB.
-            </p>
-          </div>
-
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-zinc-400 mb-4">Device Status</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Status</span>
-                <StatusBadge status={device.status} />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Last heartbeat</span>
-                <span className="text-zinc-300">{timeAgo(device.last_heartbeat)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">VPN Connection</span>
-                <span className={device.vpn_ip ? 'text-green-400' : 'text-zinc-500'}>
-                  {device.vpn_ip ? `Connected (${device.vpn_ip})` : 'Disconnected'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Recent commands */}
+      <h3 className="text-sm font-medium text-zinc-400 mb-3">Recent Commands</h3>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-zinc-800 text-zinc-500 text-left">
+              <th className="px-4 py-2 font-medium text-xs">Command</th>
+              <th className="px-4 py-2 font-medium text-xs">Status</th>
+              <th className="px-4 py-2 font-medium text-xs">Sent</th>
+              <th className="px-4 py-2 font-medium text-xs">Executed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {commands.slice(0, 10).map(cmd => (
+              <tr key={cmd.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
+                <td className="px-4 py-2">
+                  <span className="px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-300">
+                    {cmd.type}
+                  </span>
+                </td>
+                <td className="px-4 py-2"><StatusBadge status={cmd.status} /></td>
+                <td className="px-4 py-2 text-xs text-zinc-400">{timeAgo(cmd.created_at)}</td>
+                <td className="px-4 py-2 text-xs text-zinc-400">{cmd.executed_at ? timeAgo(cmd.executed_at) : '-'}</td>
+              </tr>
+            ))}
+            {commands.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
+                  No commands sent yet
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
