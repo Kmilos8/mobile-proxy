@@ -284,7 +284,7 @@ export default function ConnectionDetailPage() {
             if (!token) return
             api.devices.update(token, device.id, { auto_rotate_minutes: minutes }).then(updated => setDevice(updated))
           }} />}
-          {activeTab === 'history' && <HistoryTab ipHistory={ipHistory} commands={commands} />}
+          {activeTab === 'history' && <HistoryTab ipHistory={ipHistory} />}
           {activeTab === 'metrics' && <MetricsTab device={device} bandwidth={bandwidth} />}
           {activeTab === 'usage' && <UsageTab deviceId={device.id} />}
         </div>
@@ -793,104 +793,38 @@ function ChangeIPTab({ device, rotationLinks, onCreateLink, onDeleteLink, getRot
 }
 
 // ============= HISTORY TAB =============
-function HistoryTab({ ipHistory, commands }: {
+function HistoryTab({ ipHistory }: {
   ipHistory: IPHistoryEntry[]
-  commands: DeviceCommand[]
 }) {
-  const [subTab, setSubTab] = useState<'ip' | 'commands'>('ip')
-
   return (
     <div>
-      <div className="flex gap-1 border-b border-zinc-800 mb-6">
-        <button
-          onClick={() => setSubTab('ip')}
-          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'ip' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
-          )}
-        >
-          IP History
-        </button>
-        <button
-          onClick={() => setSubTab('commands')}
-          className={cn('px-4 py-2 text-sm border-b-2 -mb-px transition-colors',
-            subTab === 'commands' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
-          )}
-        >
-          Command History
-        </button>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-zinc-800 text-zinc-500 text-left">
+              <th className="px-4 py-2 font-medium text-xs">#</th>
+              <th className="px-4 py-2 font-medium text-xs">Date</th>
+              <th className="px-4 py-2 font-medium text-xs">IP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ipHistory.map((entry, idx) => (
+              <tr key={entry.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
+                <td className="px-4 py-2 text-zinc-500">{idx + 1}</td>
+                <td className="px-4 py-2 text-zinc-300">{formatDate(entry.created_at)}</td>
+                <td className="px-4 py-2 font-mono text-xs">{entry.ip}</td>
+              </tr>
+            ))}
+            {ipHistory.length === 0 && (
+              <tr>
+                <td colSpan={3} className="px-4 py-6 text-center text-zinc-500">
+                  No IP history yet
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
-
-      {subTab === 'ip' && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-800 text-zinc-500 text-left">
-                <th className="px-4 py-2 font-medium text-xs">#</th>
-                <th className="px-4 py-2 font-medium text-xs">Date</th>
-                <th className="px-4 py-2 font-medium text-xs">IP</th>
-                <th className="px-4 py-2 font-medium text-xs">Method</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ipHistory.map((entry, idx) => (
-                <tr key={entry.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
-                  <td className="px-4 py-2 text-zinc-500">{idx + 1}</td>
-                  <td className="px-4 py-2 text-zinc-300">{formatDate(entry.created_at)}</td>
-                  <td className="px-4 py-2 font-mono text-xs">{entry.ip}</td>
-                  <td className="px-4 py-2">
-                    <span className="px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-300">
-                      {entry.method}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {ipHistory.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
-                    No IP history yet
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {subTab === 'commands' && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-800 text-zinc-500 text-left">
-                <th className="px-4 py-2 font-medium text-xs">Type</th>
-                <th className="px-4 py-2 font-medium text-xs">Status</th>
-                <th className="px-4 py-2 font-medium text-xs">Created</th>
-                <th className="px-4 py-2 font-medium text-xs">Executed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {commands.map(cmd => (
-                <tr key={cmd.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
-                  <td className="px-4 py-2">
-                    <span className="px-2 py-0.5 rounded text-xs bg-zinc-800 text-zinc-300">
-                      {cmd.type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2"><StatusBadge status={cmd.status} /></td>
-                  <td className="px-4 py-2 text-zinc-400">{formatDate(cmd.created_at)}</td>
-                  <td className="px-4 py-2 text-zinc-400">{cmd.executed_at ? formatDate(cmd.executed_at) : '-'}</td>
-                </tr>
-              ))}
-              {commands.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
-                    No commands sent yet
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   )
 }
