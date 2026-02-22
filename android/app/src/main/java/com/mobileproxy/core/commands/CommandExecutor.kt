@@ -81,7 +81,12 @@ class CommandExecutor @Inject constructor(
                 @Suppress("DEPRECATION")
                 context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
             }
-            val pattern = longArrayOf(0, 500, 200, 500, 200, 500, 200, 500, 200, 500, 200, 500, 200, 500, 200, 500, 200, 500, 200, 500)
+            val pattern = longArrayOf(
+                0, 500, 200, 500, 200, 500, 200, 500, 200, 500,
+                200, 500, 200, 500, 200, 500, 200, 500, 200, 500,
+                200, 500, 200, 500, 200, 500, 200, 500, 200, 500,
+                200, 500, 200, 500, 200, 500, 200, 500, 200, 500
+            )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
             } else {
@@ -93,7 +98,7 @@ class CommandExecutor @Inject constructor(
         }
 
         // Wait for vibration to finish then turn flashlight off
-        delay(10_000)
+        delay(20_000)
         try {
             if (cameraId != null && cameraManager != null) {
                 cameraManager.setTorchMode(cameraId, false)
