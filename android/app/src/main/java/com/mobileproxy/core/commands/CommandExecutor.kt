@@ -1,10 +1,7 @@
 package com.mobileproxy.core.commands
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioManager
-import android.media.MediaPlayer
-import android.media.RingtoneManager
+import android.hardware.camera2.CameraManager
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -55,7 +52,27 @@ class CommandExecutor @Inject constructor(
     }
 
     private suspend fun playFindPhoneAlert() {
-        // Vibrate (best-effort, may fail without permission)
+        var cameraId: String? = null
+        var cameraManager: CameraManager? = null
+
+        // Turn flashlight on
+        try {
+            cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            cameraId = cameraManager.cameraIdList.firstOrNull { id ->
+                cameraManager.getCameraCharacteristics(id)
+                    .get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            }
+            if (cameraId != null) {
+                cameraManager.setTorchMode(cameraId, true)
+                Log.i(TAG, "Flashlight ON")
+            } else {
+                Log.w(TAG, "No camera with flash found")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Flashlight failed: ${e.message}")
+        }
+
+        // Vibrate for ~10 seconds
         try {
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
@@ -64,7 +81,7 @@ class CommandExecutor @Inject constructor(
                 @Suppress("DEPRECATION")
                 context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
             }
-            val pattern = longArrayOf(0, 500, 200, 500, 200, 500, 200, 500, 200, 500)
+            val pattern = longArrayOf(0, 500, 200, 500, 200, 500, 200, 500, 200, 500, 200, 500, 200, 500, 200, 500, 200, 500, 200, 500)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
             } else {
@@ -75,39 +92,16 @@ class CommandExecutor @Inject constructor(
             Log.w(TAG, "Vibrate failed: ${e.message}")
         }
 
-        // Play alarm sound at max volume for 10 seconds
-        var mediaPlayer: MediaPlayer? = null
-        var audioManager: AudioManager? = null
-        var originalVolume = 0
+        // Wait for vibration to finish then turn flashlight off
+        delay(10_000)
         try {
-            val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-
-            audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            originalVolume = audioManager.getStreamVolume(AudioManager.STREAM_ALARM)
-            val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVolume, 0)
-
-            mediaPlayer = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                setDataSource(context, alarmUri)
-                prepare()
-                start()
+            if (cameraId != null && cameraManager != null) {
+                cameraManager.setTorchMode(cameraId, false)
+                Log.i(TAG, "Flashlight OFF")
             }
-
-            delay(10_000)
-            Log.i(TAG, "Find phone alert completed")
         } catch (e: Exception) {
-            Log.e(TAG, "Find phone alert error", e)
-        } finally {
-            try { mediaPlayer?.stop() } catch (_: Exception) {}
-            try { mediaPlayer?.release() } catch (_: Exception) {}
-            try { audioManager?.setStreamVolume(AudioManager.STREAM_ALARM, originalVolume, 0) } catch (_: Exception) {}
+            Log.w(TAG, "Flashlight off failed: ${e.message}")
         }
+        Log.i(TAG, "Find phone alert completed")
     }
 }
