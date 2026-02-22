@@ -574,18 +574,20 @@ function ChangeIPTab({ device, rotationLinks, onCreateLink, onDeleteLink, getRot
             <h3 className="text-sm font-medium text-white">Auto-Rotation Interval</h3>
             <p className="text-xs text-zinc-500 mt-1">Automatically rotate IP at a set interval</p>
           </div>
-          <select
-            value={device.auto_rotate_minutes}
-            onChange={(e) => onAutoRotateChange(Number(e.target.value))}
-            className="bg-zinc-800 border border-zinc-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-brand-500"
-          >
-            <option value={0}>Disabled</option>
-            <option value={5}>Every 5 min</option>
-            <option value={10}>Every 10 min</option>
-            <option value={15}>Every 15 min</option>
-            <option value={30}>Every 30 min</option>
-            <option value={60}>Every 60 min</option>
-          </select>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              value={device.auto_rotate_minutes}
+              onChange={(e) => {
+                const v = Math.max(0, Math.floor(Number(e.target.value) || 0))
+                onAutoRotateChange(v)
+              }}
+              className="bg-zinc-800 border border-zinc-700 text-white text-sm rounded-lg px-3 py-2 w-20 focus:outline-none focus:border-brand-500"
+            />
+            <span className="text-sm text-zinc-400">min</span>
+            <span className="text-xs text-zinc-600 ml-1">(0 = disabled)</span>
+          </div>
         </div>
       </div>
 
