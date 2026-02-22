@@ -44,6 +44,9 @@ class ProxyForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Always call startForeground() first to prevent ForegroundServiceDidNotStartInTimeException
+        startForeground(MobileProxyApp.NOTIFICATION_ID, createNotification())
+
         when (intent?.action) {
             ACTION_START -> {
                 val serverUrl = intent.getStringExtra(EXTRA_SERVER_URL) ?: ""
@@ -52,6 +55,12 @@ class ProxyForegroundService : Service() {
                 startProxy(serverUrl, deviceId, authToken)
             }
             ACTION_STOP -> stopProxy()
+            else -> {
+                // Null intent from START_STICKY restart — no credentials, just stop
+                Log.w(TAG, "Service restarted with null intent, stopping")
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
         return START_STICKY
     }
@@ -72,9 +81,6 @@ class ProxyForegroundService : Service() {
             PowerManager.PARTIAL_WAKE_LOCK,
             "MobileProxy::ProxyWakeLock"
         ).apply { acquire() }
-
-        // Start foreground notification
-        startForeground(MobileProxyApp.NOTIFICATION_ID, createNotification())
 
         // Wire up command push callback — commands pushed via VPN tunnel are executed instantly
         ProxyVpnService.commandCallback = { json -> statusReporter.handlePushedCommand(json) }
