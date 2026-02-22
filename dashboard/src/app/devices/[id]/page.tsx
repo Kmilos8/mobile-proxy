@@ -422,11 +422,8 @@ function AdvancedTab({ device, commands, sendCommand }: {
   const [subTab, setSubTab] = useState<'actions' | 'config'>('actions')
 
   const actionButtons = [
-    { type: 'rotate_ip', label: 'Rotate IP', icon: RotateCw, color: 'bg-brand-600 hover:bg-brand-500', description: 'Change cellular IP via airplane mode' },
-    { type: 'reboot', label: 'Reboot Device', icon: Power, color: 'bg-orange-600 hover:bg-orange-700', description: 'Restart the Android device' },
-    { type: 'find_phone', label: 'Find Phone', icon: Search, color: 'bg-purple-600 hover:bg-purple-700', description: 'Play sound on the device' },
-    { type: 'wifi_on', label: 'WiFi On', icon: Wifi, color: 'bg-green-600 hover:bg-green-700', description: 'Enable WiFi' },
-    { type: 'wifi_off', label: 'WiFi Off', icon: WifiOff, color: 'bg-zinc-600 hover:bg-zinc-700', description: 'Disable WiFi' },
+    { type: 'rotate_ip_airplane', label: 'Rotate IP', icon: RotateCw, color: 'bg-brand-600 hover:bg-brand-500', description: 'Change cellular IP via airplane mode toggle' },
+    { type: 'find_phone', label: 'Find Phone', icon: Search, color: 'bg-purple-600 hover:bg-purple-700', description: 'Play alarm sound and vibrate' },
   ]
 
   return (
