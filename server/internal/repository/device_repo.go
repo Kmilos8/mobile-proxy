@@ -194,3 +194,32 @@ func (r *DeviceRepository) UpdateAutoRotate(ctx context.Context, id uuid.UUID, m
 	_, err := r.db.Pool.Exec(ctx, query, id, minutes)
 	return err
 }
+
+func (r *DeviceRepository) Upsert(ctx context.Context, d *domain.Device, authToken string) error {
+	query := `INSERT INTO devices (id, name, description, android_id, status, base_port, http_port, socks5_port, udp_relay_port, ovpn_port,
+			device_model, android_version, app_version, relay_server_id, auth_token, auto_rotate_minutes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		ON CONFLICT (id) DO UPDATE SET
+			name = EXCLUDED.name, description = EXCLUDED.description, android_id = EXCLUDED.android_id,
+			base_port = EXCLUDED.base_port, http_port = EXCLUDED.http_port, socks5_port = EXCLUDED.socks5_port,
+			udp_relay_port = EXCLUDED.udp_relay_port, ovpn_port = EXCLUDED.ovpn_port,
+			device_model = EXCLUDED.device_model, android_version = EXCLUDED.android_version,
+			app_version = EXCLUDED.app_version, relay_server_id = EXCLUDED.relay_server_id,
+			auth_token = EXCLUDED.auth_token, auto_rotate_minutes = EXCLUDED.auto_rotate_minutes,
+			updated_at = NOW()`
+	_, err := r.db.Pool.Exec(ctx, query,
+		d.ID, d.Name, d.Description, d.AndroidID, d.Status, d.BasePort,
+		d.HTTPPort, d.SOCKS5Port, d.UDPRelayPort, d.OVPNPort,
+		d.DeviceModel, d.AndroidVersion, d.AppVersion, d.RelayServerID, authToken, d.AutoRotateMinutes)
+	return err
+}
+
+func (r *DeviceRepository) GetAuthToken(ctx context.Context, id uuid.UUID) (string, error) {
+	query := `SELECT COALESCE(auth_token, '') FROM devices WHERE id = $1`
+	var token string
+	err := r.db.Pool.QueryRow(ctx, query, id).Scan(&token)
+	if err != nil {
+		return "", fmt.Errorf("get auth token: %w", err)
+	}
+	return token, nil
+}

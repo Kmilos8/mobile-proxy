@@ -75,6 +75,31 @@ func (r *ConnectionRepository) GetByUsername(ctx context.Context, username strin
 	return r.scanConnection(r.db.Pool.QueryRow(ctx, query, username))
 }
 
+func (r *ConnectionRepository) ReplaceAllByDeviceID(ctx context.Context, deviceID uuid.UUID, conns []domain.ProxyConnection) error {
+	tx, err := r.db.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DELETE FROM proxy_connections WHERE device_id = $1`, deviceID); err != nil {
+		return fmt.Errorf("delete connections: %w", err)
+	}
+
+	for _, c := range conns {
+		query := `INSERT INTO proxy_connections (id, device_id, customer_id, username, password_hash, password_plain, ip_whitelist, bandwidth_limit, bandwidth_used, active, proxy_type, base_port, http_port, socks5_port, expires_at, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`
+		if _, err := tx.Exec(ctx, query,
+			c.ID, c.DeviceID, c.CustomerID, c.Username, c.PasswordHash, c.PasswordPlain,
+			c.IPWhitelist, c.BandwidthLimit, c.BandwidthUsed, c.Active, c.ProxyType,
+			c.BasePort, c.HTTPPort, c.SOCKS5Port, c.ExpiresAt, c.CreatedAt, c.UpdatedAt); err != nil {
+			return fmt.Errorf("insert connection %s: %w", c.ID, err)
+		}
+	}
+
+	return tx.Commit(ctx)
+}
+
 func (r *ConnectionRepository) scanConnection(row interface{ Scan(dest ...interface{}) error }) (*domain.ProxyConnection, error) {
 	var c domain.ProxyConnection
 	err := row.Scan(

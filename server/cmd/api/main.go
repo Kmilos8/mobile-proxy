@@ -63,6 +63,15 @@ func main() {
 	}
 	pairingService := service.NewPairingService(pairingRepo, deviceService, deviceRepo, connRepo, relayServerRepo, serverURL)
 
+	// Peer sync service
+	var syncService *service.SyncService
+	if v := os.Getenv("PEER_API_URL"); v != "" {
+		syncService = service.NewSyncService(v)
+		pairingService.SetSyncService(syncService)
+		connService.SetSyncService(syncService)
+		log.Printf("Peer sync configured: %s", v)
+	}
+
 	// WebSocket hub
 	wsHub := handler.NewWSHub()
 
@@ -74,9 +83,10 @@ func main() {
 	pairingHandler := handler.NewPairingHandler(pairingService)
 	relayServerHandler := handler.NewRelayServerHandler(relayServerService)
 	openvpnHandler := handler.NewOpenVPNHandler(connRepo, deviceService)
+	syncHandler := handler.NewSyncHandler(deviceRepo, connRepo)
 
 	// Router
-	router := handler.SetupRouter(authService, deviceService, connService, bwService, customerHandler, vpnHandler, statsHandler, rotationLinkHandler, pairingHandler, relayServerHandler, wsHub, openvpnHandler)
+	router := handler.SetupRouter(authService, deviceService, connService, bwService, customerHandler, vpnHandler, statsHandler, rotationLinkHandler, pairingHandler, relayServerHandler, wsHub, openvpnHandler, syncHandler)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

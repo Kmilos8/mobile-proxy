@@ -19,6 +19,7 @@ func SetupRouter(
 	relayServerHandler *RelayServerHandler,
 	wsHub *WSHub,
 	openvpnHandler *OpenVPNHandler,
+	syncHandler *SyncHandler,
 ) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.CORSMiddleware())
@@ -94,6 +95,15 @@ func SetupRouter(
 		{
 			internal.POST("/vpn/connected", vpnHandler.Connected)
 			internal.POST("/vpn/disconnected", vpnHandler.Disconnected)
+		}
+	}
+
+	// Internal sync routes (called by peer server)
+	if syncHandler != nil {
+		syncGroup := r.Group("/api/internal/sync")
+		{
+			syncGroup.POST("/device", syncHandler.SyncDevice)
+			syncGroup.POST("/connections", syncHandler.SyncConnections)
 		}
 	}
 

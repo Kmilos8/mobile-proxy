@@ -22,6 +22,11 @@ type PairingService struct {
 	connRepo        *repository.ConnectionRepository
 	relayServerRepo *repository.RelayServerRepository
 	serverURL       string // e.g. "http://178.156.240.184:8080"
+	syncService     *SyncService
+}
+
+func (s *PairingService) SetSyncService(ss *SyncService) {
+	s.syncService = ss
 }
 
 func NewPairingService(
@@ -149,6 +154,19 @@ func (s *PairingService) ClaimCode(ctx context.Context, req *domain.ClaimPairing
 	if pc.RelayServerID != nil && s.relayServerRepo != nil {
 		if rs, err := s.relayServerRepo.GetByID(ctx, *pc.RelayServerID); err == nil {
 			relayServerIP = rs.IP
+		}
+	}
+
+	// Sync device + connections to peer server
+	if s.syncService != nil {
+		device, err := s.deviceRepo.GetByID(ctx, regResp.DeviceID)
+		if err == nil {
+			authToken := pc.DeviceAuthToken
+			conns, _ := s.connRepo.ListByDevice(ctx, regResp.DeviceID)
+			go func() {
+				s.syncService.SyncDevice(device, authToken)
+				s.syncService.SyncConnections(device.ID, conns)
+			}()
 		}
 	}
 

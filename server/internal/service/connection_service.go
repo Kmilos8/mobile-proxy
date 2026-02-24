@@ -21,6 +21,11 @@ type ConnectionService struct {
 	relayServerRepo *repository.RelayServerRepository
 	portService     *PortService
 	tunnelPushURL   string // fallback static URL
+	syncService     *SyncService
+}
+
+func (s *ConnectionService) SetSyncService(ss *SyncService) {
+	s.syncService = ss
 }
 
 func NewConnectionService(connRepo *repository.ConnectionRepository, deviceRepo *repository.DeviceRepository) *ConnectionService {
@@ -116,6 +121,14 @@ func (s *ConnectionService) Create(ctx context.Context, req *domain.CreateConnec
 		go s.refreshDNAT(tunnelURL, device.ID.String(), *conn.BasePort, device.VpnIP, proxyType)
 	}
 
+	// Sync all connections for this device to peer server
+	if s.syncService != nil {
+		conns, err := s.connRepo.ListByDevice(ctx, req.DeviceID)
+		if err == nil {
+			go s.syncService.SyncConnections(req.DeviceID, conns)
+		}
+	}
+
 	return conn, nil
 }
 
@@ -173,6 +186,14 @@ func (s *ConnectionService) Delete(ctx context.Context, id uuid.UUID) error {
 			if tunnelURL != "" {
 				go s.teardownDNAT(tunnelURL, device.ID.String(), *conn.BasePort, device.VpnIP, conn.ProxyType)
 			}
+		}
+	}
+
+	// Sync all connections for this device to peer server
+	if s.syncService != nil {
+		conns, err := s.connRepo.ListByDevice(ctx, conn.DeviceID)
+		if err == nil {
+			go s.syncService.SyncConnections(conn.DeviceID, conns)
 		}
 	}
 
