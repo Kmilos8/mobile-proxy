@@ -205,13 +205,14 @@ func configureTUN(name string) {
 			log.Printf("Added MASQUERADE rule for %s", ovpnSubnet)
 		}
 	}
+	// Insert before UFW chains (which have policy DROP) so OpenVPN traffic is accepted
 	if _, err := runCmd("iptables", "-C", "FORWARD", "-s", ovpnSubnet, "-j", "ACCEPT"); err != nil {
-		if out, err := runCmd("iptables", "-A", "FORWARD", "-s", ovpnSubnet, "-j", "ACCEPT"); err != nil {
+		if out, err := runCmd("iptables", "-I", "FORWARD", "2", "-s", ovpnSubnet, "-j", "ACCEPT"); err != nil {
 			log.Printf("Warning: FORWARD rule for %s failed: %s: %v", ovpnSubnet, string(out), err)
 		}
 	}
 	if _, err := runCmd("iptables", "-C", "FORWARD", "-d", ovpnSubnet, "-j", "ACCEPT"); err != nil {
-		if out, err := runCmd("iptables", "-A", "FORWARD", "-d", ovpnSubnet, "-j", "ACCEPT"); err != nil {
+		if out, err := runCmd("iptables", "-I", "FORWARD", "3", "-d", ovpnSubnet, "-j", "ACCEPT"); err != nil {
 			log.Printf("Warning: FORWARD rule for %s failed: %s: %v", ovpnSubnet, string(out), err)
 		}
 	}
