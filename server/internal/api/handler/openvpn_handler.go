@@ -203,12 +203,15 @@ func (h *OpenVPNHandler) DownloadOVPN(c *gin.Context) {
 	ovpn.WriteString("cipher AES-256-GCM\n")
 	ovpn.WriteString("auth SHA256\n")
 	ovpn.WriteString("auth-user-pass\n")
+	ovpn.WriteString("setenv CLIENT_CERT 0\n")
 	ovpn.WriteString("verb 3\n")
 	ovpn.WriteString("\n")
 
-	// Embed credentials — OpenVPN Connect will read these and auto-fill
-	ovpn.WriteString(fmt.Sprintf("# USERNAME: %s\n", conn.Username))
-	ovpn.WriteString(fmt.Sprintf("# PASSWORD: %s\n", conn.PasswordPlain))
+	// Embed credentials inline so the user isn't prompted
+	ovpn.WriteString("<auth-user-pass>\n")
+	ovpn.WriteString(conn.Username + "\n")
+	ovpn.WriteString(conn.PasswordPlain + "\n")
+	ovpn.WriteString("</auth-user-pass>\n")
 	ovpn.WriteString("\n")
 
 	ovpn.WriteString("<ca>\n")
