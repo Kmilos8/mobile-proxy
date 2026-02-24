@@ -23,7 +23,8 @@ import (
 )
 
 const (
-	dialTimeout = 10 * time.Second
+	connectTimeout = 30 * time.Second
+	maxConcurrent  = 8
 )
 
 // proxyTarget holds the HTTP CONNECT proxy endpoint and credentials.
@@ -39,6 +40,7 @@ type Proxy struct {
 
 	mu       sync.RWMutex
 	mappings map[string]*proxyTarget // client VPN IP (10.9.0.x) -> proxy target
+	sem      chan struct{}           // concurrency limiter
 }
 
 // New creates a new transparent proxy listening on the given address.
@@ -46,6 +48,7 @@ func New(listenAddr string) *Proxy {
 	return &Proxy{
 		listenAddr: listenAddr,
 		mappings:   make(map[string]*proxyTarget),
+		sem:        make(chan struct{}, maxConcurrent),
 	}
 }
 
@@ -119,7 +122,12 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		return
 	}
 
+	// Limit concurrent CONNECT handshakes to avoid overwhelming the phone proxy.
+	// Only held during the handshake phase, released once CONNECT succeeds.
+	p.sem <- struct{}{}
 	remote, err := p.dialHTTPConnect(target, origDst)
+	<-p.sem
+
 	if err != nil {
 		log.Printf("[tproxy] CONNECT %s via %s failed: %v", origDst, target.Endpoint, err)
 		return
@@ -140,7 +148,7 @@ func (p *Proxy) handleConn(conn net.Conn) {
 }
 
 func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (net.Conn, error) {
-	conn, err := net.DialTimeout("tcp", target.Endpoint, dialTimeout)
+	conn, err := net.DialTimeout("tcp", target.Endpoint, connectTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("dial proxy: %w", err)
 	}
@@ -153,7 +161,7 @@ func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (net.Conn, err
 	}
 	connectReq += "\r\n"
 
-	conn.SetDeadline(time.Now().Add(dialTimeout))
+	conn.SetDeadline(time.Now().Add(connectTimeout))
 	_, err = conn.Write([]byte(connectReq))
 	if err != nil {
 		conn.Close()

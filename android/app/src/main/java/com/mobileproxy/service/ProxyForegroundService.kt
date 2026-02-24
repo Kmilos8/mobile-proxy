@@ -39,7 +39,7 @@ class ProxyForegroundService : Service() {
     @Inject lateinit var statusReporter: DeviceStatusReporter
 
     private var wakeLock: PowerManager.WakeLock? = null
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -73,6 +73,8 @@ class ProxyForegroundService : Service() {
             return
         }
         isRunning = true
+        // Recreate scope in case it was cancelled by a previous stopProxy()
+        scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         Log.i(TAG, "Starting proxy service")
 
         // Acquire wake lock
