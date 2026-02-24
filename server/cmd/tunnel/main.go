@@ -124,7 +124,7 @@ func main() {
 		port, udpRecvBufSize/1024, udpSendBufSize/1024)
 
 	// Start transparent proxy for OpenVPN client traffic
-	tproxy := transparentproxy.New("127.0.0.1:12345")
+	tproxy := transparentproxy.New("0.0.0.0:12345")
 	if err := tproxy.Start(); err != nil {
 		log.Printf("Warning: transparent proxy failed to start: %v", err)
 	}
