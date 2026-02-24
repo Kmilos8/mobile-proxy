@@ -3,7 +3,7 @@
 # Environment variables: username, password
 # Exit 0 = auth success, exit 1 = auth failure
 
-API_URL="http://127.0.0.1:8080/api"
+API_URL="${OPENVPN_API_URL:-http://127.0.0.1:8080/api}"
 
 RESULT=$(wget -q -O - --post-data="{\"username\":\"$username\",\"password\":\"$password\"}" \
   --header="Content-Type: application/json" \

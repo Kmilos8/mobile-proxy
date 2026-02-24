@@ -4,7 +4,7 @@
 # - username: the authenticated username (username-as-common-name)
 # - ifconfig_pool_remote_ip: assigned VPN IP (10.9.0.x)
 
-API_URL="http://127.0.0.1:8080/api"
+API_URL="${OPENVPN_API_URL:-http://127.0.0.1:8080/api}"
 
 echo "OpenVPN client connected: $username at $ifconfig_pool_remote_ip"
 

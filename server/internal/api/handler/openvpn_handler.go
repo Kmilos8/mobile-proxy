@@ -100,12 +100,17 @@ func (h *OpenVPNHandler) Connect(c *gin.Context) {
 	}
 
 	// POST to tunnel push API to set up transparent proxy mapping
+	// Use device's relay server IP to reach the correct tunnel server
+	pushURL := h.tunnelPushURL
+	if device.RelayServerIP != "" {
+		pushURL = fmt.Sprintf("http://%s:8081", device.RelayServerIP)
+	}
 	body, _ := json.Marshal(map[string]interface{}{
 		"client_vpn_ip": req.VpnIP,
 		"device_vpn_ip": device.VpnIP,
 		"socks_port":    1080,
 	})
-	resp, err := http.Post(h.tunnelPushURL+"/openvpn-client-connect", "application/json", bytes.NewReader(body))
+	resp, err := http.Post(pushURL+"/openvpn-client-connect", "application/json", bytes.NewReader(body))
 	if err != nil {
 		log.Printf("[openvpn-connect] failed to notify tunnel: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "tunnel notification failed"})
@@ -129,11 +134,21 @@ func (h *OpenVPNHandler) Disconnect(c *gin.Context) {
 		return
 	}
 
+	// Look up connection to find the device's relay server
+	pushURL := h.tunnelPushURL
+	conn, err := h.connRepo.GetByUsername(c.Request.Context(), req.Username)
+	if err == nil {
+		device, err := h.deviceService.GetByID(c.Request.Context(), conn.DeviceID)
+		if err == nil && device.RelayServerIP != "" {
+			pushURL = fmt.Sprintf("http://%s:8081", device.RelayServerIP)
+		}
+	}
+
 	// POST to tunnel push API to remove transparent proxy mapping
 	body, _ := json.Marshal(map[string]interface{}{
 		"client_vpn_ip": req.VpnIP,
 	})
-	resp, err := http.Post(h.tunnelPushURL+"/openvpn-client-disconnect", "application/json", bytes.NewReader(body))
+	resp, err := http.Post(pushURL+"/openvpn-client-disconnect", "application/json", bytes.NewReader(body))
 	if err != nil {
 		log.Printf("[openvpn-disconnect] failed to notify tunnel: %v", err)
 	} else {
