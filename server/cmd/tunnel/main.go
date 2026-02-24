@@ -221,12 +221,15 @@ func configureTUN(name string) {
 			log.Printf("Warning: INPUT rule for tproxy failed: %s: %v", string(out), err)
 		}
 	}
-	// Block QUIC (UDP 443) from OpenVPN clients to force TCP/HTTPS through the transparent proxy
-	if _, err := runCmd("iptables", "-C", "FORWARD", "-s", ovpnSubnet, "-p", "udp", "--dport", "443", "-j", "DROP"); err != nil {
-		if out, err := runCmd("iptables", "-I", "FORWARD", "1", "-s", ovpnSubnet, "-p", "udp", "--dport", "443", "-j", "DROP"); err != nil {
-			log.Printf("Warning: QUIC block rule failed: %s: %v", string(out), err)
+	// Reject QUIC (UDP 443) from OpenVPN clients to force TCP/HTTPS through the transparent proxy.
+	// REJECT (not DROP) sends ICMP unreachable so browsers fall back to TCP immediately.
+	if _, err := runCmd("iptables", "-C", "FORWARD", "-s", ovpnSubnet, "-p", "udp", "--dport", "443", "-j", "REJECT", "--reject-with", "icmp-port-unreachable"); err != nil {
+		// Remove any old DROP rule first
+		runCmd("iptables", "-D", "FORWARD", "-s", ovpnSubnet, "-p", "udp", "--dport", "443", "-j", "DROP")
+		if out, err := runCmd("iptables", "-I", "FORWARD", "1", "-s", ovpnSubnet, "-p", "udp", "--dport", "443", "-j", "REJECT", "--reject-with", "icmp-port-unreachable"); err != nil {
+			log.Printf("Warning: QUIC reject rule failed: %s: %v", string(out), err)
 		} else {
-			log.Printf("QUIC blocked for OpenVPN clients (%s)", ovpnSubnet)
+			log.Printf("QUIC rejected for OpenVPN clients (%s)", ovpnSubnet)
 		}
 	}
 
