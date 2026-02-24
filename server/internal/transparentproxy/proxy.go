@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	connectTimeout = 30 * time.Second
-	maxConcurrent  = 16
+	connectTimeout = 15 * time.Second
+	maxConcurrent  = 8
+	maxRetries     = 2
 )
 
 // proxyTarget holds the HTTP CONNECT proxy endpoint and credentials.
@@ -122,14 +123,24 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		return
 	}
 
-	// Limit concurrent CONNECT handshakes to avoid overwhelming the phone proxy.
-	// Only held during the handshake phase, released once CONNECT succeeds.
-	p.sem <- struct{}{}
-	remote, err := p.dialHTTPConnect(target, origDst)
-	<-p.sem
+	// Retry CONNECT with semaphore to limit concurrent handshakes.
+	var remote net.Conn
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		p.sem <- struct{}{}
+		remote, lastErr = p.dialHTTPConnect(target, origDst)
+		<-p.sem
+		if lastErr == nil {
+			break
+		}
+		if attempt < maxRetries-1 {
+			log.Printf("[tproxy] CONNECT %s attempt %d failed: %v, retrying", origDst, attempt+1, lastErr)
+			time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
+		}
+	}
 
-	if err != nil {
-		log.Printf("[tproxy] CONNECT %s via %s failed: %v", origDst, target.Endpoint, err)
+	if lastErr != nil {
+		log.Printf("[tproxy] CONNECT %s via %s failed after %d attempts: %v", origDst, target.Endpoint, maxRetries, lastErr)
 		return
 	}
 	defer remote.Close()
