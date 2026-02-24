@@ -3,7 +3,12 @@
 # Environment variables: username, password
 # Exit 0 = auth success, exit 1 = auth failure
 
-API_URL="${OPENVPN_API_URL:-http://127.0.0.1:8080/api}"
+# Read API URL from file (set during deployment), env var, or default to localhost
+if [ -f /etc/openvpn/api_url ]; then
+  API_URL=$(cat /etc/openvpn/api_url)
+else
+  API_URL="${OPENVPN_API_URL:-http://127.0.0.1:8080/api}"
+fi
 
 RESULT=$(wget -q -O - --post-data="{\"username\":\"$username\",\"password\":\"$password\"}" \
   --header="Content-Type: application/json" \
