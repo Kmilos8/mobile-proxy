@@ -614,7 +614,7 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
             ) : qrCode ? (
               <div className="text-center">
                 <div className="bg-white rounded-lg p-4 inline-block mb-4">
-                  <QRCodeSVG value={qrCode} size={200} />
+                  <QRCodeSVG value={`mobileproxy://pair?server=http://${process.env.NEXT_PUBLIC_SERVER_HOST || '178.156.240.184'}:8080&code=${qrCode}`} size={200} />
                 </div>
                 <div className="font-mono text-lg tracking-widest text-white mb-2">
                   {qrCode.slice(0, 4)}-{qrCode.slice(4)}
