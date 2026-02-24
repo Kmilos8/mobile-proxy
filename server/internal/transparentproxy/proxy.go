@@ -24,8 +24,9 @@ import (
 
 const (
 	connectTimeout = 10 * time.Second
-	idleTimeout    = 120 * time.Second
+	idleTimeout    = 300 * time.Second // 5 min idle before killing connection
 	maxRetries     = 2
+	copyBufSize    = 128 * 1024 // 128KB copy buffer for throughput
 )
 
 // proxyTarget holds the HTTP CONNECT proxy endpoint and credentials.
@@ -33,6 +34,12 @@ type proxyTarget struct {
 	Endpoint string // host:port (e.g. 192.168.255.2:8080)
 	Username string
 	Password string
+}
+
+// connectResult holds the connection and any buffered reader from the CONNECT handshake.
+type connectResult struct {
+	conn   net.Conn
+	reader *bufio.Reader // may contain buffered data after CONNECT response
 }
 
 // Proxy is a transparent HTTP CONNECT forwarder.
@@ -122,10 +129,10 @@ func (p *Proxy) handleConn(conn net.Conn) {
 	}
 
 	// Retry CONNECT
-	var remote net.Conn
+	var result *connectResult
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		remote, lastErr = p.dialHTTPConnect(target, origDst)
+		result, lastErr = p.dialHTTPConnect(target, origDst)
 		if lastErr == nil {
 			break
 		}
@@ -139,48 +146,64 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		log.Printf("[tproxy] CONNECT %s via %s failed after %d attempts: %v", origDst, target.Endpoint, maxRetries, lastErr)
 		return
 	}
-	defer remote.Close()
-	log.Printf("[tproxy] CONNECT %s OK", origDst)
+	defer result.conn.Close()
+
+	// Set TCP_NODELAY on both sides for lower latency
+	setTCPNoDelay(conn)
+	setTCPNoDelay(result.conn)
 
 	// Bidirectional copy with proper half-close to prevent FIN_WAIT1 leak.
-	// When one direction finishes (EOF), we half-close the write side of the
-	// other connection so the remote peer sees EOF too. Then wait for both
-	// directions to complete before fully closing.
 	done := make(chan struct{}, 2)
+
+	// client → remote (phone proxy): read from client, write to phone
 	go func() {
-		io.Copy(remote, conn)
-		// Client finished sending → tell phone proxy we're done writing
-		if tc, ok := remote.(*net.TCPConn); ok {
+		buf := make([]byte, copyBufSize)
+		io.CopyBuffer(result.conn, conn, buf)
+		if tc, ok := result.conn.(*net.TCPConn); ok {
 			tc.CloseWrite()
 		}
 		done <- struct{}{}
 	}()
+
+	// remote (phone proxy) → client: read from phone (via bufio.Reader to
+	// capture any data buffered during CONNECT handshake), write to client
 	go func() {
-		io.Copy(conn, remote)
-		// Phone proxy finished sending → tell client we're done writing
+		buf := make([]byte, copyBufSize)
+		io.CopyBuffer(conn, result.reader, buf)
 		if tc, ok := conn.(*net.TCPConn); ok {
 			tc.CloseWrite()
 		}
 		done <- struct{}{}
 	}()
 
-	// Wait for both directions but with a timeout to avoid hanging forever
+	// Wait for both directions but with an idle timeout
 	timer := time.NewTimer(idleTimeout)
 	defer timer.Stop()
 	for i := 0; i < 2; i++ {
 		select {
 		case <-done:
+			// Reset timer when one direction finishes — give the other side time to drain
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(30 * time.Second)
 		case <-timer.C:
 			return
 		}
 	}
 }
 
-func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (net.Conn, error) {
+func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (*connectResult, error) {
 	conn, err := net.DialTimeout("tcp", target.Endpoint, connectTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("dial proxy: %w", err)
 	}
+
+	// Set TCP_NODELAY for faster handshake
+	setTCPNoDelay(conn)
 
 	// Send CONNECT request
 	connectReq := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n", addr, addr)
@@ -197,8 +220,11 @@ func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (net.Conn, err
 		return nil, fmt.Errorf("write CONNECT: %w", err)
 	}
 
-	// Read response
-	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	// Read response using a bufio.Reader. CRITICAL: we must keep this reader
+	// because it may have buffered data past the HTTP response headers.
+	// Passing the raw conn to io.Copy would lose those bytes.
+	br := bufio.NewReaderSize(conn, copyBufSize)
+	resp, err := http.ReadResponse(br, nil)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("read CONNECT response: %w", err)
@@ -212,7 +238,14 @@ func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (net.Conn, err
 
 	// Clear deadline for data transfer
 	conn.SetDeadline(time.Time{})
-	return conn, nil
+	return &connectResult{conn: conn, reader: br}, nil
+}
+
+// setTCPNoDelay sets TCP_NODELAY on a connection if it's a TCP connection.
+func setTCPNoDelay(conn net.Conn) {
+	if tc, ok := conn.(*net.TCPConn); ok {
+		tc.SetNoDelay(true)
+	}
 }
 
 // getOriginalDst retrieves the original destination address from a connection

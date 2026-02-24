@@ -210,10 +210,12 @@ func (h *OpenVPNHandler) DownloadOVPN(c *gin.Context) {
 	ovpn.WriteString("persist-key\n")
 	ovpn.WriteString("persist-tun\n")
 	ovpn.WriteString("remote-cert-tls server\n")
-	ovpn.WriteString("cipher AES-256-GCM\n")
+	ovpn.WriteString("cipher AES-128-GCM\n")
 	ovpn.WriteString("auth SHA256\n")
 	ovpn.WriteString("auth-user-pass\n")
 	ovpn.WriteString("setenv CLIENT_CERT 0\n")
+	ovpn.WriteString("sndbuf 524288\n")
+	ovpn.WriteString("rcvbuf 524288\n")
 	ovpn.WriteString("verb 3\n")
 	ovpn.WriteString("\n")
 
