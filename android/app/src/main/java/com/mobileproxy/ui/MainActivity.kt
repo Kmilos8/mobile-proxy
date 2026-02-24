@@ -53,7 +53,12 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            // Pairing complete
+            // Pairing complete — stop old service so new credentials are used on next Start
+            val stopIntent = Intent(this, ProxyForegroundService::class.java).apply {
+                action = ProxyForegroundService.ACTION_STOP
+            }
+            startService(stopIntent)
+            findViewById<TextView>(R.id.textStatus)?.text = "Status: Paired — tap Start"
         }
     }
 
@@ -121,6 +126,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.buttonUnpair).setOnClickListener {
+            // Stop the running service before clearing credentials
+            val stopIntent = Intent(this, ProxyForegroundService::class.java).apply {
+                action = ProxyForegroundService.ACTION_STOP
+            }
+            startService(stopIntent)
             credentialManager.clear()
             statusText.text = "Status: Unpaired"
             pairingLauncher.launch(Intent(this, PairingActivity::class.java))

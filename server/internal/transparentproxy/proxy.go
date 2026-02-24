@@ -10,12 +10,14 @@ package transparentproxy
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -24,9 +26,11 @@ import (
 
 const (
 	connectTimeout = 10 * time.Second
+	peekTimeout    = 2 * time.Second  // time to wait for initial client data
 	idleTimeout    = 300 * time.Second // 5 min idle before killing connection
 	maxRetries     = 2
 	copyBufSize    = 128 * 1024 // 128KB copy buffer for throughput
+	peekSize       = 4096       // enough for TLS ClientHello or HTTP request line + headers
 )
 
 // proxyTarget holds the HTTP CONNECT proxy endpoint and credentials.
@@ -128,22 +132,49 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		return
 	}
 
+	// Wrap client conn in a buffered reader so we can peek at initial data
+	// to extract the hostname (SNI for TLS, Host for HTTP).
+	// The phone proxy requires domain names in CONNECT, not raw IPs.
+	clientReader := bufio.NewReaderSize(conn, copyBufSize)
+
+	// Peek at initial client data with a short deadline
+	conn.SetReadDeadline(time.Now().Add(peekTimeout))
+	peeked, _ := clientReader.Peek(peekSize)
+	conn.SetReadDeadline(time.Time{})
+
+	// Determine the CONNECT address: prefer hostname over raw IP
+	connectAddr := origDst
+	if len(peeked) > 0 {
+		_, port, _ := net.SplitHostPort(origDst)
+		if peeked[0] == 0x16 {
+			// TLS handshake — extract SNI
+			if host := extractSNI(peeked); host != "" {
+				connectAddr = net.JoinHostPort(host, port)
+			}
+		} else {
+			// Likely HTTP — extract Host header
+			if host := extractHTTPHost(peeked); host != "" {
+				connectAddr = net.JoinHostPort(host, port)
+			}
+		}
+	}
+
 	// Retry CONNECT
 	var result *connectResult
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		result, lastErr = p.dialHTTPConnect(target, origDst)
+		result, lastErr = p.dialHTTPConnect(target, connectAddr)
 		if lastErr == nil {
 			break
 		}
 		if attempt < maxRetries-1 {
-			log.Printf("[tproxy] CONNECT %s attempt %d failed: %v, retrying", origDst, attempt+1, lastErr)
+			log.Printf("[tproxy] CONNECT %s attempt %d failed: %v, retrying", connectAddr, attempt+1, lastErr)
 			time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
 		}
 	}
 
 	if lastErr != nil {
-		log.Printf("[tproxy] CONNECT %s via %s failed after %d attempts: %v", origDst, target.Endpoint, maxRetries, lastErr)
+		log.Printf("[tproxy] CONNECT %s via %s failed after %d attempts: %v", connectAddr, target.Endpoint, maxRetries, lastErr)
 		return
 	}
 	defer result.conn.Close()
@@ -155,10 +186,10 @@ func (p *Proxy) handleConn(conn net.Conn) {
 	// Bidirectional copy with proper half-close to prevent FIN_WAIT1 leak.
 	done := make(chan struct{}, 2)
 
-	// client → remote (phone proxy): read from client, write to phone
+	// client → remote (phone proxy): read from clientReader (preserves peeked data)
 	go func() {
 		buf := make([]byte, copyBufSize)
-		io.CopyBuffer(result.conn, conn, buf)
+		io.CopyBuffer(result.conn, clientReader, buf)
 		if tc, ok := result.conn.(*net.TCPConn); ok {
 			tc.CloseWrite()
 		}
@@ -239,6 +270,143 @@ func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (*connectResul
 	// Clear deadline for data transfer
 	conn.SetDeadline(time.Time{})
 	return &connectResult{conn: conn, reader: br}, nil
+}
+
+// extractSNI parses a TLS ClientHello and returns the SNI hostname, or "".
+func extractSNI(data []byte) string {
+	// Minimum TLS record: 5 byte header + 1 byte handshake type
+	if len(data) < 6 || data[0] != 0x16 {
+		return ""
+	}
+	// Record length
+	recordLen := int(data[3])<<8 | int(data[4])
+	if recordLen > len(data)-5 {
+		recordLen = len(data) - 5
+	}
+	hs := data[5 : 5+recordLen]
+
+	// Handshake type must be ClientHello (1)
+	if len(hs) < 1 || hs[0] != 0x01 {
+		return ""
+	}
+	// Handshake length (3 bytes)
+	if len(hs) < 4 {
+		return ""
+	}
+	hsLen := int(hs[1])<<16 | int(hs[2])<<8 | int(hs[3])
+	if hsLen > len(hs)-4 {
+		hsLen = len(hs) - 4
+	}
+	msg := hs[4 : 4+hsLen]
+
+	// Skip client version (2) + random (32) = 34 bytes
+	if len(msg) < 34 {
+		return ""
+	}
+	pos := 34
+
+	// Session ID
+	if pos >= len(msg) {
+		return ""
+	}
+	sidLen := int(msg[pos])
+	pos += 1 + sidLen
+
+	// Cipher suites
+	if pos+2 > len(msg) {
+		return ""
+	}
+	csLen := int(msg[pos])<<8 | int(msg[pos+1])
+	pos += 2 + csLen
+
+	// Compression methods
+	if pos >= len(msg) {
+		return ""
+	}
+	cmLen := int(msg[pos])
+	pos += 1 + cmLen
+
+	// Extensions
+	if pos+2 > len(msg) {
+		return ""
+	}
+	extLen := int(msg[pos])<<8 | int(msg[pos+1])
+	pos += 2
+	extEnd := pos + extLen
+	if extEnd > len(msg) {
+		extEnd = len(msg)
+	}
+
+	for pos+4 <= extEnd {
+		extType := int(msg[pos])<<8 | int(msg[pos+1])
+		extDataLen := int(msg[pos+2])<<8 | int(msg[pos+3])
+		pos += 4
+		if pos+extDataLen > extEnd {
+			break
+		}
+		if extType == 0x0000 { // SNI extension
+			extData := msg[pos : pos+extDataLen]
+			return parseSNIExtension(extData)
+		}
+		pos += extDataLen
+	}
+	return ""
+}
+
+// parseSNIExtension parses the SNI extension data and returns the hostname.
+func parseSNIExtension(data []byte) string {
+	if len(data) < 2 {
+		return ""
+	}
+	listLen := int(data[0])<<8 | int(data[1])
+	if listLen > len(data)-2 {
+		listLen = len(data) - 2
+	}
+	list := data[2 : 2+listLen]
+
+	pos := 0
+	for pos+3 <= len(list) {
+		nameType := list[pos]
+		nameLen := int(list[pos+1])<<8 | int(list[pos+2])
+		pos += 3
+		if pos+nameLen > len(list) {
+			break
+		}
+		if nameType == 0x00 { // DNS hostname
+			return string(list[pos : pos+nameLen])
+		}
+		pos += nameLen
+	}
+	return ""
+}
+
+// extractHTTPHost extracts the Host header from an HTTP request.
+func extractHTTPHost(data []byte) string {
+	// Find Host header (case-insensitive)
+	lower := bytes.ToLower(data)
+	idx := bytes.Index(lower, []byte("\nhost:"))
+	if idx < 0 {
+		idx = bytes.Index(lower, []byte("\r\nhost:"))
+		if idx >= 0 {
+			idx += 1 // skip \r
+		}
+	}
+	if idx < 0 {
+		return ""
+	}
+	// Skip "\nhost:" prefix
+	rest := data[idx+6:]
+	// Find end of line
+	eol := bytes.IndexAny(rest, "\r\n")
+	if eol < 0 {
+		eol = len(rest)
+	}
+	host := strings.TrimSpace(string(rest[:eol]))
+	// Strip port if present (we'll add the right port from origDst)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		return h
+	}
+	return host
 }
 
 // setTCPNoDelay sets TCP_NODELAY on a connection if it's a TCP connection.
