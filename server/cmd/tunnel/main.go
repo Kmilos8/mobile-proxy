@@ -215,6 +215,12 @@ func configureTUN(name string) {
 			log.Printf("Warning: FORWARD rule for %s failed: %s: %v", ovpnSubnet, string(out), err)
 		}
 	}
+	// Allow redirected OpenVPN client TCP traffic to reach the transparent proxy
+	if _, err := runCmd("iptables", "-C", "INPUT", "-s", ovpnSubnet, "-p", "tcp", "--dport", "12345", "-j", "ACCEPT"); err != nil {
+		if out, err := runCmd("iptables", "-I", "INPUT", "1", "-s", ovpnSubnet, "-p", "tcp", "--dport", "12345", "-j", "ACCEPT"); err != nil {
+			log.Printf("Warning: INPUT rule for tproxy failed: %s: %v", string(out), err)
+		}
+	}
 
 	log.Printf("TUN interface %s configured: %s/24, MTU %d", name, tunIP, tunMTU)
 }
