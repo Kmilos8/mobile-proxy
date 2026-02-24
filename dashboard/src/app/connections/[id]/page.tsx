@@ -525,10 +525,11 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleShowQR(conn.id)}
-                      className="p-1 text-zinc-500 hover:text-brand-400 transition-colors"
+                      className="inline-flex items-center gap-1.5 px-2 py-1 text-xs bg-brand-600/20 hover:bg-brand-600 text-brand-400 hover:text-white rounded transition-colors"
                       title="Reassign to another phone via QR"
                     >
                       <QrCode className="w-3.5 h-3.5" />
+                      Pair Phone
                     </button>
                     <button
                       onClick={() => handleToggle(conn.id, conn.active)}
