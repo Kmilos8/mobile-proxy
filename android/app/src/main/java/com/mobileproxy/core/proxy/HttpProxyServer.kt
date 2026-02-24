@@ -35,7 +35,7 @@ class HttpProxyServer @Inject constructor(
 
     private var serverSocket: ServerSocket? = null
     private var running = false
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val _bytesIn = AtomicLong(0)
     private val _bytesOut = AtomicLong(0)
@@ -45,6 +45,7 @@ class HttpProxyServer @Inject constructor(
     fun start(port: Int = 8080) {
         if (running) return
         running = true
+        scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
         scope.launch {
             try {
