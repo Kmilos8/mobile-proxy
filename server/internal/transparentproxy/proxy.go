@@ -15,9 +15,17 @@ import (
 	"net"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/net/proxy"
+)
+
+const (
+	maxConcurrentPerDevice = 16 // max simultaneous SOCKS5 connections per device
+	socksDialTimeout       = 15 * time.Second
+	maxRetries             = 2
+	retryDelay             = 200 * time.Millisecond
 )
 
 // socksTarget holds the SOCKS5 endpoint and optional credentials.
@@ -25,6 +33,7 @@ type socksTarget struct {
 	Endpoint string // host:port (e.g. 192.168.255.2:1080)
 	Username string
 	Password string
+	sem      chan struct{} // concurrency limiter
 }
 
 // Proxy is a transparent SOCKS5 forwarder.
@@ -34,14 +43,14 @@ type Proxy struct {
 	listenAddr string
 
 	mu       sync.RWMutex
-	mappings map[string]socksTarget // client VPN IP (10.9.0.x) -> SOCKS5 target
+	mappings map[string]*socksTarget // client VPN IP (10.9.0.x) -> SOCKS5 target
 }
 
 // New creates a new transparent proxy listening on the given address.
 func New(listenAddr string) *Proxy {
 	return &Proxy{
 		listenAddr: listenAddr,
-		mappings:   make(map[string]socksTarget),
+		mappings:   make(map[string]*socksTarget),
 	}
 }
 
@@ -49,10 +58,11 @@ func New(listenAddr string) *Proxy {
 func (p *Proxy) AddMapping(clientIP, socksEndpoint, username, password string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.mappings[clientIP] = socksTarget{
+	p.mappings[clientIP] = &socksTarget{
 		Endpoint: socksEndpoint,
 		Username: username,
 		Password: password,
+		sem:      make(chan struct{}, maxConcurrentPerDevice),
 	}
 	log.Printf("[tproxy] added mapping: %s -> %s (user=%s)", clientIP, socksEndpoint, username)
 }
@@ -66,7 +76,7 @@ func (p *Proxy) RemoveMapping(clientIP string) {
 }
 
 // getMapping returns the SOCKS5 target for a client VPN IP.
-func (p *Proxy) getMapping(clientIP string) (socksTarget, bool) {
+func (p *Proxy) getMapping(clientIP string) (*socksTarget, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	t, ok := p.mappings[clientIP]
@@ -115,23 +125,24 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		return
 	}
 
-	// Connect through the device's SOCKS5 proxy with credentials
-	var auth *proxy.Auth
-	if target.Username != "" {
-		auth = &proxy.Auth{
-			User:     target.Username,
-			Password: target.Password,
+	// Acquire semaphore slot to limit concurrent connections to the device
+	target.sem <- struct{}{}
+	defer func() { <-target.sem }()
+
+	// Retry loop for transient SOCKS5 failures
+	var remote net.Conn
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(retryDelay)
+		}
+
+		remote, err = p.dialSOCKS(target, origDst)
+		if err == nil {
+			break
 		}
 	}
-	dialer, err := proxy.SOCKS5("tcp", target.Endpoint, auth, proxy.Direct)
 	if err != nil {
-		log.Printf("[tproxy] failed to create SOCKS5 dialer for %s: %v", target.Endpoint, err)
-		return
-	}
-
-	remote, err := dialer.Dial("tcp", origDst)
-	if err != nil {
-		log.Printf("[tproxy] SOCKS5 dial %s via %s failed: %v", origDst, target.Endpoint, err)
+		log.Printf("[tproxy] SOCKS5 dial %s via %s failed after %d attempts: %v", origDst, target.Endpoint, maxRetries+1, err)
 		return
 	}
 	defer remote.Close()
@@ -147,6 +158,25 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		done <- struct{}{}
 	}()
 	<-done
+}
+
+func (p *Proxy) dialSOCKS(target *socksTarget, addr string) (net.Conn, error) {
+	var auth *proxy.Auth
+	if target.Username != "" {
+		auth = &proxy.Auth{
+			User:     target.Username,
+			Password: target.Password,
+		}
+	}
+
+	// Use a net.Dialer with timeout instead of proxy.Direct
+	netDialer := &net.Dialer{Timeout: socksDialTimeout}
+	dialer, err := proxy.SOCKS5("tcp", target.Endpoint, auth, netDialer)
+	if err != nil {
+		return nil, fmt.Errorf("create SOCKS5 dialer: %w", err)
+	}
+
+	return dialer.Dial("tcp", addr)
 }
 
 // getOriginalDst retrieves the original destination address from a connection
