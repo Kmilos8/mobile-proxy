@@ -182,13 +182,6 @@ func (h *OpenVPNHandler) DownloadOVPN(c *gin.Context) {
 		return
 	}
 
-	tlsAuth, err := os.ReadFile("/etc/openvpn-client/pki/ta.key")
-	if err != nil {
-		log.Printf("[openvpn-ovpn] failed to read tls-auth key: %v", err)
-		// tls-auth is optional, continue without it
-		tlsAuth = nil
-	}
-
 	// Build .ovpn config
 	var ovpn strings.Builder
 	ovpn.WriteString("client\n")
@@ -217,13 +210,6 @@ func (h *OpenVPNHandler) DownloadOVPN(c *gin.Context) {
 	ovpn.WriteString("<ca>\n")
 	ovpn.WriteString(strings.TrimSpace(string(caCert)))
 	ovpn.WriteString("\n</ca>\n")
-
-	if tlsAuth != nil {
-		ovpn.WriteString("\nkey-direction 1\n")
-		ovpn.WriteString("<tls-auth>\n")
-		ovpn.WriteString(strings.TrimSpace(string(tlsAuth)))
-		ovpn.WriteString("\n</tls-auth>\n")
-	}
 
 	filename := fmt.Sprintf("%s.ovpn", conn.Username)
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
