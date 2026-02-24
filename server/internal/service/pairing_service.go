@@ -16,17 +16,19 @@ import (
 const pairingAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
 type PairingService struct {
-	pairingRepo    *repository.PairingCodeRepository
-	deviceService  *DeviceService
-	deviceRepo     *repository.DeviceRepository
+	pairingRepo     *repository.PairingCodeRepository
+	deviceService   *DeviceService
+	deviceRepo      *repository.DeviceRepository
+	connRepo        *repository.ConnectionRepository
 	relayServerRepo *repository.RelayServerRepository
-	serverURL      string // e.g. "http://178.156.240.184:8080"
+	serverURL       string // e.g. "http://178.156.240.184:8080"
 }
 
 func NewPairingService(
 	pairingRepo *repository.PairingCodeRepository,
 	deviceService *DeviceService,
 	deviceRepo *repository.DeviceRepository,
+	connRepo *repository.ConnectionRepository,
 	relayServerRepo *repository.RelayServerRepository,
 	serverURL string,
 ) *PairingService {
@@ -34,6 +36,7 @@ func NewPairingService(
 		pairingRepo:     pairingRepo,
 		deviceService:   deviceService,
 		deviceRepo:      deviceRepo,
+		connRepo:        connRepo,
 		relayServerRepo: relayServerRepo,
 		serverURL:       serverURL,
 	}
@@ -55,9 +58,20 @@ func generateAuthToken() string {
 	return hex.EncodeToString(b)
 }
 
-func (s *PairingService) CreateCode(ctx context.Context, expiresInMinutes int, createdBy *uuid.UUID, relayServerID *uuid.UUID) (*domain.CreatePairingCodeResponse, error) {
+func (s *PairingService) CreateCode(ctx context.Context, expiresInMinutes int, createdBy *uuid.UUID, relayServerID *uuid.UUID, connectionID *uuid.UUID) (*domain.CreatePairingCodeResponse, error) {
 	if expiresInMinutes <= 0 {
 		expiresInMinutes = 5
+	}
+
+	// If connectionID is set but relayServerID is nil, resolve relay from the connection's current device
+	if connectionID != nil && relayServerID == nil && s.connRepo != nil {
+		conn, err := s.connRepo.GetByID(ctx, *connectionID)
+		if err == nil {
+			dev, err := s.deviceRepo.GetByID(ctx, conn.DeviceID)
+			if err == nil && dev.RelayServerID != nil {
+				relayServerID = dev.RelayServerID
+			}
+		}
 	}
 
 	// Default to first active relay server if none specified
@@ -75,6 +89,7 @@ func (s *PairingService) CreateCode(ctx context.Context, expiresInMinutes int, c
 		ExpiresAt:       time.Now().Add(time.Duration(expiresInMinutes) * time.Minute),
 		CreatedBy:       createdBy,
 		RelayServerID:   relayServerID,
+		ConnectionID:    connectionID,
 	}
 
 	if err := s.pairingRepo.Create(ctx, pc); err != nil {
@@ -123,6 +138,13 @@ func (s *PairingService) ClaimCode(ctx context.Context, req *domain.ClaimPairing
 	// Mark the pairing code as claimed
 	if err := s.pairingRepo.Claim(ctx, pc.ID, regResp.DeviceID); err != nil {
 		return nil, fmt.Errorf("claim pairing code: %w", err)
+	}
+
+	// If this pairing code is tied to a connection, reassign it to the new device
+	if pc.ConnectionID != nil && s.connRepo != nil {
+		if err := s.connRepo.UpdateDeviceID(ctx, *pc.ConnectionID, regResp.DeviceID); err != nil {
+			return nil, fmt.Errorf("reassign connection: %w", err)
+		}
 	}
 
 	// Resolve relay server IP

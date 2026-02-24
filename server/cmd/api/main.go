@@ -61,7 +61,7 @@ func main() {
 	if v := os.Getenv("PUBLIC_SERVER_URL"); v != "" {
 		serverURL = v
 	}
-	pairingService := service.NewPairingService(pairingRepo, deviceService, deviceRepo, relayServerRepo, serverURL)
+	pairingService := service.NewPairingService(pairingRepo, deviceService, deviceRepo, connRepo, relayServerRepo, serverURL)
 
 	// WebSocket hub
 	wsHub := handler.NewWSHub()

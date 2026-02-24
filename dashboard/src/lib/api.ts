@@ -136,6 +136,7 @@ export interface PairingCode {
   expires_at: string
   created_by: string | null
   relay_server_id: string | null
+  connection_id: string | null
   created_at: string
 }
 
@@ -243,11 +244,12 @@ export const api = {
   pairingCodes: {
     list: (token: string) =>
       request<{ pairing_codes: PairingCode[] }>('/pairing-codes', { token }),
-    create: (token: string, expiresInMinutes?: number, relayServerId?: string) =>
+    create: (token: string, expiresInMinutes?: number, relayServerId?: string, connectionId?: string) =>
       request<{ id: string; code: string; expires_at: string }>('/pairing-codes', {
         method: 'POST', token, body: {
           expires_in_minutes: expiresInMinutes || 5,
           ...(relayServerId ? { relay_server_id: relayServerId } : {}),
+          ...(connectionId ? { connection_id: connectionId } : {}),
         }
       }),
     delete: (token: string, id: string) =>

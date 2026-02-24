@@ -7,8 +7,9 @@ import {
   ArrowLeft, Smartphone, Settings, Link2, Clock, Activity,
   RotateCw, Power, Search, Wifi, WifiOff, Copy, Trash2, Plus,
   Battery, Signal, Globe, Cpu, RefreshCw, ChevronRight, BarChart3,
-  Pencil, Check, X, Download
+  Pencil, Check, X, Download, QrCode
 } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { api, Device, DeviceBandwidth, DeviceCommand, ProxyConnection, IPHistoryEntry, RotationLink, BandwidthHourly, UptimeSegment } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
@@ -334,6 +335,35 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
   const [formPassword, setFormPassword] = useState('')
   const [formType, setFormType] = useState<'http' | 'socks5'>('http')
 
+  // QR code reassignment state
+  const [qrConnectionId, setQrConnectionId] = useState<string | null>(null)
+  const [qrCode, setQrCode] = useState<string | null>(null)
+  const [qrExpiresAt, setQrExpiresAt] = useState<string | null>(null)
+  const [qrLoading, setQrLoading] = useState(false)
+
+  async function handleShowQR(connectionId: string) {
+    const token = getToken()
+    if (!token) return
+    setQrConnectionId(connectionId)
+    setQrLoading(true)
+    try {
+      const resp = await api.pairingCodes.create(token, 5, undefined, connectionId)
+      setQrCode(resp.code)
+      setQrExpiresAt(resp.expires_at)
+    } catch (err) {
+      console.error('Failed to create pairing code:', err)
+      setQrConnectionId(null)
+    } finally {
+      setQrLoading(false)
+    }
+  }
+
+  function closeQR() {
+    setQrConnectionId(null)
+    setQrCode(null)
+    setQrExpiresAt(null)
+  }
+
   async function handleCreateConnection(e: FormEvent) {
     e.preventDefault()
     const token = getToken()
@@ -494,6 +524,13 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
                   </div>
                   <div className="flex items-center gap-2">
                     <button
+                      onClick={() => handleShowQR(conn.id)}
+                      className="p-1 text-zinc-500 hover:text-brand-400 transition-colors"
+                      title="Reassign to another phone via QR"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                    </button>
+                    <button
                       onClick={() => handleToggle(conn.id, conn.active)}
                       className="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-white rounded"
                     >
@@ -559,8 +596,58 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
         <div className="text-sm text-zinc-400 mb-2">External IP (Cellular)</div>
         <div className="font-mono text-lg">{device.cellular_ip || 'Unknown'}</div>
       </div>
+
+      {/* QR Code Modal */}
+      {qrConnectionId && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={closeQR}>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-white">Reassign Connection</h3>
+              <button onClick={closeQR} className="text-zinc-500 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {qrLoading ? (
+              <div className="text-center py-8 text-zinc-500">Generating QR code...</div>
+            ) : qrCode ? (
+              <div className="text-center">
+                <div className="bg-white rounded-lg p-4 inline-block mb-4">
+                  <QRCodeSVG value={qrCode} size={200} />
+                </div>
+                <div className="font-mono text-lg tracking-widest text-white mb-2">
+                  {qrCode.slice(0, 4)}-{qrCode.slice(4)}
+                </div>
+                <p className="text-xs text-zinc-500 mb-1">
+                  Scan with phone app to move this connection to that phone
+                </p>
+                {qrExpiresAt && (
+                  <QRCountdown expiresAt={qrExpiresAt} />
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-red-400">Failed to generate code</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
+}
+
+function QRCountdown({ expiresAt }: { expiresAt: string }) {
+  const [remaining, setRemaining] = useState('')
+  useEffect(() => {
+    function update() {
+      const diff = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000))
+      const m = Math.floor(diff / 60)
+      const s = diff % 60
+      setRemaining(`${m}:${String(s).padStart(2, '0')}`)
+    }
+    update()
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [expiresAt])
+  return <p className="text-xs text-zinc-600">Expires in {remaining}</p>
 }
 
 // ============= ADVANCED TAB =============

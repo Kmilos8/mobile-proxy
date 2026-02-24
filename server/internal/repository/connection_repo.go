@@ -45,6 +45,12 @@ func (r *ConnectionRepository) List(ctx context.Context) ([]domain.ProxyConnecti
 	return r.scanConnections(ctx, query)
 }
 
+func (r *ConnectionRepository) UpdateDeviceID(ctx context.Context, connectionID, newDeviceID uuid.UUID) error {
+	query := `UPDATE proxy_connections SET device_id = $2, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, connectionID, newDeviceID)
+	return err
+}
+
 func (r *ConnectionRepository) UpdateActive(ctx context.Context, id uuid.UUID, active bool) error {
 	query := `UPDATE proxy_connections SET active = $2, updated_at = NOW() WHERE id = $1`
 	_, err := r.db.Pool.Exec(ctx, query, id, active)
