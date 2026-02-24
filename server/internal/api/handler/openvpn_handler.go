@@ -202,8 +202,14 @@ func (h *OpenVPNHandler) DownloadOVPN(c *gin.Context) {
 	ovpn.WriteString("remote-cert-tls server\n")
 	ovpn.WriteString("cipher AES-256-GCM\n")
 	ovpn.WriteString("auth SHA256\n")
-	ovpn.WriteString("auth-user-pass\n")
 	ovpn.WriteString("verb 3\n")
+	ovpn.WriteString("\n")
+
+	// Embed credentials so the user isn't prompted
+	ovpn.WriteString("<auth-user-pass>\n")
+	ovpn.WriteString(conn.Username + "\n")
+	ovpn.WriteString(conn.PasswordPlain + "\n")
+	ovpn.WriteString("</auth-user-pass>\n")
 	ovpn.WriteString("\n")
 
 	ovpn.WriteString("<ca>\n")
