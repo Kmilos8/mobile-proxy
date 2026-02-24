@@ -18,6 +18,7 @@ func SetupRouter(
 	pairingHandler *PairingHandler,
 	relayServerHandler *RelayServerHandler,
 	wsHub *WSHub,
+	openvpnHandler *OpenVPNHandler,
 ) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.CORSMiddleware())
@@ -94,6 +95,18 @@ func SetupRouter(
 			internal.POST("/vpn/connected", vpnHandler.Connected)
 			internal.POST("/vpn/disconnected", vpnHandler.Disconnected)
 		}
+	}
+
+	// Internal OpenVPN client routes (called by OpenVPN client-server scripts)
+	if openvpnHandler != nil {
+		ovpnInternal := r.Group("/api/internal/openvpn")
+		{
+			ovpnInternal.POST("/auth", openvpnHandler.Auth)
+			ovpnInternal.POST("/connect", openvpnHandler.Connect)
+			ovpnInternal.POST("/disconnect", openvpnHandler.Disconnect)
+		}
+		// Dashboard route for .ovpn download (JWT protected)
+		dashboard.GET("/connections/:id/ovpn", openvpnHandler.DownloadOVPN)
 	}
 
 	// WebSocket

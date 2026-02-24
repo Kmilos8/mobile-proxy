@@ -73,9 +73,10 @@ func main() {
 	rotationLinkHandler := handler.NewRotationLinkHandler(rotationLinkRepo, deviceService)
 	pairingHandler := handler.NewPairingHandler(pairingService)
 	relayServerHandler := handler.NewRelayServerHandler(relayServerService)
+	openvpnHandler := handler.NewOpenVPNHandler(connRepo, deviceService)
 
 	// Router
-	router := handler.SetupRouter(authService, deviceService, connService, bwService, customerHandler, vpnHandler, statsHandler, rotationLinkHandler, pairingHandler, relayServerHandler, wsHub)
+	router := handler.SetupRouter(authService, deviceService, connService, bwService, customerHandler, vpnHandler, statsHandler, rotationLinkHandler, pairingHandler, relayServerHandler, wsHub, openvpnHandler)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

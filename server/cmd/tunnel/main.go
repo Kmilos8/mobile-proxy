@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mobileproxy/server/internal/transparentproxy"
 	"github.com/songgao/water"
 )
 
@@ -78,6 +79,9 @@ type tunnelServer struct {
 
 	// Pre-allocated send buffer for tunToUdp (single goroutine, no lock needed)
 	tunBuf []byte
+
+	// Transparent proxy for OpenVPN client traffic
+	transparentProxy *transparentproxy.Proxy
 }
 
 func main() {
@@ -119,15 +123,22 @@ func main() {
 	log.Printf("Listening on UDP port %d (buffers: recv=%dKB, send=%dKB)",
 		port, udpRecvBufSize/1024, udpSendBufSize/1024)
 
+	// Start transparent proxy for OpenVPN client traffic
+	tproxy := transparentproxy.New("127.0.0.1:12345")
+	if err := tproxy.Start(); err != nil {
+		log.Printf("Warning: transparent proxy failed to start: %v", err)
+	}
+
 	srv := &tunnelServer{
-		udpConn:   conn,
-		tunIface:  iface,
-		apiURL:    apiURL,
-		clients:   make(map[string]*client),
-		addrMap:   make(map[string]string),
-		deviceMap: make(map[string]*client),
-		ipPool:    make([]bool, ipPoolEnd-ipPoolStart+1),
-		tunBuf:    make([]byte, maxPacketSize+1), // +1 for type prefix
+		udpConn:          conn,
+		tunIface:         iface,
+		apiURL:           apiURL,
+		clients:          make(map[string]*client),
+		addrMap:          make(map[string]string),
+		deviceMap:        make(map[string]*client),
+		ipPool:           make([]bool, ipPoolEnd-ipPoolStart+1),
+		tunBuf:           make([]byte, maxPacketSize+1), // +1 for type prefix
+		transparentProxy: tproxy,
 	}
 
 	// Start goroutines
@@ -182,6 +193,26 @@ func configureTUN(name string) {
 	if _, err := runCmd("iptables", "-C", "FORWARD", "-d", tunSubnet, "-j", "ACCEPT"); err != nil {
 		if out, err := runCmd("iptables", "-A", "FORWARD", "-d", tunSubnet, "-j", "ACCEPT"); err != nil {
 			log.Printf("Warning: FORWARD rule failed: %s: %v", string(out), err)
+		}
+	}
+
+	// OpenVPN client subnet (10.9.0.0/24) — FORWARD + MASQUERADE rules
+	ovpnSubnet := "10.9.0.0/24"
+	if _, err := runCmd("iptables", "-t", "nat", "-C", "POSTROUTING", "-s", ovpnSubnet, "-j", "MASQUERADE"); err != nil {
+		if out, err := runCmd("iptables", "-t", "nat", "-A", "POSTROUTING", "-s", ovpnSubnet, "-j", "MASQUERADE"); err != nil {
+			log.Printf("Warning: MASQUERADE rule for %s failed: %s: %v", ovpnSubnet, string(out), err)
+		} else {
+			log.Printf("Added MASQUERADE rule for %s", ovpnSubnet)
+		}
+	}
+	if _, err := runCmd("iptables", "-C", "FORWARD", "-s", ovpnSubnet, "-j", "ACCEPT"); err != nil {
+		if out, err := runCmd("iptables", "-A", "FORWARD", "-s", ovpnSubnet, "-j", "ACCEPT"); err != nil {
+			log.Printf("Warning: FORWARD rule for %s failed: %s: %v", ovpnSubnet, string(out), err)
+		}
+	}
+	if _, err := runCmd("iptables", "-C", "FORWARD", "-d", ovpnSubnet, "-j", "ACCEPT"); err != nil {
+		if out, err := runCmd("iptables", "-A", "FORWARD", "-d", ovpnSubnet, "-j", "ACCEPT"); err != nil {
+			log.Printf("Warning: FORWARD rule for %s failed: %s: %v", ovpnSubnet, string(out), err)
 		}
 	}
 
@@ -674,6 +705,8 @@ func (s *tunnelServer) startPushAPI() {
 	mux.HandleFunc("/push-command", s.handlePushCommand)
 	mux.HandleFunc("/refresh-dnat", s.handleRefreshDNAT)
 	mux.HandleFunc("/teardown-dnat", s.handleTeardownDNAT)
+	mux.HandleFunc("/openvpn-client-connect", s.handleOpenVPNClientConnect)
+	mux.HandleFunc("/openvpn-client-disconnect", s.handleOpenVPNClientDisconnect)
 
 	log.Printf("Push API listening on port %d", pushPort)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", pushPort), mux); err != nil {
@@ -786,6 +819,77 @@ func (s *tunnelServer) handleTeardownDNAT(w http.ResponseWriter, r *http.Request
 		}
 		log.Printf("Teardown DNAT: device=%s base_port=%d vpn_ip=%s type=%s", req.DeviceID, req.BasePort, req.VpnIP, req.ProxyType)
 	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"ok":true}`))
+}
+
+// handleOpenVPNClientConnect is called by the API when an OpenVPN client connects.
+// It adds a transparent proxy mapping and iptables REDIRECT rule for the client's VPN IP.
+func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ClientVPNIP   string `json:"client_vpn_ip"`   // 10.9.0.x
+		DeviceVPNIP   string `json:"device_vpn_ip"`   // 192.168.255.y
+		SOCKSPort     int    `json:"socks_port"`       // usually 1080
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	if req.SOCKSPort == 0 {
+		req.SOCKSPort = 1080
+	}
+
+	socksEndpoint := fmt.Sprintf("%s:%d", req.DeviceVPNIP, req.SOCKSPort)
+
+	// Add transparent proxy mapping
+	if s.transparentProxy != nil {
+		s.transparentProxy.AddMapping(req.ClientVPNIP, socksEndpoint)
+	}
+
+	// Add iptables REDIRECT rule: TCP traffic from this client -> transparent proxy port 12345
+	args := fmt.Sprintf("-t nat -A PREROUTING -s %s -p tcp -j REDIRECT --to-port 12345", req.ClientVPNIP)
+	if out, err := runCmd("iptables", splitArgs(args)...); err != nil {
+		log.Printf("OpenVPN REDIRECT rule for %s failed: %s: %v", req.ClientVPNIP, string(out), err)
+	} else {
+		log.Printf("OpenVPN REDIRECT rule added for %s -> tproxy (socks=%s)", req.ClientVPNIP, socksEndpoint)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"ok":true}`))
+}
+
+// handleOpenVPNClientDisconnect is called by the API when an OpenVPN client disconnects.
+// It removes the transparent proxy mapping and iptables REDIRECT rule.
+func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ClientVPNIP string `json:"client_vpn_ip"` // 10.9.0.x
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	// Remove transparent proxy mapping
+	if s.transparentProxy != nil {
+		s.transparentProxy.RemoveMapping(req.ClientVPNIP)
+	}
+
+	// Remove iptables REDIRECT rule
+	args := fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -j REDIRECT --to-port 12345", req.ClientVPNIP)
+	runCmd("iptables", splitArgs(args)...) // best effort
+	log.Printf("OpenVPN client disconnect: removed mapping and REDIRECT for %s", req.ClientVPNIP)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"ok":true}`))

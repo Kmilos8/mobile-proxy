@@ -203,6 +203,28 @@ export const api = {
       request(`/connections/${id}`, { method: 'PATCH', token, body: { active } }),
     delete: (token: string, id: string) =>
       request(`/connections/${id}`, { method: 'DELETE', token }),
+    downloadOVPN: async (token: string, id: string) => {
+      const res = await fetch(`${API_BASE}/connections/${id}/ovpn`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: 'Download failed' }))
+        throw new Error(error.error || `HTTP ${res.status}`)
+      }
+      const blob = await res.blob()
+      const disposition = res.headers.get('Content-Disposition')
+      let filename = `connection-${id}.ovpn`
+      if (disposition) {
+        const match = disposition.match(/filename="?([^"]+)"?/)
+        if (match) filename = match[1]
+      }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(url)
+    },
   },
   customers: {
     list: (token: string) =>

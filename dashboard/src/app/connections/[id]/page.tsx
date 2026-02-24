@@ -7,7 +7,7 @@ import {
   ArrowLeft, Smartphone, Settings, Link2, Clock, Activity,
   RotateCw, Power, Search, Wifi, WifiOff, Copy, Trash2, Plus,
   Battery, Signal, Globe, Cpu, RefreshCw, ChevronRight, BarChart3,
-  Pencil, Check, X
+  Pencil, Check, X, Download
 } from 'lucide-react'
 import { api, Device, DeviceBandwidth, DeviceCommand, ProxyConnection, IPHistoryEntry, RotationLink, BandwidthHourly, UptimeSegment } from '@/lib/api'
 import { getToken } from '@/lib/auth'
@@ -516,8 +516,8 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
                   <CopyField label="Username" value={conn.username} copyId={`user-${conn.id}`} copyToClipboard={copyToClipboard} copiedId={copiedId} mono />
                   <CopyField label="Password" value={conn.password || ''} copyId={`pass-${conn.id}`} copyToClipboard={copyToClipboard} copiedId={copiedId} mono />
 
-                  {/* Copy All button */}
-                  <div className="pt-2 mt-2 border-t border-zinc-800/50">
+                  {/* Copy All + Download .ovpn */}
+                  <div className="pt-2 mt-2 border-t border-zinc-800/50 space-y-2">
                     <button
                       onClick={() => copyToClipboard(getCopyAllString(conn), `all-${conn.id}`)}
                       className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-mono rounded transition-colors"
@@ -530,6 +530,21 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
                           {getCopyAllString(conn)}
                         </>
                       )}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const token = getToken()
+                        if (!token) return
+                        try {
+                          await api.connections.downloadOVPN(token, conn.id)
+                        } catch (err) {
+                          console.error('Failed to download .ovpn:', err)
+                        }
+                      }}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white text-xs font-medium rounded transition-colors"
+                    >
+                      <Download className="w-3 h-3" />
+                      Download .ovpn
                     </button>
                   </div>
                 </div>

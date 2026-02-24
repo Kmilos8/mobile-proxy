@@ -1,0 +1,15 @@
+#!/bin/sh
+# Called by OpenVPN (client-server) when a client disconnects
+# Environment variables from OpenVPN:
+# - username: the authenticated username
+# - ifconfig_pool_remote_ip: the VPN IP that was assigned (10.9.0.x)
+
+API_URL="http://127.0.0.1:8080/api"
+
+echo "OpenVPN client disconnected: $username at $ifconfig_pool_remote_ip"
+
+wget -q -O - --post-data="{\"username\":\"$username\",\"vpn_ip\":\"$ifconfig_pool_remote_ip\"}" \
+  --header="Content-Type: application/json" \
+  "$API_URL/internal/openvpn/disconnect" || true
+
+exit 0
