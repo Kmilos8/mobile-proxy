@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	connectTimeout = 15 * time.Second
-	maxConcurrent  = 8
+	connectTimeout = 10 * time.Second
+	idleTimeout    = 120 * time.Second
 	maxRetries     = 2
 )
 
@@ -41,7 +41,6 @@ type Proxy struct {
 
 	mu       sync.RWMutex
 	mappings map[string]*proxyTarget // client VPN IP (10.9.0.x) -> proxy target
-	sem      chan struct{}           // concurrency limiter
 }
 
 // New creates a new transparent proxy listening on the given address.
@@ -49,7 +48,6 @@ func New(listenAddr string) *Proxy {
 	return &Proxy{
 		listenAddr: listenAddr,
 		mappings:   make(map[string]*proxyTarget),
-		sem:        make(chan struct{}, maxConcurrent),
 	}
 }
 
@@ -123,13 +121,11 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		return
 	}
 
-	// Retry CONNECT with semaphore to limit concurrent handshakes.
+	// Retry CONNECT
 	var remote net.Conn
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		p.sem <- struct{}{}
 		remote, lastErr = p.dialHTTPConnect(target, origDst)
-		<-p.sem
 		if lastErr == nil {
 			break
 		}
@@ -146,17 +142,38 @@ func (p *Proxy) handleConn(conn net.Conn) {
 	defer remote.Close()
 	log.Printf("[tproxy] CONNECT %s OK", origDst)
 
-	// Bidirectional copy
+	// Bidirectional copy with proper half-close to prevent FIN_WAIT1 leak.
+	// When one direction finishes (EOF), we half-close the write side of the
+	// other connection so the remote peer sees EOF too. Then wait for both
+	// directions to complete before fully closing.
 	done := make(chan struct{}, 2)
 	go func() {
 		io.Copy(remote, conn)
+		// Client finished sending → tell phone proxy we're done writing
+		if tc, ok := remote.(*net.TCPConn); ok {
+			tc.CloseWrite()
+		}
 		done <- struct{}{}
 	}()
 	go func() {
 		io.Copy(conn, remote)
+		// Phone proxy finished sending → tell client we're done writing
+		if tc, ok := conn.(*net.TCPConn); ok {
+			tc.CloseWrite()
+		}
 		done <- struct{}{}
 	}()
-	<-done
+
+	// Wait for both directions but with a timeout to avoid hanging forever
+	timer := time.NewTimer(idleTimeout)
+	defer timer.Stop()
+	for i := 0; i < 2; i++ {
+		select {
+		case <-done:
+		case <-timer.C:
+			return
+		}
+	}
 }
 
 func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (net.Conn, error) {

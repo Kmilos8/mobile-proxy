@@ -106,6 +106,8 @@ class Socks5ProxyServer @Inject constructor(
 
     private suspend fun handleClient(clientSocket: Socket) {
         try {
+            clientSocket.tcpNoDelay = true
+            clientSocket.soTimeout = 120_000
             val input = DataInputStream(clientSocket.getInputStream())
             val output = DataOutputStream(clientSocket.getOutputStream())
 
@@ -437,6 +439,8 @@ class Socks5ProxyServer @Inject constructor(
         cellularNet?.bindSocket(socket)
 
         socket.connect(InetSocketAddress(addr, port), 10000)
+        socket.tcpNoDelay = true
+        socket.soTimeout = 120_000
         Log.i(TAG, "Connected to $host:$port via CELLULAR (protected+bound)")
         return socket
     }
@@ -451,7 +455,7 @@ class Socks5ProxyServer @Inject constructor(
     }
 
     private suspend fun relay(client: Socket, target: Socket) = coroutineScope {
-        val job1 = launch {
+        val job1 = launch(Dispatchers.IO) {
             try {
                 val buffer = ByteArray(BUFFER_SIZE)
                 val input = client.getInputStream()
@@ -460,13 +464,12 @@ class Socks5ProxyServer @Inject constructor(
                     val read = input.read(buffer)
                     if (read == -1) break
                     output.write(buffer, 0, read)
-                    output.flush()
                     _bytesOut.addAndGet(read.toLong())
                 }
             } catch (_: Exception) {}
             finally { try { target.shutdownOutput() } catch (_: Exception) {} }
         }
-        val job2 = launch {
+        val job2 = launch(Dispatchers.IO) {
             try {
                 val buffer = ByteArray(BUFFER_SIZE)
                 val input = target.getInputStream()
@@ -475,7 +478,6 @@ class Socks5ProxyServer @Inject constructor(
                     val read = input.read(buffer)
                     if (read == -1) break
                     output.write(buffer, 0, read)
-                    output.flush()
                     _bytesIn.addAndGet(read.toLong())
                 }
             } catch (_: Exception) {}
