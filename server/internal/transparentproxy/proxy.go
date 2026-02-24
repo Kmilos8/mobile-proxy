@@ -20,6 +20,13 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+// socksTarget holds the SOCKS5 endpoint and optional credentials.
+type socksTarget struct {
+	Endpoint string // host:port (e.g. 192.168.255.2:1080)
+	Username string
+	Password string
+}
+
 // Proxy is a transparent SOCKS5 forwarder.
 // It accepts TCP connections redirected by iptables and forwards them
 // through the appropriate device's SOCKS5 proxy based on the client's VPN IP.
@@ -27,23 +34,27 @@ type Proxy struct {
 	listenAddr string
 
 	mu       sync.RWMutex
-	mappings map[string]string // client VPN IP (10.9.0.x) -> device SOCKS5 endpoint (192.168.255.y:1080)
+	mappings map[string]socksTarget // client VPN IP (10.9.0.x) -> SOCKS5 target
 }
 
 // New creates a new transparent proxy listening on the given address.
 func New(listenAddr string) *Proxy {
 	return &Proxy{
 		listenAddr: listenAddr,
-		mappings:   make(map[string]string),
+		mappings:   make(map[string]socksTarget),
 	}
 }
 
-// AddMapping registers a client VPN IP to a device SOCKS5 endpoint.
-func (p *Proxy) AddMapping(clientIP, socksEndpoint string) {
+// AddMapping registers a client VPN IP to a device SOCKS5 endpoint with credentials.
+func (p *Proxy) AddMapping(clientIP, socksEndpoint, username, password string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.mappings[clientIP] = socksEndpoint
-	log.Printf("[tproxy] added mapping: %s -> %s", clientIP, socksEndpoint)
+	p.mappings[clientIP] = socksTarget{
+		Endpoint: socksEndpoint,
+		Username: username,
+		Password: password,
+	}
+	log.Printf("[tproxy] added mapping: %s -> %s (user=%s)", clientIP, socksEndpoint, username)
 }
 
 // RemoveMapping removes a client VPN IP mapping.
@@ -54,12 +65,12 @@ func (p *Proxy) RemoveMapping(clientIP string) {
 	log.Printf("[tproxy] removed mapping: %s", clientIP)
 }
 
-// getMapping returns the SOCKS5 endpoint for a client VPN IP.
-func (p *Proxy) getMapping(clientIP string) (string, bool) {
+// getMapping returns the SOCKS5 target for a client VPN IP.
+func (p *Proxy) getMapping(clientIP string) (socksTarget, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	ep, ok := p.mappings[clientIP]
-	return ep, ok
+	t, ok := p.mappings[clientIP]
+	return t, ok
 }
 
 // Start begins listening for redirected TCP connections.
@@ -98,22 +109,29 @@ func (p *Proxy) handleConn(conn net.Conn) {
 	clientAddr := conn.RemoteAddr().(*net.TCPAddr)
 	clientIP := clientAddr.IP.String()
 
-	socksEndpoint, ok := p.getMapping(clientIP)
+	target, ok := p.getMapping(clientIP)
 	if !ok {
 		log.Printf("[tproxy] no mapping for client %s", clientIP)
 		return
 	}
 
-	// Connect through the device's SOCKS5 proxy
-	dialer, err := proxy.SOCKS5("tcp", socksEndpoint, nil, proxy.Direct)
+	// Connect through the device's SOCKS5 proxy with credentials
+	var auth *proxy.Auth
+	if target.Username != "" {
+		auth = &proxy.Auth{
+			User:     target.Username,
+			Password: target.Password,
+		}
+	}
+	dialer, err := proxy.SOCKS5("tcp", target.Endpoint, auth, proxy.Direct)
 	if err != nil {
-		log.Printf("[tproxy] failed to create SOCKS5 dialer for %s: %v", socksEndpoint, err)
+		log.Printf("[tproxy] failed to create SOCKS5 dialer for %s: %v", target.Endpoint, err)
 		return
 	}
 
 	remote, err := dialer.Dial("tcp", origDst)
 	if err != nil {
-		log.Printf("[tproxy] SOCKS5 dial %s via %s failed: %v", origDst, socksEndpoint, err)
+		log.Printf("[tproxy] SOCKS5 dial %s via %s failed: %v", origDst, target.Endpoint, err)
 		return
 	}
 	defer remote.Close()

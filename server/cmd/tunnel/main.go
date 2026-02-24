@@ -842,6 +842,8 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 		ClientVPNIP   string `json:"client_vpn_ip"`   // 10.9.0.x
 		DeviceVPNIP   string `json:"device_vpn_ip"`   // 192.168.255.y
 		SOCKSPort     int    `json:"socks_port"`       // usually 1080
+		SOCKSUser     string `json:"socks_user"`       // SOCKS5 username
+		SOCKSPass     string `json:"socks_pass"`       // SOCKS5 password
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -854,9 +856,9 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 
 	socksEndpoint := fmt.Sprintf("%s:%d", req.DeviceVPNIP, req.SOCKSPort)
 
-	// Add transparent proxy mapping
+	// Add transparent proxy mapping with SOCKS5 credentials
 	if s.transparentProxy != nil {
-		s.transparentProxy.AddMapping(req.ClientVPNIP, socksEndpoint)
+		s.transparentProxy.AddMapping(req.ClientVPNIP, socksEndpoint, req.SOCKSUser, req.SOCKSPass)
 	}
 
 	// Add iptables REDIRECT rule: TCP traffic from this client -> transparent proxy port 12345
