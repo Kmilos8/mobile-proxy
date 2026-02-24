@@ -22,10 +22,8 @@ import (
 )
 
 const (
-	maxConcurrentPerDevice = 16 // max simultaneous SOCKS5 connections per device
-	socksDialTimeout       = 15 * time.Second
-	maxRetries             = 2
-	retryDelay             = 200 * time.Millisecond
+	maxConcurrentPerDevice = 256 // max simultaneous SOCKS5 connections per device
+	socksDialTimeout       = 10 * time.Second
 )
 
 // socksTarget holds the SOCKS5 endpoint and optional credentials.
@@ -129,20 +127,9 @@ func (p *Proxy) handleConn(conn net.Conn) {
 	target.sem <- struct{}{}
 	defer func() { <-target.sem }()
 
-	// Retry loop for transient SOCKS5 failures
-	var remote net.Conn
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			time.Sleep(retryDelay)
-		}
-
-		remote, err = p.dialSOCKS(target, origDst)
-		if err == nil {
-			break
-		}
-	}
+	remote, err := p.dialSOCKS(target, origDst)
 	if err != nil {
-		log.Printf("[tproxy] SOCKS5 dial %s via %s failed after %d attempts: %v", origDst, target.Endpoint, maxRetries+1, err)
+		log.Printf("[tproxy] SOCKS5 dial %s via %s failed: %v", origDst, target.Endpoint, err)
 		return
 	}
 	defer remote.Close()
