@@ -162,7 +162,7 @@ type PairingCode struct {
 	ExpiresAt         time.Time  `json:"expires_at" db:"expires_at"`
 	CreatedBy         *uuid.UUID `json:"created_by" db:"created_by"`
 	RelayServerID     *uuid.UUID `json:"relay_server_id" db:"relay_server_id"`
-	ConnectionID      *uuid.UUID `json:"connection_id" db:"connection_id"`
+	ReassignDeviceID  *uuid.UUID `json:"reassign_device_id" db:"reassign_device_id"`
 	CreatedAt         time.Time  `json:"created_at" db:"created_at"`
 }
 
@@ -253,7 +253,7 @@ type CommandRequest struct {
 type CreatePairingCodeRequest struct {
 	ExpiresInMinutes int        `json:"expires_in_minutes"`
 	RelayServerID    *uuid.UUID `json:"relay_server_id"`
-	ConnectionID     *uuid.UUID `json:"connection_id"`
+	ReassignDeviceID *uuid.UUID `json:"reassign_device_id"`
 }
 
 type CreatePairingCodeResponse struct {

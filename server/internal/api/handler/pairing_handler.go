@@ -33,7 +33,7 @@ func (h *PairingHandler) CreateCode(c *gin.Context) {
 		}
 	}
 
-	resp, err := h.pairingService.CreateCode(c.Request.Context(), req.ExpiresInMinutes, createdBy, req.RelayServerID, req.ConnectionID)
+	resp, err := h.pairingService.CreateCode(c.Request.Context(), req.ExpiresInMinutes, createdBy, req.RelayServerID, req.ReassignDeviceID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

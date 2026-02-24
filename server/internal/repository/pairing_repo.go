@@ -18,20 +18,20 @@ func NewPairingCodeRepository(db *DB) *PairingCodeRepository {
 }
 
 func (r *PairingCodeRepository) Create(ctx context.Context, pc *domain.PairingCode) error {
-	query := `INSERT INTO pairing_codes (id, code, device_auth_token, expires_at, created_by, relay_server_id, connection_id)
+	query := `INSERT INTO pairing_codes (id, code, device_auth_token, expires_at, created_by, relay_server_id, reassign_device_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`
-	_, err := r.db.Pool.Exec(ctx, query, pc.ID, pc.Code, pc.DeviceAuthToken, pc.ExpiresAt, pc.CreatedBy, pc.RelayServerID, pc.ConnectionID)
+	_, err := r.db.Pool.Exec(ctx, query, pc.ID, pc.Code, pc.DeviceAuthToken, pc.ExpiresAt, pc.CreatedBy, pc.RelayServerID, pc.ReassignDeviceID)
 	return err
 }
 
 func (r *PairingCodeRepository) GetByCode(ctx context.Context, code string) (*domain.PairingCode, error) {
-	query := `SELECT id, code, device_auth_token, claimed_by_device_id, claimed_at, expires_at, created_by, relay_server_id, connection_id, created_at
+	query := `SELECT id, code, device_auth_token, claimed_by_device_id, claimed_at, expires_at, created_by, relay_server_id, reassign_device_id, created_at
 		FROM pairing_codes
 		WHERE code = $1 AND claimed_at IS NULL AND expires_at > NOW()`
 	var pc domain.PairingCode
 	err := r.db.Pool.QueryRow(ctx, query, code).Scan(
 		&pc.ID, &pc.Code, &pc.DeviceAuthToken, &pc.ClaimedByDeviceID,
-		&pc.ClaimedAt, &pc.ExpiresAt, &pc.CreatedBy, &pc.RelayServerID, &pc.ConnectionID, &pc.CreatedAt)
+		&pc.ClaimedAt, &pc.ExpiresAt, &pc.CreatedBy, &pc.RelayServerID, &pc.ReassignDeviceID, &pc.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get pairing code: %w", err)
 	}
@@ -45,7 +45,7 @@ func (r *PairingCodeRepository) Claim(ctx context.Context, id uuid.UUID, deviceI
 }
 
 func (r *PairingCodeRepository) List(ctx context.Context) ([]domain.PairingCode, error) {
-	query := `SELECT id, code, device_auth_token, claimed_by_device_id, claimed_at, expires_at, created_by, relay_server_id, connection_id, created_at
+	query := `SELECT id, code, device_auth_token, claimed_by_device_id, claimed_at, expires_at, created_by, relay_server_id, reassign_device_id, created_at
 		FROM pairing_codes ORDER BY created_at DESC`
 	rows, err := r.db.Pool.Query(ctx, query)
 	if err != nil {
@@ -57,7 +57,7 @@ func (r *PairingCodeRepository) List(ctx context.Context) ([]domain.PairingCode,
 	for rows.Next() {
 		var pc domain.PairingCode
 		err := rows.Scan(&pc.ID, &pc.Code, &pc.DeviceAuthToken, &pc.ClaimedByDeviceID,
-			&pc.ClaimedAt, &pc.ExpiresAt, &pc.CreatedBy, &pc.RelayServerID, &pc.ConnectionID, &pc.CreatedAt)
+			&pc.ClaimedAt, &pc.ExpiresAt, &pc.CreatedBy, &pc.RelayServerID, &pc.ReassignDeviceID, &pc.CreatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("scan pairing code: %w", err)
 		}

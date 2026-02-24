@@ -336,30 +336,30 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
   const [formType, setFormType] = useState<'http' | 'socks5'>('http')
 
   // QR code reassignment state
-  const [qrConnectionId, setQrConnectionId] = useState<string | null>(null)
+  const [showQR, setShowQR] = useState(false)
   const [qrCode, setQrCode] = useState<string | null>(null)
   const [qrExpiresAt, setQrExpiresAt] = useState<string | null>(null)
   const [qrLoading, setQrLoading] = useState(false)
 
-  async function handleShowQR(connectionId: string) {
+  async function handleShowQR() {
     const token = getToken()
     if (!token) return
-    setQrConnectionId(connectionId)
+    setShowQR(true)
     setQrLoading(true)
     try {
-      const resp = await api.pairingCodes.create(token, 5, undefined, connectionId)
+      const resp = await api.pairingCodes.create(token, 5, undefined, device.id)
       setQrCode(resp.code)
       setQrExpiresAt(resp.expires_at)
     } catch (err) {
       console.error('Failed to create pairing code:', err)
-      setQrConnectionId(null)
+      setShowQR(false)
     } finally {
       setQrLoading(false)
     }
   }
 
   function closeQR() {
-    setQrConnectionId(null)
+    setShowQR(false)
     setQrCode(null)
     setQrExpiresAt(null)
   }
@@ -424,13 +424,22 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
     <div>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-medium text-zinc-400">Access Points</h3>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-medium rounded-lg transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add Access Point
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleShowQR}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-600/20 hover:bg-brand-600 text-brand-400 hover:text-white text-xs font-medium rounded-lg transition-colors"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            Pair Phone
+          </button>
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-medium rounded-lg transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Access Point
+          </button>
+        </div>
       </div>
 
       {/* Add form */}
@@ -524,14 +533,6 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => handleShowQR(conn.id)}
-                      className="inline-flex items-center gap-1.5 px-2 py-1 text-xs bg-brand-600/20 hover:bg-brand-600 text-brand-400 hover:text-white rounded transition-colors"
-                      title="Reassign to another phone via QR"
-                    >
-                      <QrCode className="w-3.5 h-3.5" />
-                      Pair Phone
-                    </button>
-                    <button
                       onClick={() => handleToggle(conn.id, conn.active)}
                       className="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-white rounded"
                     >
@@ -599,7 +600,7 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
       </div>
 
       {/* QR Code Modal */}
-      {qrConnectionId && (
+      {showQR && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={closeQR}>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
@@ -619,7 +620,7 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
                   {qrCode.slice(0, 4)}-{qrCode.slice(4)}
                 </div>
                 <p className="text-xs text-zinc-500 mb-1">
-                  Scan with phone app to move this connection to that phone
+                  Scan with phone app to move all access points to that phone
                 </p>
                 {qrExpiresAt && (
                   <QRCountdown expiresAt={qrExpiresAt} />

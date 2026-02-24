@@ -58,19 +58,16 @@ func generateAuthToken() string {
 	return hex.EncodeToString(b)
 }
 
-func (s *PairingService) CreateCode(ctx context.Context, expiresInMinutes int, createdBy *uuid.UUID, relayServerID *uuid.UUID, connectionID *uuid.UUID) (*domain.CreatePairingCodeResponse, error) {
+func (s *PairingService) CreateCode(ctx context.Context, expiresInMinutes int, createdBy *uuid.UUID, relayServerID *uuid.UUID, reassignDeviceID *uuid.UUID) (*domain.CreatePairingCodeResponse, error) {
 	if expiresInMinutes <= 0 {
 		expiresInMinutes = 5
 	}
 
-	// If connectionID is set but relayServerID is nil, resolve relay from the connection's current device
-	if connectionID != nil && relayServerID == nil && s.connRepo != nil {
-		conn, err := s.connRepo.GetByID(ctx, *connectionID)
-		if err == nil {
-			dev, err := s.deviceRepo.GetByID(ctx, conn.DeviceID)
-			if err == nil && dev.RelayServerID != nil {
-				relayServerID = dev.RelayServerID
-			}
+	// If reassigning a device but no relay specified, resolve relay from the device being reassigned
+	if reassignDeviceID != nil && relayServerID == nil {
+		dev, err := s.deviceRepo.GetByID(ctx, *reassignDeviceID)
+		if err == nil && dev.RelayServerID != nil {
+			relayServerID = dev.RelayServerID
 		}
 	}
 
@@ -83,13 +80,13 @@ func (s *PairingService) CreateCode(ctx context.Context, expiresInMinutes int, c
 	}
 
 	pc := &domain.PairingCode{
-		ID:              uuid.New(),
-		Code:            generatePairingCode(),
-		DeviceAuthToken: generateAuthToken(),
-		ExpiresAt:       time.Now().Add(time.Duration(expiresInMinutes) * time.Minute),
-		CreatedBy:       createdBy,
-		RelayServerID:   relayServerID,
-		ConnectionID:    connectionID,
+		ID:               uuid.New(),
+		Code:             generatePairingCode(),
+		DeviceAuthToken:  generateAuthToken(),
+		ExpiresAt:        time.Now().Add(time.Duration(expiresInMinutes) * time.Minute),
+		CreatedBy:        createdBy,
+		RelayServerID:    relayServerID,
+		ReassignDeviceID: reassignDeviceID,
 	}
 
 	if err := s.pairingRepo.Create(ctx, pc); err != nil {
@@ -140,10 +137,10 @@ func (s *PairingService) ClaimCode(ctx context.Context, req *domain.ClaimPairing
 		return nil, fmt.Errorf("claim pairing code: %w", err)
 	}
 
-	// If this pairing code is tied to a connection, reassign it to the new device
-	if pc.ConnectionID != nil && s.connRepo != nil {
-		if err := s.connRepo.UpdateDeviceID(ctx, *pc.ConnectionID, regResp.DeviceID); err != nil {
-			return nil, fmt.Errorf("reassign connection: %w", err)
+	// If this pairing code is tied to a device, reassign all its connections to the new device
+	if pc.ReassignDeviceID != nil && s.connRepo != nil {
+		if err := s.connRepo.ReassignAllByDeviceID(ctx, *pc.ReassignDeviceID, regResp.DeviceID); err != nil {
+			return nil, fmt.Errorf("reassign connections: %w", err)
 		}
 	}
 
