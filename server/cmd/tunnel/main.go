@@ -874,13 +874,29 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 		s.transparentProxy.AddMapping(req.ClientVPNIP, proxyEndpoint, req.ProxyUser, req.ProxyPass)
 	}
 
-	// Add iptables REDIRECT rule: TCP traffic from this client -> transparent proxy port 12345
-	args := fmt.Sprintf("-t nat -A PREROUTING -s %s -p tcp -j REDIRECT --to-port 12345", req.ClientVPNIP)
-	if out, err := runCmd("iptables", splitArgs(args)...); err != nil {
-		log.Printf("OpenVPN REDIRECT rule for %s failed: %s: %v", req.ClientVPNIP, string(out), err)
-	} else {
-		log.Printf("OpenVPN REDIRECT rule added for %s -> tproxy (proxy=%s)", req.ClientVPNIP, proxyEndpoint)
+	// Add iptables rules for transparent proxy:
+	// 1. RETURN rules to skip redirect for VPN subnet and tunnel subnet traffic
+	//    (so we can still SSH/communicate with VPN clients directly)
+	// 2. REDIRECT rule for all other TCP traffic -> port 12345
+	// First clean up any existing rules for this client IP to avoid duplicates
+	for _, rule := range []string{
+		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -d 10.9.0.0/24 -j RETURN", req.ClientVPNIP),
+		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -d 192.168.255.0/24 -j RETURN", req.ClientVPNIP),
+		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -j REDIRECT --to-port 12345", req.ClientVPNIP),
+	} {
+		runCmd("iptables", splitArgs(rule)...) // best effort cleanup
 	}
+	// Add RETURN rules before the REDIRECT rule
+	for _, rule := range []string{
+		fmt.Sprintf("-t nat -A PREROUTING -s %s -p tcp -d 10.9.0.0/24 -j RETURN", req.ClientVPNIP),
+		fmt.Sprintf("-t nat -A PREROUTING -s %s -p tcp -d 192.168.255.0/24 -j RETURN", req.ClientVPNIP),
+		fmt.Sprintf("-t nat -A PREROUTING -s %s -p tcp -j REDIRECT --to-port 12345", req.ClientVPNIP),
+	} {
+		if out, err := runCmd("iptables", splitArgs(rule)...); err != nil {
+			log.Printf("OpenVPN iptables rule failed (%s): %s: %v", rule, string(out), err)
+		}
+	}
+	log.Printf("OpenVPN REDIRECT rule added for %s -> tproxy (proxy=%s)", req.ClientVPNIP, proxyEndpoint)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"ok":true}`))
@@ -907,9 +923,14 @@ func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *h
 		s.transparentProxy.RemoveMapping(req.ClientVPNIP)
 	}
 
-	// Remove iptables REDIRECT rule
-	args := fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -j REDIRECT --to-port 12345", req.ClientVPNIP)
-	runCmd("iptables", splitArgs(args)...) // best effort
+	// Remove iptables rules (RETURN + REDIRECT)
+	for _, rule := range []string{
+		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -d 10.9.0.0/24 -j RETURN", req.ClientVPNIP),
+		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -d 192.168.255.0/24 -j RETURN", req.ClientVPNIP),
+		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -j REDIRECT --to-port 12345", req.ClientVPNIP),
+	} {
+		runCmd("iptables", splitArgs(rule)...) // best effort
+	}
 	log.Printf("OpenVPN client disconnect: removed mapping and REDIRECT for %s", req.ClientVPNIP)
 
 	w.WriteHeader(http.StatusOK)
