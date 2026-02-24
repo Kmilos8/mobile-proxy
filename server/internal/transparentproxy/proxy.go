@@ -24,7 +24,7 @@ import (
 
 const (
 	connectTimeout = 30 * time.Second
-	maxConcurrent  = 8
+	maxConcurrent  = 16
 )
 
 // proxyTarget holds the HTTP CONNECT proxy endpoint and credentials.
@@ -133,6 +133,7 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		return
 	}
 	defer remote.Close()
+	log.Printf("[tproxy] CONNECT %s OK", origDst)
 
 	// Bidirectional copy
 	done := make(chan struct{}, 2)

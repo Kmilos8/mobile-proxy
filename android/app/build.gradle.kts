@@ -16,6 +16,15 @@ android {
     namespace = "com.mobileproxy"
     compileSdk = 34
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../mobileproxy-release.jks")
+            storePassword = "mobileproxy123"
+            keyAlias = "mobileproxy"
+            keyPassword = "mobileproxy123"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.mobileproxy"
         minSdk = 26
@@ -31,6 +40,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

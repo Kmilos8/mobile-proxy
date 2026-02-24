@@ -26,7 +26,7 @@ class VpnTunnelManager(
         private const val SEND_BUF_SIZE = 2 * 1024 * 1024 // 2MB socket send buffer
         private const val RECONNECT_DELAY_MS = 3_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
-        private const val PONG_TIMEOUT_MS = 45_000L // if no PONG in 45s, reconnect
+        private const val PONG_TIMEOUT_MS = 120_000L // if no PONG in 120s, reconnect
 
         // Packet type prefixes
         private const val TYPE_AUTH: Byte = 0x01
