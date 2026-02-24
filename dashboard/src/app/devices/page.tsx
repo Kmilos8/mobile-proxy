@@ -44,7 +44,7 @@ function PairingModal({ onClose }: { onClose: () => void }) {
     create()
   }, [])
 
-  const qrValue = code ? `pocketproxy://pair?server=http://${SERVER_HOST}:8080&code=${code}` : ''
+  const qrValue = code ? `mobileproxy://pair?server=http://${SERVER_HOST}:8080&code=${code}` : ''
 
   function handleCopy() {
     if (!code) return

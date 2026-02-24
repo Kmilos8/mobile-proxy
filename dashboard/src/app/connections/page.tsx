@@ -72,8 +72,8 @@ function PairingModal({ onClose }: { onClose: () => void }) {
     create()
   }, [step, selectedRelay])
 
-  const serverHost = selectedRelay?.ip || process.env.NEXT_PUBLIC_SERVER_HOST || '178.156.240.184'
-  const qrValue = code ? `pocketproxy://pair?server=http://${serverHost}:8080&code=${code}` : ''
+  const serverHost = process.env.NEXT_PUBLIC_SERVER_HOST || '178.156.240.184'
+  const qrValue = code ? `mobileproxy://pair?server=http://${serverHost}:8080&code=${code}` : ''
 
   function handleCopy() {
     if (!code) return
