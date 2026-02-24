@@ -41,7 +41,7 @@ func (s *VPNService) AssignVPNIP(deviceName string, deviceIndex int) (string, er
 	}
 
 	if err := os.WriteFile(ccdPath, []byte(content), 0644); err != nil {
-		return "", fmt.Errorf("write ccd file: %w", err)
+		log.Printf("Warning: could not write CCD file %s: %v (non-fatal)", ccdPath, err)
 	}
 
 	log.Printf("Assigned VPN IP %s to device %s", vpnIP, deviceName)
