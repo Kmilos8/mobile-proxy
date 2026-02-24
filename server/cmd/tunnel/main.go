@@ -851,26 +851,27 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 	}
 
 	var req struct {
-		ClientVPNIP   string `json:"client_vpn_ip"`   // 10.9.0.x
-		DeviceVPNIP   string `json:"device_vpn_ip"`   // 192.168.255.y
-		SOCKSPort     int    `json:"socks_port"`       // usually 1080
-		SOCKSUser     string `json:"socks_user"`       // SOCKS5 username
-		SOCKSPass     string `json:"socks_pass"`       // SOCKS5 password
+		ClientVPNIP string `json:"client_vpn_ip"`  // 10.9.0.x
+		DeviceVPNIP string `json:"device_vpn_ip"`  // 192.168.255.y
+		ProxyPort   int    `json:"proxy_port"`      // HTTP proxy port (default 8080)
+		SOCKSPort   int    `json:"socks_port"`      // legacy, unused
+		ProxyUser   string `json:"socks_user"`      // proxy username
+		ProxyPass   string `json:"socks_pass"`      // proxy password
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 
-	if req.SOCKSPort == 0 {
-		req.SOCKSPort = 1080
+	if req.ProxyPort == 0 {
+		req.ProxyPort = 8080
 	}
 
-	socksEndpoint := fmt.Sprintf("%s:%d", req.DeviceVPNIP, req.SOCKSPort)
+	proxyEndpoint := fmt.Sprintf("%s:%d", req.DeviceVPNIP, req.ProxyPort)
 
-	// Add transparent proxy mapping with SOCKS5 credentials
+	// Add transparent proxy mapping with HTTP CONNECT proxy
 	if s.transparentProxy != nil {
-		s.transparentProxy.AddMapping(req.ClientVPNIP, socksEndpoint, req.SOCKSUser, req.SOCKSPass)
+		s.transparentProxy.AddMapping(req.ClientVPNIP, proxyEndpoint, req.ProxyUser, req.ProxyPass)
 	}
 
 	// Add iptables REDIRECT rule: TCP traffic from this client -> transparent proxy port 12345
@@ -878,7 +879,7 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 	if out, err := runCmd("iptables", splitArgs(args)...); err != nil {
 		log.Printf("OpenVPN REDIRECT rule for %s failed: %s: %v", req.ClientVPNIP, string(out), err)
 	} else {
-		log.Printf("OpenVPN REDIRECT rule added for %s -> tproxy (socks=%s)", req.ClientVPNIP, socksEndpoint)
+		log.Printf("OpenVPN REDIRECT rule added for %s -> tproxy (proxy=%s)", req.ClientVPNIP, proxyEndpoint)
 	}
 
 	w.WriteHeader(http.StatusOK)

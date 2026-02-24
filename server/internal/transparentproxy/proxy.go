@@ -1,68 +1,64 @@
 // Package transparentproxy provides a transparent TCP proxy that intercepts
-// iptables-redirected connections and forwards them through a SOCKS5 proxy.
+// iptables-redirected connections and forwards them through an HTTP CONNECT proxy.
 // This is used for OpenVPN client traffic: clients connect to the OpenVPN server,
 // their TCP traffic gets redirected via iptables REDIRECT, and this proxy
-// forwards it through the phone's SOCKS5 proxy.
+// forwards it through the phone's HTTP proxy using the CONNECT method.
 
 //go:build linux
 
 package transparentproxy
 
 import (
+	"bufio"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"sync"
 	"syscall"
 	"time"
 	"unsafe"
-
-	"golang.org/x/net/proxy"
 )
 
 const (
-	maxConcurrentPerDevice = 256 // max simultaneous SOCKS5 connections per device
-	socksDialTimeout       = 10 * time.Second
+	dialTimeout = 10 * time.Second
 )
 
-// socksTarget holds the SOCKS5 endpoint and optional credentials.
-type socksTarget struct {
-	Endpoint string // host:port (e.g. 192.168.255.2:1080)
+// proxyTarget holds the HTTP CONNECT proxy endpoint and credentials.
+type proxyTarget struct {
+	Endpoint string // host:port (e.g. 192.168.255.2:8080)
 	Username string
 	Password string
-	sem      chan struct{} // concurrency limiter
 }
 
-// Proxy is a transparent SOCKS5 forwarder.
-// It accepts TCP connections redirected by iptables and forwards them
-// through the appropriate device's SOCKS5 proxy based on the client's VPN IP.
+// Proxy is a transparent HTTP CONNECT forwarder.
 type Proxy struct {
 	listenAddr string
 
 	mu       sync.RWMutex
-	mappings map[string]*socksTarget // client VPN IP (10.9.0.x) -> SOCKS5 target
+	mappings map[string]*proxyTarget // client VPN IP (10.9.0.x) -> proxy target
 }
 
 // New creates a new transparent proxy listening on the given address.
 func New(listenAddr string) *Proxy {
 	return &Proxy{
 		listenAddr: listenAddr,
-		mappings:   make(map[string]*socksTarget),
+		mappings:   make(map[string]*proxyTarget),
 	}
 }
 
-// AddMapping registers a client VPN IP to a device SOCKS5 endpoint with credentials.
-func (p *Proxy) AddMapping(clientIP, socksEndpoint, username, password string) {
+// AddMapping registers a client VPN IP to a device proxy endpoint with credentials.
+func (p *Proxy) AddMapping(clientIP, proxyEndpoint, username, password string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.mappings[clientIP] = &socksTarget{
-		Endpoint: socksEndpoint,
+	p.mappings[clientIP] = &proxyTarget{
+		Endpoint: proxyEndpoint,
 		Username: username,
 		Password: password,
-		sem:      make(chan struct{}, maxConcurrentPerDevice),
 	}
-	log.Printf("[tproxy] added mapping: %s -> %s (user=%s)", clientIP, socksEndpoint, username)
+	log.Printf("[tproxy] added mapping: %s -> %s (user=%s)", clientIP, proxyEndpoint, username)
 }
 
 // RemoveMapping removes a client VPN IP mapping.
@@ -73,8 +69,8 @@ func (p *Proxy) RemoveMapping(clientIP string) {
 	log.Printf("[tproxy] removed mapping: %s", clientIP)
 }
 
-// getMapping returns the SOCKS5 target for a client VPN IP.
-func (p *Proxy) getMapping(clientIP string) (*socksTarget, bool) {
+// getMapping returns the proxy target for a client VPN IP.
+func (p *Proxy) getMapping(clientIP string) (*proxyTarget, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	t, ok := p.mappings[clientIP]
@@ -113,7 +109,7 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		return
 	}
 
-	// Get the client's source IP to look up the SOCKS mapping
+	// Get the client's source IP to look up the proxy mapping
 	clientAddr := conn.RemoteAddr().(*net.TCPAddr)
 	clientIP := clientAddr.IP.String()
 
@@ -123,13 +119,9 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		return
 	}
 
-	// Acquire semaphore slot to limit concurrent connections to the device
-	target.sem <- struct{}{}
-	defer func() { <-target.sem }()
-
-	remote, err := p.dialSOCKS(target, origDst)
+	remote, err := p.dialHTTPConnect(target, origDst)
 	if err != nil {
-		log.Printf("[tproxy] SOCKS5 dial %s via %s failed: %v", origDst, target.Endpoint, err)
+		log.Printf("[tproxy] CONNECT %s via %s failed: %v", origDst, target.Endpoint, err)
 		return
 	}
 	defer remote.Close()
@@ -147,23 +139,43 @@ func (p *Proxy) handleConn(conn net.Conn) {
 	<-done
 }
 
-func (p *Proxy) dialSOCKS(target *socksTarget, addr string) (net.Conn, error) {
-	var auth *proxy.Auth
-	if target.Username != "" {
-		auth = &proxy.Auth{
-			User:     target.Username,
-			Password: target.Password,
-		}
-	}
-
-	// Use a net.Dialer with timeout instead of proxy.Direct
-	netDialer := &net.Dialer{Timeout: socksDialTimeout}
-	dialer, err := proxy.SOCKS5("tcp", target.Endpoint, auth, netDialer)
+func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (net.Conn, error) {
+	conn, err := net.DialTimeout("tcp", target.Endpoint, dialTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("create SOCKS5 dialer: %w", err)
+		return nil, fmt.Errorf("dial proxy: %w", err)
 	}
 
-	return dialer.Dial("tcp", addr)
+	// Send CONNECT request
+	connectReq := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n", addr, addr)
+	if target.Username != "" {
+		creds := base64.StdEncoding.EncodeToString([]byte(target.Username + ":" + target.Password))
+		connectReq += fmt.Sprintf("Proxy-Authorization: Basic %s\r\n", creds)
+	}
+	connectReq += "\r\n"
+
+	conn.SetDeadline(time.Now().Add(dialTimeout))
+	_, err = conn.Write([]byte(connectReq))
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("write CONNECT: %w", err)
+	}
+
+	// Read response
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("read CONNECT response: %w", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		conn.Close()
+		return nil, fmt.Errorf("CONNECT returned %d", resp.StatusCode)
+	}
+
+	// Clear deadline for data transfer
+	conn.SetDeadline(time.Time{})
+	return conn, nil
 }
 
 // getOriginalDst retrieves the original destination address from a connection
