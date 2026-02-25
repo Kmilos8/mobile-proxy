@@ -8,7 +8,7 @@ COPY . .
 RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /tunnel ./cmd/tunnel
 
 FROM alpine:3.19
-RUN apk --no-cache add ca-certificates iptables iproute2
+RUN apk --no-cache add ca-certificates iptables iproute2 kmod
 COPY --from=builder /tunnel /tunnel
 
 CMD ["/tunnel"]

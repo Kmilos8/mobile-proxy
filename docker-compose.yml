@@ -44,8 +44,7 @@ services:
     build:
       context: ./server
       dockerfile: deployments/docker/Dockerfile.tunnel
-    cap_add:
-      - NET_ADMIN
+    privileged: true
     devices:
       - /dev/net/tun:/dev/net/tun
     network_mode: host
