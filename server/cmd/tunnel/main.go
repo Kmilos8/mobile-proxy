@@ -541,6 +541,9 @@ func (s *tunnelServer) notifyDisconnected(deviceID, vpnIP string) {
 // setupDNAT creates iptables DNAT rules to forward external ports to the device's VPN IP.
 // Runs in the host network namespace (tunnel container uses network_mode: host).
 func setupDNAT(basePort int, vpnIP string) {
+	// Teardown any existing rules first to prevent duplicates
+	teardownDNAT(basePort, vpnIP)
+
 	rules := []struct {
 		extPort int
 		devPort int
@@ -562,6 +565,7 @@ func setupDNAT(basePort int, vpnIP string) {
 }
 
 // teardownDNAT removes iptables DNAT rules for a device.
+// Loops to remove ALL duplicate rules, not just the first match.
 func teardownDNAT(basePort int, vpnIP string) {
 	rules := []struct {
 		extPort int
@@ -575,7 +579,12 @@ func teardownDNAT(basePort int, vpnIP string) {
 		for _, proto := range []string{"tcp", "udp"} {
 			args := fmt.Sprintf("-t nat -D PREROUTING -p %s --dport %d -j DNAT --to-destination %s:%d",
 				proto, r.extPort, vpnIP, r.devPort)
-			runCmd("iptables", splitArgs(args)...) // best effort
+			// Loop to remove all duplicates
+			for {
+				if _, err := runCmd("iptables", splitArgs(args)...); err != nil {
+					break // no more matching rules
+				}
+			}
 		}
 	}
 	log.Printf("DNAT teardown: ports %d-%d -> %s", basePort, basePort+2, vpnIP)
@@ -583,6 +592,9 @@ func teardownDNAT(basePort int, vpnIP string) {
 
 // setupSingleDNAT creates a single-port DNAT rule based on proxy type.
 func setupSingleDNAT(extPort int, vpnIP string, proxyType string) {
+	// Teardown any existing rules first to prevent duplicates
+	teardownSingleDNAT(extPort, vpnIP, proxyType)
+
 	devPort := 8080 // HTTP proxy on device
 	if proxyType == "socks5" {
 		devPort = 1080
@@ -598,6 +610,7 @@ func setupSingleDNAT(extPort int, vpnIP string, proxyType string) {
 }
 
 // teardownSingleDNAT removes a single-port DNAT rule based on proxy type.
+// Loops to remove ALL duplicate rules, not just the first match.
 func teardownSingleDNAT(extPort int, vpnIP string, proxyType string) {
 	devPort := 8080
 	if proxyType == "socks5" {
@@ -606,7 +619,12 @@ func teardownSingleDNAT(extPort int, vpnIP string, proxyType string) {
 	for _, proto := range []string{"tcp", "udp"} {
 		args := fmt.Sprintf("-t nat -D PREROUTING -p %s --dport %d -j DNAT --to-destination %s:%d",
 			proto, extPort, vpnIP, devPort)
-		runCmd("iptables", splitArgs(args)...) // best effort
+		// Loop to remove all duplicates
+		for {
+			if _, err := runCmd("iptables", splitArgs(args)...); err != nil {
+				break
+			}
+		}
 	}
 	log.Printf("DNAT teardown: port %d -> %s:%d (type=%s)", extPort, vpnIP, devPort, proxyType)
 }
@@ -943,13 +961,17 @@ func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *h
 		s.transparentProxy.RemoveMapping(req.ClientVPNIP)
 	}
 
-	// Remove iptables rules (RETURN + REDIRECT)
+	// Remove iptables rules (RETURN + REDIRECT) — loop to remove all duplicates
 	for _, rule := range []string{
 		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -d 10.9.0.0/24 -j RETURN", req.ClientVPNIP),
 		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -d 192.168.255.0/24 -j RETURN", req.ClientVPNIP),
 		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -j REDIRECT --to-port 12345", req.ClientVPNIP),
 	} {
-		runCmd("iptables", splitArgs(rule)...) // best effort
+		for {
+			if _, err := runCmd("iptables", splitArgs(rule)...); err != nil {
+				break
+			}
+		}
 	}
 	log.Printf("OpenVPN client disconnect: removed mapping and REDIRECT for %s", req.ClientVPNIP)
 
