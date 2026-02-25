@@ -217,6 +217,13 @@ func (h *OpenVPNHandler) DownloadOVPN(c *gin.Context) {
 	ovpn.WriteString("sndbuf 524288\n")
 	ovpn.WriteString("rcvbuf 524288\n")
 	ovpn.WriteString("verb 3\n")
+
+	// Bypass VPN for dashboard/website server so it's always reachable
+	dashboardIP := os.Getenv("DASHBOARD_SERVER_IP")
+	if dashboardIP == "" {
+		dashboardIP = "178.156.240.184"
+	}
+	ovpn.WriteString(fmt.Sprintf("route %s 255.255.255.255 net_gateway\n", dashboardIP))
 	ovpn.WriteString("\n")
 
 	// Embed credentials inline so the user isn't prompted
