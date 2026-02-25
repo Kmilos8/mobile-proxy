@@ -167,13 +167,33 @@ func configureTUN(name string) {
 		log.Printf("Warning: ip link set: %s: %v", string(out), err)
 	}
 
-	// Increase TUN queue length for throughput
-	if out, err := runCmd("ip", "link", "set", "dev", name, "txqueuelen", "1000"); err != nil {
+	// Increase TUN queue length for high throughput
+	if out, err := runCmd("ip", "link", "set", "dev", name, "txqueuelen", "5000"); err != nil {
 		log.Printf("Warning: txqueuelen: %s: %v", string(out), err)
 	}
 
 	// Enable IP forwarding
 	exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1").Run()
+
+	// TCP/network performance tuning for mobile VPN throughput
+	// Load BBR congestion control module (model-based, handles mobile packet loss gracefully)
+	exec.Command("modprobe", "tcp_bbr").Run()
+
+	sysctls := map[string]string{
+		"net.ipv4.tcp_congestion_control": "bbr",
+		"net.core.rmem_max":              "16777216",               // 16MB
+		"net.core.wmem_max":              "16777216",               // 16MB
+		"net.ipv4.tcp_rmem":              "4096 1048576 16777216",  // min 4K, default 1MB, max 16MB
+		"net.ipv4.tcp_wmem":              "4096 1048576 16777216",  // min 4K, default 1MB (was 16KB!), max 16MB
+		"net.core.netdev_max_backlog":    "5000",
+		"net.ipv4.tcp_mtu_probing":       "1",
+	}
+	for k, v := range sysctls {
+		if out, err := exec.Command("sysctl", "-w", k+"="+v).CombinedOutput(); err != nil {
+			log.Printf("Warning: sysctl %s=%s failed: %s: %v", k, v, string(out), err)
+		}
+	}
+	log.Printf("TCP tuning applied (BBR + buffer sizes)")
 
 	// Add MASQUERADE rule for VPN subnet (check first, add if missing)
 	if _, err := runCmd("iptables", "-t", "nat", "-C", "POSTROUTING", "-s", tunSubnet, "-j", "MASQUERADE"); err != nil {

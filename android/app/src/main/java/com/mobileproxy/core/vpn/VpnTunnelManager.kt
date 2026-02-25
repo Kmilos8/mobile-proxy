@@ -1,15 +1,16 @@
 package com.mobileproxy.core.vpn
 
 import android.os.ParcelFileDescriptor
+import android.system.Os
 import android.util.Log
 import com.mobileproxy.service.ProxyVpnService
 import kotlinx.coroutines.*
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.nio.ByteBuffer
+import java.nio.channels.DatagramChannel
 import java.util.concurrent.atomic.AtomicLong
 
 class VpnTunnelManager(
@@ -22,8 +23,8 @@ class VpnTunnelManager(
         private const val TAG = "VpnTunnelManager"
         const val MTU = 1400
         const val KEEPALIVE_MS = 25_000L
-        private const val RECV_BUF_SIZE = 2 * 1024 * 1024 // 2MB socket receive buffer
-        private const val SEND_BUF_SIZE = 2 * 1024 * 1024 // 2MB socket send buffer
+        private const val RECV_BUF_SIZE = 4 * 1024 * 1024 // 4MB socket receive buffer
+        private const val SEND_BUF_SIZE = 4 * 1024 * 1024 // 4MB socket send buffer
         private const val RECONNECT_DELAY_MS = 3_000L
         private const val MAX_RECONNECT_DELAY_MS = 30_000L
         private const val PONG_TIMEOUT_MS = 120_000L // if no PONG in 120s, reconnect
@@ -35,11 +36,11 @@ class VpnTunnelManager(
         private const val TYPE_AUTH_OK: Byte = 0x01
         private const val TYPE_AUTH_FAIL: Byte = 0x03
         private const val TYPE_PONG: Byte = 0x04
-        private const val TYPE_COMMAND: Byte = 0x05 // Server→device command push
+        private const val TYPE_COMMAND: Byte = 0x05 // Server->device command push
     }
 
     private var tunFd: ParcelFileDescriptor? = null
-    private var udpSocket: DatagramSocket? = null
+    private var udpChannel: DatagramChannel? = null
     private var scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Track last PONG for dead-tunnel detection
@@ -72,17 +73,19 @@ class VpnTunnelManager(
 
     private suspend fun connectInternal(): Boolean {
         try {
-            // Create UDP socket and protect it from VPN routing
-            val socket = DatagramSocket()
+            // Create NIO DatagramChannel for zero-copy UDP I/O
+            val channel = DatagramChannel.open()
+            channel.configureBlocking(true)
+            val socket = channel.socket()
             socket.receiveBufferSize = RECV_BUF_SIZE
             socket.sendBufferSize = SEND_BUF_SIZE
             vpnService.protect(socket)
-            socket.connect(InetSocketAddress(serverAddress, serverPort))
-            udpSocket = socket
-            Log.i(TAG, "UDP socket created and protected, connecting to $serverAddress:$serverPort" +
+            channel.connect(InetSocketAddress(serverAddress, serverPort))
+            udpChannel = channel
+            Log.i(TAG, "UDP channel created and protected, connecting to $serverAddress:$serverPort" +
                 " (recv=${socket.receiveBufferSize/1024}KB, send=${socket.sendBufferSize/1024}KB)")
 
-            // Authenticate
+            // Authenticate using the underlying socket (DatagramPacket API for auth only)
             val assignedIP = authenticate(socket) ?: return false
 
             vpnIP = assignedIP
@@ -125,9 +128,9 @@ class VpnTunnelManager(
     private fun teardownConnection() {
         isConnected = false
         try { tunFd?.close() } catch (_: Exception) {}
-        try { udpSocket?.close() } catch (_: Exception) {}
+        try { udpChannel?.close() } catch (_: Exception) {}
         tunFd = null
-        udpSocket = null
+        udpChannel = null
     }
 
     private suspend fun reconnect() {
@@ -229,18 +232,22 @@ class VpnTunnelManager(
 
     private fun tunToUdp() {
         val fd = tunFd ?: return
-        val socket = udpSocket ?: return
-        val input = FileInputStream(fd.fileDescriptor)
-        val buffer = ByteArray(MTU + 1) // +1 for type prefix
+        val channel = udpChannel ?: return
+        // Direct ByteBuffer — avoids JNI heap copy overhead
+        val sendBuf = ByteBuffer.allocateDirect(MTU + 1)
 
-        Log.i(TAG, "tunToUdp started")
+        Log.i(TAG, "tunToUdp started (NIO direct buffer)")
         try {
             while (isConnected) {
-                val n = input.read(buffer, 1, MTU)
+                sendBuf.clear()
+                sendBuf.position(1) // leave room for type byte
+                val n = Os.read(fd.fileDescriptor, sendBuf)
                 if (n <= 0) continue
 
-                buffer[0] = TYPE_DATA
-                socket.send(DatagramPacket(buffer, 0, n + 1))
+                sendBuf.put(0, TYPE_DATA)
+                sendBuf.position(0)
+                sendBuf.limit(n + 1)
+                channel.write(sendBuf)
             }
         } catch (e: Exception) {
             if (isConnected) {
@@ -253,32 +260,37 @@ class VpnTunnelManager(
 
     private fun udpToTun() {
         val fd = tunFd ?: return
-        val socket = udpSocket ?: return
-        val output = FileOutputStream(fd.fileDescriptor)
-        val buffer = ByteArray(MTU + 100) // extra headroom for encapsulation
+        val channel = udpChannel ?: return
+        // Direct ByteBuffer — avoids JNI heap copy overhead
+        val recvBuf = ByteBuffer.allocateDirect(MTU + 100)
 
-        Log.i(TAG, "udpToTun started")
+        Log.i(TAG, "udpToTun started (NIO direct buffer)")
         try {
             while (isConnected) {
-                val packet = DatagramPacket(buffer, buffer.size)
-                socket.receive(packet)
+                recvBuf.clear()
+                channel.read(recvBuf)
+                recvBuf.flip()
 
-                if (packet.length < 1) continue
+                if (recvBuf.remaining() < 1) continue
 
-                when (buffer[0]) {
+                when (recvBuf.get(0)) {
                     TYPE_PONG -> {
-                        // PONG is 1 byte — handle before DATA size check
+                        // PONG is 1 byte -- handle before DATA size check
                         lastPongTime.set(System.currentTimeMillis())
                     }
                     TYPE_DATA -> {
-                        if (packet.length < 2) continue
-                        // Write raw IP packet to TUN (skip type byte)
-                        output.write(buffer, 1, packet.length - 1)
+                        if (recvBuf.remaining() < 2) continue
+                        // Write raw IP packet to TUN (skip type byte) — direct from ByteBuffer
+                        recvBuf.position(1)
+                        Os.write(fd.fileDescriptor, recvBuf)
                     }
                     TYPE_COMMAND -> {
-                        if (packet.length < 2) continue
-                        // Server pushed a command — extract JSON and dispatch
-                        val json = String(buffer, 1, packet.length - 1, Charsets.UTF_8)
+                        if (recvBuf.remaining() < 2) continue
+                        // Server pushed a command -- extract JSON and dispatch
+                        val bytes = ByteArray(recvBuf.remaining() - 1)
+                        recvBuf.position(1)
+                        recvBuf.get(bytes)
+                        val json = String(bytes, Charsets.UTF_8)
                         Log.i(TAG, "Received pushed command: $json")
                         try {
                             commandListener?.invoke(json)
@@ -298,15 +310,19 @@ class VpnTunnelManager(
     }
 
     private suspend fun keepalive() {
-        val socket = udpSocket ?: return
-        val pingPacket = DatagramPacket(byteArrayOf(TYPE_PING), 1)
+        val channel = udpChannel ?: return
+        val pingBuf = ByteBuffer.allocateDirect(1)
+        pingBuf.put(TYPE_PING)
 
         Log.i(TAG, "Keepalive started")
         try {
             while (isConnected) {
                 delay(KEEPALIVE_MS)
                 if (!isConnected) break
-                socket.send(pingPacket)
+                pingBuf.clear()
+                pingBuf.put(TYPE_PING)
+                pingBuf.flip()
+                channel.write(pingBuf)
             }
         } catch (e: Exception) {
             if (isConnected) Log.e(TAG, "Keepalive error", e)
