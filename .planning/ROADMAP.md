@@ -47,8 +47,8 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md — Install shadcn/ui, dark theme, collapsible sidebar, device table home page, backend openvpn proxy_type
-- [ ] 02-02-PLAN.md — Device detail page with connection management: create/view/copy/delete connections
-- [ ] 02-03-PLAN.md — Visual and functional verification checkpoint
+- [x] 02-02-PLAN.md — Device detail page with connection management: create/view/copy/delete connections
+- [x] 02-03-PLAN.md — Visual and functional verification checkpoint
 
 ### Phase 3: Security and Monitoring
 **Goal**: Credentials are not stored or transmitted in plaintext, bandwidth limits are enforced, and operators are alerted when devices go offline
