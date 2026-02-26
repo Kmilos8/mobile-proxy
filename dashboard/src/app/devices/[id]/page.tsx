@@ -16,6 +16,9 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import BatteryIndicator from '@/components/ui/BatteryIndicator'
 import BandwidthChart from '@/components/BandwidthChart'
 import UptimeTimeline from '@/components/UptimeTimeline'
+import ConnectionTable from '@/components/connections/ConnectionTable'
+import AddConnectionModal from '@/components/connections/AddConnectionModal'
+import { Button } from '@/components/ui/button'
 
 type SidebarTab = 'primary' | 'advanced' | 'change-ip' | 'history' | 'metrics' | 'usage'
 
@@ -35,6 +38,7 @@ export default function DeviceDetailPage() {
   const [activeTab, setActiveTab] = useState<SidebarTab>('primary')
   const [commandFeedback, setCommandFeedback] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [addConnectionOpen, setAddConnectionOpen] = useState(false)
 
   const fetchData = useCallback(async () => {
     const token = getToken()
@@ -113,6 +117,17 @@ export default function DeviceDetailPage() {
     }
   }
 
+  async function handleDeleteConnection(connectionId: string) {
+    const token = getToken()
+    if (!token) return
+    try {
+      await api.connections.delete(token, connectionId)
+      await fetchData()
+    } catch (err) {
+      console.error('Failed to delete connection:', err)
+    }
+  }
+
   function handleCopy(text: string, itemId: string) {
     copyToClipboard(text)
     setCopiedId(itemId)
@@ -175,8 +190,8 @@ export default function DeviceDetailPage() {
 
       {/* Main layout: Sidebar + Content */}
       <div className="flex gap-6">
-        {/* Left Sidebar Tabs */}
-        <div className="w-52 flex-shrink-0">
+        {/* Left Sidebar Tabs — hidden on mobile, shown at md+ */}
+        <div className="hidden md:block w-52 flex-shrink-0">
           <nav className="space-y-0.5">
             {sidebarItems.map(item => {
               const Icon = item.icon
@@ -199,9 +214,42 @@ export default function DeviceDetailPage() {
           </nav>
         </div>
 
+        {/* Mobile horizontal tab bar — shown below md */}
+        <div className="md:hidden w-full">
+          <div className="flex overflow-x-auto gap-1 border-b border-zinc-800 mb-4 pb-1">
+            {sidebarItems.map(item => (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={cn(
+                  'flex-shrink-0 px-3 py-2 text-sm rounded-t-lg transition-colors',
+                  activeTab === item.id
+                    ? 'bg-brand-600 text-white'
+                    : 'text-zinc-400 hover:text-white'
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Content Area */}
         <div className="flex-1 min-w-0">
-          {activeTab === 'primary' && <PrimaryTab device={device} connections={connections} bandwidth={bandwidth} serverHost={SERVER_HOST} copyToClipboard={handleCopy} copiedId={copiedId} />}
+          {activeTab === 'primary' && (
+            <PrimaryTab
+              device={device}
+              connections={connections}
+              bandwidth={bandwidth}
+              serverHost={SERVER_HOST}
+              copyToClipboard={handleCopy}
+              copiedId={copiedId}
+              addConnectionOpen={addConnectionOpen}
+              onAddConnectionOpenChange={setAddConnectionOpen}
+              onDeleteConnection={handleDeleteConnection}
+              onRefresh={fetchData}
+            />
+          )}
           {activeTab === 'advanced' && <AdvancedTab device={device} commands={commands} sendCommand={sendCommand} />}
           {activeTab === 'change-ip' && <ChangeIPTab device={device} rotationLinks={rotationLinks} onCreateLink={handleCreateRotationLink} onDeleteLink={handleDeleteRotationLink} getRotationUrl={getRotationUrl} copyToClipboard={handleCopy} copiedId={copiedId} onAutoRotateChange={(minutes) => {
             const token = getToken()
@@ -213,18 +261,30 @@ export default function DeviceDetailPage() {
           {activeTab === 'usage' && <UsageTab deviceId={device.id} />}
         </div>
       </div>
+
+      {/* Add Connection Modal — rendered at page level so it isn't clipped */}
+      <AddConnectionModal
+        deviceId={device.id}
+        open={addConnectionOpen}
+        onOpenChange={setAddConnectionOpen}
+        onCreated={fetchData}
+      />
     </div>
   )
 }
 
 // ============= PRIMARY TAB =============
-function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboard, copiedId }: {
+function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboard, copiedId, addConnectionOpen, onAddConnectionOpenChange, onDeleteConnection, onRefresh }: {
   device: Device
   connections: ProxyConnection[]
   bandwidth: DeviceBandwidth | null
   serverHost: string
   copyToClipboard: (text: string, id: string) => void
   copiedId: string | null
+  addConnectionOpen: boolean
+  onAddConnectionOpenChange: (open: boolean) => void
+  onDeleteConnection: (id: string) => void
+  onRefresh: () => void
 }) {
   const [subTab, setSubTab] = useState<'proxy' | 'info'>('proxy')
 
@@ -238,7 +298,7 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
             subTab === 'proxy' ? 'border-brand-500 text-white' : 'border-transparent text-zinc-400 hover:text-white'
           )}
         >
-          Proxy
+          Connections
         </button>
         <button
           onClick={() => setSubTab('info')}
@@ -252,106 +312,26 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
 
       {subTab === 'proxy' && (
         <div>
-          <h3 className="text-sm font-medium text-zinc-400 mb-4">Access Points</h3>
+          {/* Section header with Add Connection button */}
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-medium text-zinc-400">Proxy Connections</h3>
+            <Button
+              onClick={() => onAddConnectionOpenChange(true)}
+              size="sm"
+              className="bg-brand-600 hover:bg-brand-500 text-white flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              Add Connection
+            </Button>
+          </div>
 
-          {connections.length === 0 ? (
-            <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center text-zinc-500">
-              No proxy connections configured.
-              <div className="mt-2">
-                <Link href="/connections" className="text-brand-400 hover:text-brand-300 text-sm">
-                  Create a connection
-                </Link>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {/* HTTP Proxy */}
-              <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-                <div className="px-4 py-2 bg-zinc-800/50 border-b border-zinc-800">
-                  <span className="text-sm font-medium">HTTP Proxy</span>
-                </div>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-800/50 text-zinc-500 text-left">
-                      <th className="px-4 py-2 font-medium text-xs">IP</th>
-                      <th className="px-4 py-2 font-medium text-xs">Port</th>
-                      <th className="px-4 py-2 font-medium text-xs">Login</th>
-                      <th className="px-4 py-2 font-medium text-xs">Password</th>
-                      <th className="px-4 py-2 font-medium text-xs">Status</th>
-                      <th className="px-4 py-2 font-medium text-xs"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {connections.map(conn => (
-                      <tr key={`http-${conn.id}`} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
-                        <td className="px-4 py-2.5 font-mono text-xs">{serverHost}</td>
-                        <td className="px-4 py-2.5 font-mono text-xs">{device.http_port}</td>
-                        <td className="px-4 py-2.5 font-mono text-xs">{conn.username}</td>
-                        <td className="px-4 py-2.5 font-mono text-xs">{conn.password || '********'}</td>
-                        <td className="px-4 py-2.5">
-                          <span className={cn('text-xs', conn.active ? 'text-green-400' : 'text-zinc-500')}>
-                            {conn.active ? 'Active' : 'Disabled'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <button
-                            onClick={() => copyToClipboard(`${serverHost}:${device.http_port}:${conn.username}:${conn.password || ''}`, `http-${conn.id}`)}
-                            className="text-zinc-500 hover:text-white transition-colors"
-                            title="Copy proxy string"
-                          >
-                            {copiedId === `http-${conn.id}` ? <span className="text-green-400 text-xs">Copied!</span> : <Copy className="w-3.5 h-3.5" />}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* SOCKS5 Proxy */}
-              <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
-                <div className="px-4 py-2 bg-zinc-800/50 border-b border-zinc-800">
-                  <span className="text-sm font-medium">SOCKS5 Proxy</span>
-                </div>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-800/50 text-zinc-500 text-left">
-                      <th className="px-4 py-2 font-medium text-xs">IP</th>
-                      <th className="px-4 py-2 font-medium text-xs">Port</th>
-                      <th className="px-4 py-2 font-medium text-xs">Login</th>
-                      <th className="px-4 py-2 font-medium text-xs">Password</th>
-                      <th className="px-4 py-2 font-medium text-xs">Status</th>
-                      <th className="px-4 py-2 font-medium text-xs"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {connections.map(conn => (
-                      <tr key={`socks-${conn.id}`} className="border-b border-zinc-800/30 hover:bg-zinc-800/20">
-                        <td className="px-4 py-2.5 font-mono text-xs">{serverHost}</td>
-                        <td className="px-4 py-2.5 font-mono text-xs">{device.socks5_port}</td>
-                        <td className="px-4 py-2.5 font-mono text-xs">{conn.username}</td>
-                        <td className="px-4 py-2.5 font-mono text-xs">{conn.password || '********'}</td>
-                        <td className="px-4 py-2.5">
-                          <span className={cn('text-xs', conn.active ? 'text-green-400' : 'text-zinc-500')}>
-                            {conn.active ? 'Active' : 'Disabled'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <button
-                            onClick={() => copyToClipboard(`${serverHost}:${device.socks5_port}:${conn.username}:${conn.password || ''}`, `socks-${conn.id}`)}
-                            className="text-zinc-500 hover:text-white transition-colors"
-                            title="Copy proxy string"
-                          >
-                            {copiedId === `socks-${conn.id}` ? <span className="text-green-400 text-xs">Copied!</span> : <Copy className="w-3.5 h-3.5" />}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+          <ConnectionTable
+            connections={connections}
+            device={device}
+            serverHost={serverHost}
+            onDelete={onDeleteConnection}
+            onRefresh={onRefresh}
+          />
 
           {/* External IP */}
           <div className="mt-6 bg-zinc-900 border border-zinc-800 rounded-lg p-4">
