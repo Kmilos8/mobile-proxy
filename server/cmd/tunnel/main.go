@@ -764,6 +764,7 @@ func (s *tunnelServer) startPushAPI() {
 	mux.HandleFunc("/openvpn-client-connect", s.handleOpenVPNClientConnect)
 	mux.HandleFunc("/openvpn-client-disconnect", s.handleOpenVPNClientDisconnect)
 	mux.HandleFunc("/debug-proxy-test", s.handleDebugProxyTest)
+	mux.HandleFunc("/debug-concurrent-test", s.handleDebugConcurrentTest)
 
 	log.Printf("Push API listening on port %d", pushPort)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", pushPort), mux); err != nil {
@@ -1043,4 +1044,102 @@ func (s *tunnelServer) handleDebugProxyTest(w http.ResponseWriter, r *http.Reque
 	result["total_ms"] = time.Since(start).Milliseconds()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// handleDebugConcurrentTest fires N concurrent CONNECT requests to the device proxy
+// from within the tunnel process, simulating browser-like behavior.
+func (s *tunnelServer) handleDebugConcurrentTest(w http.ResponseWriter, r *http.Request) {
+	deviceIP := r.URL.Query().Get("ip")
+	if deviceIP == "" {
+		deviceIP = "192.168.255.2"
+	}
+	countStr := r.URL.Query().Get("n")
+	count := 10
+	if n, err := strconv.Atoi(countStr); err == nil && n > 0 && n <= 50 {
+		count = n
+	}
+	target := deviceIP + ":8080"
+
+	type connResult struct {
+		ID      int    `json:"id"`
+		DialMs  int64  `json:"dial_ms"`
+		WriteOK bool   `json:"write_ok"`
+		ReadMs  int64  `json:"read_ms"`
+		ReadOK  bool   `json:"read_ok"`
+		Status  string `json:"status"`
+		Error   string `json:"error,omitempty"`
+	}
+
+	log.Printf("[debug-concurrent] starting %d concurrent connections to %s", count, target)
+	start := time.Now()
+	results := make([]connResult, count)
+	var wg sync.WaitGroup
+
+	for i := 0; i < count; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			cr := connResult{ID: idx}
+
+			dialStart := time.Now()
+			conn, err := net.DialTimeout("tcp", target, 10*time.Second)
+			cr.DialMs = time.Since(dialStart).Milliseconds()
+			if err != nil {
+				cr.Error = fmt.Sprintf("dial: %v", err)
+				results[idx] = cr
+				return
+			}
+			defer conn.Close()
+
+			connectReq := fmt.Sprintf("CONNECT test%d.example.com:443 HTTP/1.1\r\nHost: test%d.example.com:443\r\n\r\n", idx, idx)
+			conn.SetDeadline(time.Now().Add(10 * time.Second))
+			_, err = conn.Write([]byte(connectReq))
+			if err != nil {
+				cr.Error = fmt.Sprintf("write: %v", err)
+				results[idx] = cr
+				return
+			}
+			cr.WriteOK = true
+
+			readStart := time.Now()
+			buf := make([]byte, 4096)
+			n, err := conn.Read(buf)
+			cr.ReadMs = time.Since(readStart).Milliseconds()
+			if err != nil {
+				cr.Error = fmt.Sprintf("read: %v", err)
+			} else {
+				cr.ReadOK = true
+				// Extract status line
+				if idx := strings.Index(string(buf[:n]), "\r\n"); idx > 0 {
+					cr.Status = string(buf[:idx])
+				}
+			}
+			results[idx] = cr
+		}(i)
+	}
+
+	wg.Wait()
+	totalMs := time.Since(start).Milliseconds()
+
+	succeeded := 0
+	failed := 0
+	for _, cr := range results {
+		if cr.ReadOK {
+			succeeded++
+		} else {
+			failed++
+		}
+	}
+
+	log.Printf("[debug-concurrent] done: %d/%d succeeded, %d failed, %dms total", succeeded, count, failed, totalMs)
+
+	resp := map[string]interface{}{
+		"total":     count,
+		"succeeded": succeeded,
+		"failed":    failed,
+		"total_ms":  totalMs,
+		"results":   results,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
