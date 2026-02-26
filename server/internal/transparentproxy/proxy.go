@@ -25,13 +25,15 @@ import (
 )
 
 const (
-	connectTimeout    = 30 * time.Second  // increased from 10s — device proxy response degrades under load via cellular UDP tunnel
-	peekTimeout       = 200 * time.Millisecond // time to wait for initial client data (TLS ClientHello arrives in <10ms; 200ms covers slow clients without blocking speed tests)
-	idleTimeout       = 300 * time.Second // 5 min idle before killing connection
-	maxRetries        = 2
-	copyBufSize       = 128 * 1024 // 128KB copy buffer for throughput
-	peekSize          = 4096       // enough for TLS ClientHello or HTTP request line + headers
-	maxConcurrentDial = 6          // limit concurrent CONNECT dials per device to prevent thundering herd
+	connectTimeout   = 15 * time.Second   // dial + CONNECT handshake timeout
+	peekTimeout      = 200 * time.Millisecond // time to wait for initial client data (TLS ClientHello arrives in <10ms; 200ms covers slow clients without blocking speed tests)
+	idleTimeout      = 120 * time.Second  // 2 min idle before killing connection
+	halfCloseTimeout = 5 * time.Second    // after one direction finishes, wait this long for the other
+	queueTimeout     = 10 * time.Second   // max time to wait for a connection slot
+	maxRetries       = 2
+	copyBufSize      = 128 * 1024 // 128KB copy buffer for throughput
+	peekSize         = 4096       // enough for TLS ClientHello or HTTP request line + headers
+	maxActiveConns   = 8          // max TOTAL concurrent connections per device (dial + data transfer)
 )
 
 // proxyTarget holds the HTTP CONNECT proxy endpoint and credentials.
@@ -39,7 +41,7 @@ type proxyTarget struct {
 	Endpoint string // host:port (e.g. 192.168.255.2:8080)
 	Username string
 	Password string
-	dialSem  chan struct{} // limits concurrent CONNECT dials to this device
+	connSem  chan struct{} // limits TOTAL concurrent connections (dial + data) to this device
 }
 
 // connectResult holds the connection and any buffered reader from the CONNECT handshake.
@@ -72,7 +74,7 @@ func (p *Proxy) AddMapping(clientIP, proxyEndpoint, username, password string) {
 		Endpoint: proxyEndpoint,
 		Username: username,
 		Password: password,
-		dialSem:  make(chan struct{}, maxConcurrentDial),
+		connSem:  make(chan struct{}, maxActiveConns),
 	}
 	log.Printf("[tproxy] added mapping: %s -> %s (user=%s)", clientIP, proxyEndpoint, username)
 }
@@ -162,10 +164,17 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		}
 	}
 
-	// Acquire dial semaphore to limit concurrent connections to this device.
-	// Without this, a browser opening 30+ connections causes a thundering herd
-	// that overwhelms the device proxy over the cellular UDP tunnel.
-	target.dialSem <- struct{}{}
+	// Acquire connection semaphore — limits TOTAL concurrent connections (dial + data
+	// transfer) per device. Without this, a browser opening 30+ connections saturates
+	// the cellular UDP tunnel and the device proxy becomes unresponsive.
+	select {
+	case target.connSem <- struct{}{}:
+		// acquired
+	case <-time.After(queueTimeout):
+		// too many connections queued — drop this one (browser will retry)
+		return
+	}
+	defer func() { <-target.connSem }()
 
 	// Retry CONNECT
 	var result *connectResult
@@ -180,9 +189,6 @@ func (p *Proxy) handleConn(conn net.Conn) {
 			time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
 		}
 	}
-
-	// Release semaphore after dial completes (whether success or failure)
-	<-target.dialSem
 
 	if lastErr != nil {
 		log.Printf("[tproxy] CONNECT %s via %s failed after %d attempts: %v", connectAddr, target.Endpoint, maxRetries, lastErr)
@@ -218,20 +224,20 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		done <- struct{}{}
 	}()
 
-	// Wait for both directions but with an idle timeout
+	// Wait for both directions but with an idle timeout.
+	// After one direction finishes, use a short timeout for the other to drain.
 	timer := time.NewTimer(idleTimeout)
 	defer timer.Stop()
 	for i := 0; i < 2; i++ {
 		select {
 		case <-done:
-			// Reset timer when one direction finishes — give the other side time to drain
 			if !timer.Stop() {
 				select {
 				case <-timer.C:
 				default:
 				}
 			}
-			timer.Reset(30 * time.Second)
+			timer.Reset(halfCloseTimeout)
 		case <-timer.C:
 			return
 		}
