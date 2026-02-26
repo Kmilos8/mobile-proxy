@@ -9,6 +9,8 @@ import java.io.DataOutputStream
 import java.net.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -43,7 +45,16 @@ class Socks5ProxyServer @Inject constructor(
     private var serverSocket: ServerSocket? = null
     private var udpRelaySocket: DatagramSocket? = null
     private var running = false
+    // Dedicated thread pool for relay I/O — avoids starving the accept loop
+    // when many concurrent connections exhaust Dispatchers.IO (default 64 threads).
+    private var relayExecutor = newRelayExecutor()
+    private var relayDispatcher = relayExecutor.asCoroutineDispatcher()
+    private val relayThreadId = AtomicInteger(0)
     private var scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private fun newRelayExecutor() = Executors.newCachedThreadPool { r ->
+        Thread(r, "socks5-relay-${relayThreadId.getAndIncrement()}").apply { isDaemon = true }
+    }
 
     private val _bytesIn = AtomicLong(0)
     private val _bytesOut = AtomicLong(0)
@@ -68,26 +79,34 @@ class Socks5ProxyServer @Inject constructor(
         if (running) return
         running = true
         scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        relayExecutor = newRelayExecutor()
+        relayDispatcher = relayExecutor.asCoroutineDispatcher()
+
+        // Accept loop on a dedicated thread so it can never be starved by relay I/O.
+        Thread({
+            try {
+                serverSocket = ServerSocket(port).apply { reuseAddress = true }
+                Log.i(TAG, "SOCKS5 proxy listening on port $port (TCP)")
+
+                while (running) {
+                    val client = serverSocket?.accept() ?: break
+                    scope.launch { handleClient(client) }
+                }
+            } catch (e: Exception) {
+                if (running) Log.e(TAG, "Accept loop error", e)
+            }
+        }, "socks5-accept").apply { isDaemon = true; start() }
 
         scope.launch {
             try {
-                serverSocket = ServerSocket(port)
-                Log.i(TAG, "SOCKS5 proxy listening on port $port (TCP)")
-
                 udpRelaySocket = DatagramSocket(null).apply {
                     reuseAddress = true
                     bind(InetSocketAddress(port))
                 }
                 Log.i(TAG, "SOCKS5 UDP relay listening on port $port (UDP)")
-
-                launch { udpRelayLoop() }
-
-                while (running) {
-                    val client = serverSocket?.accept() ?: break
-                    launch { handleClient(client) }
-                }
+                udpRelayLoop()
             } catch (e: Exception) {
-                if (running) Log.e(TAG, "Server error", e)
+                if (running) Log.e(TAG, "UDP relay error", e)
             }
         }
     }
@@ -102,6 +121,7 @@ class Socks5ProxyServer @Inject constructor(
         udpSessions.clear()
         pendingAssociations.clear()
         scope.cancel()
+        relayExecutor.shutdownNow()
     }
 
     private suspend fun handleClient(clientSocket: Socket) {
@@ -455,7 +475,7 @@ class Socks5ProxyServer @Inject constructor(
     }
 
     private suspend fun relay(client: Socket, target: Socket) = coroutineScope {
-        val job1 = launch(Dispatchers.IO) {
+        val job1 = launch(relayDispatcher) {
             try {
                 val buffer = ByteArray(BUFFER_SIZE)
                 val input = client.getInputStream()
@@ -469,7 +489,7 @@ class Socks5ProxyServer @Inject constructor(
             } catch (_: Exception) {}
             finally { try { target.shutdownOutput() } catch (_: Exception) {} }
         }
-        val job2 = launch(Dispatchers.IO) {
+        val job2 = launch(relayDispatcher) {
             try {
                 val buffer = ByteArray(BUFFER_SIZE)
                 val input = target.getInputStream()

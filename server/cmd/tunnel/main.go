@@ -1180,15 +1180,20 @@ func (s *tunnelServer) handleForwardedConn(conn net.Conn) {
 
 	// 3. Connect to device's SOCKS5 proxy via tun0
 	socksAddr := fmt.Sprintf("%s:1080", deviceIP)
-	socksConn, err := net.DialTimeout("tcp", socksAddr, 15*time.Second)
+	socksConn, err := net.DialTimeout("tcp", socksAddr, 10*time.Second)
 	if err != nil {
 		log.Printf("[socks-fwd] dial %s failed: %v", socksAddr, err)
 		return
 	}
 	defer socksConn.Close()
 
+	// Disable Nagle — send SOCKS5 greeting immediately
+	if tc, ok := socksConn.(*net.TCPConn); ok {
+		tc.SetNoDelay(true)
+	}
+
 	// 4. SOCKS5 handshake (username/password auth + CONNECT)
-	socksConn.SetDeadline(time.Now().Add(15 * time.Second))
+	socksConn.SetDeadline(time.Now().Add(10 * time.Second))
 	dstStr := origIP.String()
 	if err := socks5Connect(socksConn, auth.user, auth.pass, dstStr, origPort); err != nil {
 		log.Printf("[socks-fwd] SOCKS5 handshake to %s for %s:%d failed: %v",
