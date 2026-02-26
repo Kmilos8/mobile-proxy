@@ -25,15 +25,14 @@ import (
 )
 
 const (
-	connectTimeout   = 15 * time.Second   // dial + CONNECT handshake timeout
-	peekTimeout      = 200 * time.Millisecond // time to wait for initial client data (TLS ClientHello arrives in <10ms; 200ms covers slow clients without blocking speed tests)
-	idleTimeout      = 120 * time.Second  // 2 min idle before killing connection
-	halfCloseTimeout = 5 * time.Second    // after one direction finishes, wait this long for the other
-	queueTimeout     = 10 * time.Second   // max time to wait for a connection slot
-	maxRetries       = 2
-	copyBufSize      = 128 * 1024 // 128KB copy buffer for throughput
-	peekSize         = 4096       // enough for TLS ClientHello or HTTP request line + headers
-	maxActiveConns   = 8          // max TOTAL concurrent connections per device (dial + data transfer)
+	connectTimeout    = 30 * time.Second  // dial + CONNECT handshake timeout (device proxy can take 8s+ under load)
+	peekTimeout       = 200 * time.Millisecond // time to wait for initial client data (TLS ClientHello arrives in <10ms; 200ms covers slow clients without blocking speed tests)
+	idleTimeout       = 120 * time.Second // 2 min idle before killing connection
+	halfCloseTimeout  = 10 * time.Second  // after one direction finishes, wait this long for the other
+	maxRetries        = 2
+	copyBufSize       = 128 * 1024 // 128KB copy buffer for throughput
+	peekSize          = 4096       // enough for TLS ClientHello or HTTP request line + headers
+	maxConcurrentDial = 4          // limit concurrent CONNECT dials per device (thundering herd prevention)
 )
 
 // proxyTarget holds the HTTP CONNECT proxy endpoint and credentials.
@@ -41,7 +40,7 @@ type proxyTarget struct {
 	Endpoint string // host:port (e.g. 192.168.255.2:8080)
 	Username string
 	Password string
-	connSem  chan struct{} // limits TOTAL concurrent connections (dial + data) to this device
+	dialSem  chan struct{} // limits concurrent CONNECT dials to this device
 }
 
 // connectResult holds the connection and any buffered reader from the CONNECT handshake.
@@ -74,7 +73,7 @@ func (p *Proxy) AddMapping(clientIP, proxyEndpoint, username, password string) {
 		Endpoint: proxyEndpoint,
 		Username: username,
 		Password: password,
-		connSem:  make(chan struct{}, maxActiveConns),
+		dialSem:  make(chan struct{}, maxConcurrentDial),
 	}
 	log.Printf("[tproxy] added mapping: %s -> %s (user=%s)", clientIP, proxyEndpoint, username)
 }
@@ -166,17 +165,9 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		}
 	}
 
-	// Acquire connection semaphore — limits TOTAL concurrent connections (dial + data
-	// transfer) per device. Without this, a browser opening 30+ connections saturates
-	// the cellular UDP tunnel and the device proxy becomes unresponsive.
-	select {
-	case target.connSem <- struct{}{}:
-		// acquired
-	case <-time.After(queueTimeout):
-		log.Printf("[tproxy] queue full, dropping %s -> %s", clientIP, connectAddr)
-		return
-	}
-	defer func() { <-target.connSem }()
+	// Acquire dial semaphore — limits concurrent CONNECT dials per device.
+	// Prevents thundering herd when browser opens 30+ connections at once.
+	target.dialSem <- struct{}{}
 
 	// Retry CONNECT
 	var result *connectResult
@@ -191,6 +182,9 @@ func (p *Proxy) handleConn(conn net.Conn) {
 			time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
 		}
 	}
+
+	// Release dial semaphore after dial completes (success or failure)
+	<-target.dialSem
 
 	if lastErr != nil {
 		log.Printf("[tproxy] CONNECT %s via %s failed after %d attempts: %v", connectAddr, target.Endpoint, maxRetries, lastErr)
