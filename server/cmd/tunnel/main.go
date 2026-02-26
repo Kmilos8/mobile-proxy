@@ -249,6 +249,17 @@ func configureTUN(name string) {
 			log.Printf("Warning: FORWARD rule for %s failed: %s: %v", ovpnSubnet, string(out), err)
 		}
 	}
+	// Allow redirected TCP from OpenVPN clients to reach the SOCKS5 forwarder.
+	// The nft INPUT chain has DROP policy (UFW), so we need an explicit ACCEPT.
+	fwdPort := strconv.Itoa(socksForwardPort)
+	if _, err := runCmd("iptables", "-C", "INPUT", "-s", ovpnSubnet, "-p", "tcp", "--dport", fwdPort, "-j", "ACCEPT"); err != nil {
+		if out, err := runCmd("iptables", "-I", "INPUT", "1", "-s", ovpnSubnet, "-p", "tcp", "--dport", fwdPort, "-j", "ACCEPT"); err != nil {
+			log.Printf("Warning: INPUT ACCEPT for SOCKS forwarder failed: %s: %v", string(out), err)
+		} else {
+			log.Printf("Added INPUT ACCEPT for %s tcp dport %s", ovpnSubnet, fwdPort)
+		}
+	}
+
 	// Blackhole safety: unmapped OpenVPN clients can't leak through server's internet.
 	// Table 99 has only "blackhole default" — any client without a specific routing rule
 	// will hit this and get dropped.
