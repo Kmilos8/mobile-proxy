@@ -9,7 +9,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Protocol Stability
 
-- [ ] **PROTO-01**: OpenVPN direct access delivers usable throughput (pages load fully, speed tests complete)
+- [x] **PROTO-01**: OpenVPN direct access delivers usable throughput (pages load fully, speed tests complete)
 - [ ] **PROTO-02**: HTTP and SOCKS5 proxies remain stable under production load
 
 ### Dashboard Redesign
@@ -83,7 +83,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROTO-01 | Phase 1 | Pending |
+| PROTO-01 | Phase 1 | Complete |
 | PROTO-02 | Phase 1 | Pending |
 | DASH-01 | Phase 2 | Pending |
 | DASH-02 | Phase 2 | Pending |
