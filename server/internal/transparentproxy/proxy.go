@@ -120,15 +120,17 @@ func (p *Proxy) Start() error {
 func (p *Proxy) handleConn(conn net.Conn) {
 	defer conn.Close()
 
+	clientAddr := conn.RemoteAddr().(*net.TCPAddr)
+	log.Printf("[tproxy] accept: %s -> %s", clientAddr, conn.LocalAddr())
+
 	// Get the original destination via SO_ORIGINAL_DST
 	origDst, err := getOriginalDst(conn)
 	if err != nil {
-		log.Printf("[tproxy] failed to get original dst: %v", err)
+		log.Printf("[tproxy] failed to get original dst for %s: %v", clientAddr, err)
 		return
 	}
 
 	// Get the client's source IP to look up the proxy mapping
-	clientAddr := conn.RemoteAddr().(*net.TCPAddr)
 	clientIP := clientAddr.IP.String()
 
 	target, ok := p.getMapping(clientIP)
@@ -171,7 +173,7 @@ func (p *Proxy) handleConn(conn net.Conn) {
 	case target.connSem <- struct{}{}:
 		// acquired
 	case <-time.After(queueTimeout):
-		// too many connections queued — drop this one (browser will retry)
+		log.Printf("[tproxy] queue full, dropping %s -> %s", clientIP, connectAddr)
 		return
 	}
 	defer func() { <-target.connSem }()
@@ -195,6 +197,7 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		return
 	}
 	defer result.conn.Close()
+	log.Printf("[tproxy] CONNECT %s via %s OK, proxying", connectAddr, target.Endpoint)
 
 	// Set TCP_NODELAY on both sides for lower latency
 	setTCPNoDelay(conn)
