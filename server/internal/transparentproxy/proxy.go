@@ -26,7 +26,7 @@ import (
 
 const (
 	connectTimeout = 10 * time.Second
-	peekTimeout    = 2 * time.Second  // time to wait for initial client data
+	peekTimeout    = 200 * time.Millisecond // time to wait for initial client data (TLS ClientHello arrives in <10ms; 200ms covers slow clients without blocking speed tests)
 	idleTimeout    = 300 * time.Second // 5 min idle before killing connection
 	maxRetries     = 2
 	copyBufSize    = 128 * 1024 // 128KB copy buffer for throughput
