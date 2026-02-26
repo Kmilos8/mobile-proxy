@@ -43,12 +43,12 @@ Plans:
   3. Operator can view a connection detail page showing host, port, username, password, and .ovpn download with one-click copy for each field
   4. Dashboard layout is usable on desktop and tablet (no horizontal scroll, no broken layouts at 768px+)
   5. Operator can delete a proxy connection and the port is freed
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: Initialize shadcn/ui and TanStack Query; rebuild device list page with live status cards
-- [ ] 02-02: Build connection creation dialog (react-hook-form + zod) and connection detail page
-- [ ] 02-03: Apply responsive layout across all pages; add one-click credential copy
+- [ ] 02-01-PLAN.md — Install shadcn/ui, dark theme, collapsible sidebar, device table home page, backend openvpn proxy_type
+- [ ] 02-02-PLAN.md — Device detail page with connection management: create/view/copy/delete connections
+- [ ] 02-03-PLAN.md — Visual and functional verification checkpoint
 
 ### Phase 3: Security and Monitoring
 **Goal**: Credentials are not stored or transmitted in plaintext, bandwidth limits are enforced, and operators are alerted when devices go offline
@@ -72,5 +72,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. OpenVPN Throughput | 2/2 | Complete    | 2026-02-26 |
-| 2. Dashboard | 0/3 | Not started | - |
+| 2. Dashboard | 0/3 | Planning complete | - |
 | 3. Security and Monitoring | 0/2 | Not started | - |
