@@ -10,27 +10,27 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 1 of 3 (OpenVPN Throughput)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-26 — Completed 01-01 (OpenVPN throughput tuning)
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-02-26 — Completed 01-02 (OpenVPN client-connect error handling + PROTO-02 verification)
 
-Progress: [█░░░░░░░░░] 17%
+Progress: [██░░░░░░░░] 33%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: ~1 min
-- Total execution time: ~1 min
+- Total plans completed: 2
+- Average duration: ~2 min
+- Total execution time: ~3 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-openvpn-throughput | 1/2 | ~1 min | ~1 min |
+| 01-openvpn-throughput | 2/2 | ~3 min | ~2 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (~1 min)
+- Last 5 plans: 01-01 (~1 min), 01-02 (~2 min)
 - Trend: —
 
 *Updated after each plan completion*
@@ -48,6 +48,8 @@ Recent decisions affecting current work:
 - 01-01: peekTimeout set to 200ms — TLS ClientHello arrives in <10ms; 200ms safe margin without blocking speed tests
 - 01-01: sndbuf/rcvbuf value 0 (OS autotuning) — fixed 524288 cap documented to limit throughput at ~5 Mbps vs 60 Mbps with autotuning
 - 01-01: fast-io added — UDP-only optimization that skips poll/select before each UDP write (5-10% CPU reduction)
+- 01-02: client-connect hook retries set to 2 (1 immediate + 1 retry after 1s) — covers transient API errors without excessive rejection delay
+- 01-02: PROTO-02 confirmed via code review — REDIRECT rules use -s (source IP), DNAT rules use --dport (destination port); different match criteria, no conflict possible
 
 ### Pending Todos
 
@@ -60,5 +62,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 01-01-PLAN.md (OpenVPN throughput tuning — peekTimeout, sndbuf/rcvbuf, fast-io)
+Stopped at: Completed 01-02-PLAN.md (OpenVPN client-connect error handling + PROTO-02 DNAT/REDIRECT isolation verified)
 Resume file: None
