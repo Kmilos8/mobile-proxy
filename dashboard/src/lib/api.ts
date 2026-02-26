@@ -77,7 +77,7 @@ export interface ProxyConnection {
   bandwidth_limit: number
   bandwidth_used: number
   active: boolean
-  proxy_type: 'http' | 'socks5'
+  proxy_type: 'http' | 'socks5' | 'openvpn'
   base_port: number | null
   http_port: number | null
   socks5_port: number | null

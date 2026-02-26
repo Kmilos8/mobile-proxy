@@ -70,8 +70,8 @@ func (s *ConnectionService) Create(ctx context.Context, req *domain.CreateConnec
 	if proxyType == "" {
 		proxyType = "http"
 	}
-	if proxyType != "http" && proxyType != "socks5" {
-		return nil, fmt.Errorf("invalid proxy_type: must be 'http' or 'socks5'")
+	if proxyType != "http" && proxyType != "socks5" && proxyType != "openvpn" {
+		return nil, fmt.Errorf("invalid proxy_type: must be 'http', 'socks5', or 'openvpn'")
 	}
 
 	// Hash password
@@ -98,7 +98,8 @@ func (s *ConnectionService) Create(ctx context.Context, req *domain.CreateConnec
 	}
 
 	// Allocate a unique port for this connection (single port based on type)
-	if s.portService != nil {
+	// OpenVPN uses the shared server port 1195 — no port allocation needed
+	if s.portService != nil && proxyType != "openvpn" {
 		basePort, err := s.portService.AllocatePort(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("allocate connection port: %w", err)
@@ -116,8 +117,9 @@ func (s *ConnectionService) Create(ctx context.Context, req *domain.CreateConnec
 	}
 
 	// If device is online, trigger DNAT refresh for the new connection port
+	// Skip DNAT for openvpn — it uses the shared VPN server port, not per-connection ports
 	tunnelURL := s.getTunnelPushURL(ctx, device)
-	if conn.BasePort != nil && device.VpnIP != "" && tunnelURL != "" {
+	if conn.BasePort != nil && device.VpnIP != "" && tunnelURL != "" && proxyType != "openvpn" {
 		go s.refreshDNAT(tunnelURL, device.ID.String(), *conn.BasePort, device.VpnIP, proxyType)
 	}
 
