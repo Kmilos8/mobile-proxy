@@ -249,14 +249,15 @@ func configureTUN(name string) {
 			log.Printf("Warning: FORWARD rule for %s failed: %s: %v", ovpnSubnet, string(out), err)
 		}
 	}
-	// Allow redirected TCP from OpenVPN clients to reach the SOCKS5 forwarder.
+	// Allow DNAT'd TCP from OpenVPN clients to reach the SOCKS5 forwarder.
 	// The nft INPUT chain has DROP policy (UFW), so we need an explicit ACCEPT.
+	// DNAT rewrites dst to 192.168.255.1:12345 (tun0 IP), so match on dst+dport.
 	fwdPort := strconv.Itoa(socksForwardPort)
-	if _, err := runCmd("iptables", "-C", "INPUT", "-s", ovpnSubnet, "-p", "tcp", "--dport", fwdPort, "-j", "ACCEPT"); err != nil {
-		if out, err := runCmd("iptables", "-I", "INPUT", "1", "-s", ovpnSubnet, "-p", "tcp", "--dport", fwdPort, "-j", "ACCEPT"); err != nil {
+	if _, err := runCmd("iptables", "-C", "INPUT", "-d", tunIP, "-p", "tcp", "--dport", fwdPort, "-j", "ACCEPT"); err != nil {
+		if out, err := runCmd("iptables", "-I", "INPUT", "1", "-d", tunIP, "-p", "tcp", "--dport", fwdPort, "-j", "ACCEPT"); err != nil {
 			log.Printf("Warning: INPUT ACCEPT for SOCKS forwarder failed: %s: %v", string(out), err)
 		} else {
-			log.Printf("Added INPUT ACCEPT for %s tcp dport %s", ovpnSubnet, fwdPort)
+			log.Printf("Added INPUT ACCEPT for dst %s tcp dport %s", tunIP, fwdPort)
 		}
 	}
 
@@ -586,10 +587,11 @@ func (s *tunnelServer) teardownDeviceRouting(deviceVPNIP string) {
 				break
 			}
 		}
+		dnatTarget := tunIP + ":" + strconv.Itoa(socksForwardPort)
 		for {
 			if _, err := runCmd("iptables", "-t", "nat", "-D", "PREROUTING",
-				"-s", clientIP+"/32", "-p", "tcp", "-j", "REDIRECT",
-				"--to-port", strconv.Itoa(socksForwardPort)); err != nil {
+				"-s", clientIP+"/32", "-p", "tcp", "-j", "DNAT",
+				"--to-destination", dnatTarget); err != nil {
 				break
 			}
 		}
@@ -1050,24 +1052,27 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Remove stale iptables REDIRECT rule for TCP (idempotent)
+	// Remove stale iptables DNAT rule for TCP (idempotent)
+	dnatTarget := tunIP + ":" + strconv.Itoa(socksForwardPort) // 192.168.255.1:12345
 	for {
 		if _, err := runCmd("iptables", "-t", "nat", "-D", "PREROUTING",
-			"-s", req.ClientVPNIP+"/32", "-p", "tcp", "-j", "REDIRECT",
-			"--to-port", strconv.Itoa(socksForwardPort)); err != nil {
+			"-s", req.ClientVPNIP+"/32", "-p", "tcp", "-j", "DNAT",
+			"--to-destination", dnatTarget); err != nil {
 			break
 		}
 	}
 
-	// Add iptables REDIRECT: TCP from this client → SOCKS5 forwarder
+	// Add iptables DNAT: TCP from this client → SOCKS5 forwarder on tun0 IP
+	// (REDIRECT won't work: it rewrites dst to tun1 address, which causes
+	// "cross-device link" routing failure with source-based ip rules)
 	if out, err := runCmd("iptables", "-t", "nat", "-I", "PREROUTING",
-		"-s", req.ClientVPNIP+"/32", "-p", "tcp", "-j", "REDIRECT",
-		"--to-port", strconv.Itoa(socksForwardPort)); err != nil {
-		log.Printf("[routing] iptables REDIRECT add failed: %s: %v", string(out), err)
+		"-s", req.ClientVPNIP+"/32", "-p", "tcp", "-j", "DNAT",
+		"--to-destination", dnatTarget); err != nil {
+		log.Printf("[routing] iptables DNAT add failed: %s: %v", string(out), err)
 	}
 
-	log.Printf("[routing] client %s -> table %d (device %s) + TCP REDIRECT -> :%d (socks_user=%s)",
-		req.ClientVPNIP, tableNum, req.DeviceVPNIP, socksForwardPort, req.SocksUser)
+	log.Printf("[routing] client %s -> table %d (device %s) + TCP DNAT -> %s (socks_user=%s)",
+		req.ClientVPNIP, tableNum, req.DeviceVPNIP, dnatTarget, req.SocksUser)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"ok":true}`))
 }
@@ -1101,11 +1106,12 @@ func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *h
 		}
 	}
 
-	// Remove iptables REDIRECT rules
+	// Remove iptables DNAT rules
+	dnatTarget := tunIP + ":" + strconv.Itoa(socksForwardPort)
 	for {
 		if _, err := runCmd("iptables", "-t", "nat", "-D", "PREROUTING",
-			"-s", req.ClientVPNIP+"/32", "-p", "tcp", "-j", "REDIRECT",
-			"--to-port", strconv.Itoa(socksForwardPort)); err != nil {
+			"-s", req.ClientVPNIP+"/32", "-p", "tcp", "-j", "DNAT",
+			"--to-destination", dnatTarget); err != nil {
 			break
 		}
 	}
