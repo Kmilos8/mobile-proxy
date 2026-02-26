@@ -228,10 +228,13 @@ func (p *Proxy) handleConn(conn net.Conn) {
 }
 
 func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (*connectResult, error) {
+	log.Printf("[tproxy-debug] dialing %s for CONNECT %s", target.Endpoint, addr)
 	conn, err := net.DialTimeout("tcp", target.Endpoint, connectTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("dial proxy: %w", err)
 	}
+
+	log.Printf("[tproxy-debug] TCP connected: local=%s remote=%s", conn.LocalAddr(), conn.RemoteAddr())
 
 	// Set TCP_NODELAY for faster handshake
 	setTCPNoDelay(conn)
@@ -244,23 +247,39 @@ func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (*connectResul
 	}
 	connectReq += "\r\n"
 
+	log.Printf("[tproxy-debug] sending CONNECT request (%d bytes): %q", len(connectReq), connectReq)
+
 	conn.SetDeadline(time.Now().Add(connectTimeout))
-	_, err = conn.Write([]byte(connectReq))
+	nw, err := conn.Write([]byte(connectReq))
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("write CONNECT: %w", err)
 	}
+	log.Printf("[tproxy-debug] CONNECT written: %d bytes, waiting for response...", nw)
 
 	// Read response using a bufio.Reader. CRITICAL: we must keep this reader
 	// because it may have buffered data past the HTTP response headers.
 	// Passing the raw conn to io.Copy would lose those bytes.
 	br := bufio.NewReaderSize(conn, copyBufSize)
+
+	// Try reading first byte to see if ANY data arrives
+	conn.SetReadDeadline(time.Now().Add(connectTimeout))
+	firstByte, err := br.ReadByte()
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("read first byte of CONNECT response: %w", err)
+	}
+	br.UnreadByte()
+	log.Printf("[tproxy-debug] got first byte: 0x%02x ('%c')", firstByte, firstByte)
+
 	resp, err := http.ReadResponse(br, nil)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("read CONNECT response: %w", err)
 	}
 	resp.Body.Close()
+
+	log.Printf("[tproxy-debug] CONNECT response: %d %s", resp.StatusCode, resp.Status)
 
 	if resp.StatusCode != 200 {
 		conn.Close()

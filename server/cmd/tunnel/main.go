@@ -763,6 +763,7 @@ func (s *tunnelServer) startPushAPI() {
 	mux.HandleFunc("/teardown-dnat", s.handleTeardownDNAT)
 	mux.HandleFunc("/openvpn-client-connect", s.handleOpenVPNClientConnect)
 	mux.HandleFunc("/openvpn-client-disconnect", s.handleOpenVPNClientDisconnect)
+	mux.HandleFunc("/debug-proxy-test", s.handleDebugProxyTest)
 
 	log.Printf("Push API listening on port %d", pushPort)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", pushPort), mux); err != nil {
@@ -977,4 +978,69 @@ func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *h
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"ok":true}`))
+}
+
+// handleDebugProxyTest makes a test TCP connection from WITHIN the tunnel process
+// to the device proxy, to diagnose if the in-process connection behaves differently
+// from external connections (curl, netcat).
+func (s *tunnelServer) handleDebugProxyTest(w http.ResponseWriter, r *http.Request) {
+	deviceIP := r.URL.Query().Get("ip")
+	if deviceIP == "" {
+		deviceIP = "192.168.255.2"
+	}
+	target := deviceIP + ":8080"
+
+	result := map[string]interface{}{}
+
+	// Step 1: TCP dial
+	log.Printf("[debug-test] dialing %s from within tunnel process...", target)
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", target, 5*time.Second)
+	if err != nil {
+		result["error"] = fmt.Sprintf("dial failed: %v", err)
+		result["duration_ms"] = time.Since(start).Milliseconds()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+		return
+	}
+	defer conn.Close()
+
+	result["dial_ok"] = true
+	result["local_addr"] = conn.LocalAddr().String()
+	result["remote_addr"] = conn.RemoteAddr().String()
+	result["dial_ms"] = time.Since(start).Milliseconds()
+	log.Printf("[debug-test] connected: local=%s remote=%s (%dms)", conn.LocalAddr(), conn.RemoteAddr(), result["dial_ms"])
+
+	// Step 2: Send CONNECT request (no auth — expect 407)
+	connectReq := "CONNECT google.com:443 HTTP/1.1\r\nHost: google.com:443\r\n\r\n"
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	nw, err := conn.Write([]byte(connectReq))
+	if err != nil {
+		result["error"] = fmt.Sprintf("write failed: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+		return
+	}
+	result["write_ok"] = true
+	result["bytes_written"] = nw
+	log.Printf("[debug-test] wrote %d bytes, waiting for response...", nw)
+
+	// Step 3: Read response
+	readStart := time.Now()
+	respBuf := make([]byte, 4096)
+	nr, err := conn.Read(respBuf)
+	result["read_ms"] = time.Since(readStart).Milliseconds()
+	if err != nil {
+		result["error"] = fmt.Sprintf("read failed after %dms: %v", result["read_ms"], err)
+		log.Printf("[debug-test] read failed: %v", err)
+	} else {
+		result["read_ok"] = true
+		result["bytes_read"] = nr
+		result["response"] = string(respBuf[:nr])
+		log.Printf("[debug-test] got response (%d bytes, %dms): %s", nr, result["read_ms"], string(respBuf[:nr]))
+	}
+
+	result["total_ms"] = time.Since(start).Milliseconds()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
