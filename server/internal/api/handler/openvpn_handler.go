@@ -108,6 +108,8 @@ func (h *OpenVPNHandler) Connect(c *gin.Context) {
 	body, _ := json.Marshal(map[string]interface{}{
 		"client_vpn_ip": req.VpnIP,
 		"device_vpn_ip": device.VpnIP,
+		"socks_user":    conn.Username,
+		"socks_pass":    conn.PasswordPlain,
 	})
 	resp, err := http.Post(pushURL+"/openvpn-client-connect", "application/json", bytes.NewReader(body))
 	if err != nil {

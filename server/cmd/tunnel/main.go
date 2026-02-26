@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -12,7 +14,9 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/songgao/water"
 )
@@ -43,6 +47,8 @@ const (
 	deviceIDLen      = 16
 	udpRecvBufSize   = 4 * 1024 * 1024 // 4MB UDP socket buffer
 	udpSendBufSize   = 4 * 1024 * 1024
+	socksForwardPort = 12345 // transparent TCP → SOCKS5 forwarder
+	ovpnSubnet       = "10.9.0.0/24"
 )
 
 type client struct {
@@ -81,8 +87,14 @@ type tunnelServer struct {
 
 	// NAT routing: policy routing tables for OpenVPN client traffic
 	routingMu        sync.Mutex
-	deviceRouteTable map[string]int    // device VPN IP (192.168.255.x) -> routing table number
-	clientToDevice   map[string]string // client VPN IP (10.9.0.x) -> device VPN IP (192.168.255.x)
+	deviceRouteTable map[string]int         // device VPN IP (192.168.255.x) -> routing table number
+	clientToDevice   map[string]string      // client VPN IP (10.9.0.x) -> device VPN IP (192.168.255.x)
+	clientSocksAuth  map[string]socksAuth   // client VPN IP (10.9.0.x) -> SOCKS5 credentials
+}
+
+type socksAuth struct {
+	user string
+	pass string
 }
 
 func main() {
@@ -135,6 +147,7 @@ func main() {
 		tunBuf:           make([]byte, maxPacketSize+1), // +1 for type prefix
 		deviceRouteTable: make(map[string]int),
 		clientToDevice:   make(map[string]string),
+		clientSocksAuth:  make(map[string]socksAuth),
 	}
 
 	// Start goroutines
@@ -143,6 +156,7 @@ func main() {
 	go srv.cleanupLoop()
 	go srv.tcpAuthListener(port)
 	go srv.startPushAPI()
+	go srv.startSocksForwarder()
 
 	// Block forever
 	select {}
@@ -550,17 +564,25 @@ func (s *tunnelServer) teardownDeviceRouting(deviceVPNIP string) {
 	}
 	for _, clientIP := range clientsToRemove {
 		delete(s.clientToDevice, clientIP)
+		delete(s.clientSocksAuth, clientIP)
 	}
 	s.routingMu.Unlock()
 
-	// Remove client ip rules
+	// Remove client ip rules and iptables REDIRECT rules
 	for _, clientIP := range clientsToRemove {
 		for {
 			if _, err := runCmd("ip", "rule", "del", "from", clientIP+"/32", "priority", "100"); err != nil {
 				break
 			}
 		}
-		log.Printf("[routing] removed client rule: %s/32", clientIP)
+		for {
+			if _, err := runCmd("iptables", "-t", "nat", "-D", "PREROUTING",
+				"-s", clientIP+"/32", "-p", "tcp", "-j", "REDIRECT",
+				"--to-port", strconv.Itoa(socksForwardPort)); err != nil {
+				break
+			}
+		}
+		log.Printf("[routing] removed client rules: %s/32", clientIP)
 	}
 
 	// Remove routing table
@@ -968,7 +990,10 @@ func (s *tunnelServer) handleTeardownDNAT(w http.ResponseWriter, r *http.Request
 }
 
 // handleOpenVPNClientConnect is called by the API when an OpenVPN client connects.
-// It adds a policy routing rule so the client's traffic is routed through the device's tunnel.
+// Sets up:
+//  1. ip rule for UDP routing through device tunnel (DNS, QUIC)
+//  2. iptables REDIRECT for TCP → SOCKS5 forwarder (high-speed path)
+//  3. SOCKS5 credentials for the forwarder to authenticate to the phone's proxy
 func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -978,6 +1003,8 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 	var req struct {
 		ClientVPNIP string `json:"client_vpn_ip"` // 10.9.0.x
 		DeviceVPNIP string `json:"device_vpn_ip"` // 192.168.255.y
+		SocksUser   string `json:"socks_user"`
+		SocksPass   string `json:"socks_pass"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -994,6 +1021,7 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 		return
 	}
 	s.clientToDevice[req.ClientVPNIP] = req.DeviceVPNIP
+	s.clientSocksAuth[req.ClientVPNIP] = socksAuth{user: req.SocksUser, pass: req.SocksPass}
 	s.routingMu.Unlock()
 
 	// Remove any stale ip rule for this client (idempotent)
@@ -1003,7 +1031,7 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 		}
 	}
 
-	// Add ip rule: traffic from this client uses the device's routing table
+	// Add ip rule: UDP traffic from this client uses the device's routing table
 	tableStr := strconv.Itoa(tableNum)
 	if out, err := runCmd("ip", "rule", "add", "from", req.ClientVPNIP+"/32", "lookup", tableStr, "priority", "100"); err != nil {
 		log.Printf("[routing] ip rule add failed: %s: %v", string(out), err)
@@ -1011,13 +1039,30 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 		return
 	}
 
-	log.Printf("[routing] client %s -> table %d (device %s)", req.ClientVPNIP, tableNum, req.DeviceVPNIP)
+	// Remove stale iptables REDIRECT rule for TCP (idempotent)
+	for {
+		if _, err := runCmd("iptables", "-t", "nat", "-D", "PREROUTING",
+			"-s", req.ClientVPNIP+"/32", "-p", "tcp", "-j", "REDIRECT",
+			"--to-port", strconv.Itoa(socksForwardPort)); err != nil {
+			break
+		}
+	}
+
+	// Add iptables REDIRECT: TCP from this client → SOCKS5 forwarder
+	if out, err := runCmd("iptables", "-t", "nat", "-I", "PREROUTING",
+		"-s", req.ClientVPNIP+"/32", "-p", "tcp", "-j", "REDIRECT",
+		"--to-port", strconv.Itoa(socksForwardPort)); err != nil {
+		log.Printf("[routing] iptables REDIRECT add failed: %s: %v", string(out), err)
+	}
+
+	log.Printf("[routing] client %s -> table %d (device %s) + TCP REDIRECT -> :%d (socks_user=%s)",
+		req.ClientVPNIP, tableNum, req.DeviceVPNIP, socksForwardPort, req.SocksUser)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"ok":true}`))
 }
 
 // handleOpenVPNClientDisconnect is called by the API when an OpenVPN client disconnects.
-// It removes the policy routing rule for the client.
+// Removes ip rule, iptables REDIRECT, and SOCKS5 credentials for the client.
 func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1032,9 +1077,10 @@ func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Remove from client mapping
+	// Remove from client mappings
 	s.routingMu.Lock()
 	delete(s.clientToDevice, req.ClientVPNIP)
+	delete(s.clientSocksAuth, req.ClientVPNIP)
 	s.routingMu.Unlock()
 
 	// Remove ip rules — loop to remove all duplicates
@@ -1044,7 +1090,215 @@ func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *h
 		}
 	}
 
-	log.Printf("[routing] client disconnect: removed rule for %s", req.ClientVPNIP)
+	// Remove iptables REDIRECT rules
+	for {
+		if _, err := runCmd("iptables", "-t", "nat", "-D", "PREROUTING",
+			"-s", req.ClientVPNIP+"/32", "-p", "tcp", "-j", "REDIRECT",
+			"--to-port", strconv.Itoa(socksForwardPort)); err != nil {
+			break
+		}
+	}
+
+	log.Printf("[routing] client disconnect: removed rules for %s", req.ClientVPNIP)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"ok":true}`))
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SOCKS5 transparent forwarder
+//
+// TCP from OpenVPN clients is iptables-REDIRECTed to this listener.
+// For each connection:
+//   1. SO_ORIGINAL_DST → real destination (e.g. google.com:443)
+//   2. Source IP → look up device + SOCKS5 credentials
+//   3. Connect to device's SOCKS5 proxy (192.168.255.x:1080) via tun0
+//   4. SOCKS5 CONNECT to original destination
+//   5. Bidirectional relay with io.Copy
+//
+// This achieves high throughput because the server↔device path uses kernel TCP
+// (through tun0/UDP tunnel), and the device↔internet path uses kernel TCP over
+// cellular. No userspace TCP packet construction anywhere.
+// ──────────────────────────────────────────────────────────────────────────────
+
+func (s *tunnelServer) startSocksForwarder() {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", socksForwardPort))
+	if err != nil {
+		log.Fatalf("[socks-fwd] failed to listen on port %d: %v", socksForwardPort, err)
+	}
+	log.Printf("[socks-fwd] listening on port %d", socksForwardPort)
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Printf("[socks-fwd] accept error: %v", err)
+			continue
+		}
+		go s.handleForwardedConn(conn)
+	}
+}
+
+func (s *tunnelServer) handleForwardedConn(conn net.Conn) {
+	defer conn.Close()
+
+	// 1. Get the real destination before iptables REDIRECT changed it
+	origIP, origPort, err := getOriginalDst(conn)
+	if err != nil {
+		log.Printf("[socks-fwd] getOriginalDst failed: %v", err)
+		return
+	}
+
+	// 2. Look up which device to route through (based on source IP)
+	srcAddr := conn.RemoteAddr().(*net.TCPAddr)
+	srcIP := srcAddr.IP.String()
+
+	s.routingMu.Lock()
+	deviceIP, ok := s.clientToDevice[srcIP]
+	auth := s.clientSocksAuth[srcIP]
+	s.routingMu.Unlock()
+
+	if !ok {
+		log.Printf("[socks-fwd] no device mapping for client %s", srcIP)
+		return
+	}
+
+	// 3. Connect to device's SOCKS5 proxy via tun0
+	socksAddr := fmt.Sprintf("%s:1080", deviceIP)
+	socksConn, err := net.DialTimeout("tcp", socksAddr, 15*time.Second)
+	if err != nil {
+		log.Printf("[socks-fwd] dial %s failed: %v", socksAddr, err)
+		return
+	}
+	defer socksConn.Close()
+
+	// 4. SOCKS5 handshake (username/password auth + CONNECT)
+	socksConn.SetDeadline(time.Now().Add(15 * time.Second))
+	dstStr := origIP.String()
+	if err := socks5Connect(socksConn, auth.user, auth.pass, dstStr, origPort); err != nil {
+		log.Printf("[socks-fwd] SOCKS5 handshake to %s for %s:%d failed: %v",
+			socksAddr, dstStr, origPort, err)
+		return
+	}
+	socksConn.SetDeadline(time.Time{}) // clear deadline for relay
+
+	// 5. Bidirectional relay
+	done := make(chan struct{})
+	go func() {
+		io.Copy(socksConn, conn)
+		if tc, ok := socksConn.(*net.TCPConn); ok {
+			tc.CloseWrite()
+		}
+		done <- struct{}{}
+	}()
+	io.Copy(conn, socksConn)
+	if tc, ok := conn.(*net.TCPConn); ok {
+		tc.CloseWrite()
+	}
+	<-done
+}
+
+// getOriginalDst retrieves the original destination address of a connection
+// that was redirected by iptables REDIRECT. Uses the SO_ORIGINAL_DST socket option.
+func getOriginalDst(conn net.Conn) (net.IP, uint16, error) {
+	const soOriginalDst = 80
+
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return nil, 0, fmt.Errorf("not a TCP connection")
+	}
+
+	rawConn, err := tcpConn.SyscallConn()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var addr [16]byte // sockaddr_in: family(2) + port(2) + addr(4) + padding(8)
+	var sockErr error
+
+	err = rawConn.Control(func(fd uintptr) {
+		addrLen := uint32(16)
+		_, _, errno := syscall.Syscall6(
+			syscall.SYS_GETSOCKOPT,
+			fd,
+			uintptr(syscall.SOL_IP),
+			soOriginalDst,
+			uintptr(unsafe.Pointer(&addr[0])),
+			uintptr(unsafe.Pointer(&addrLen)),
+			0,
+		)
+		if errno != 0 {
+			sockErr = errno
+		}
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	if sockErr != nil {
+		return nil, 0, sockErr
+	}
+
+	// struct sockaddr_in layout: family(2) + port(2 big-endian) + addr(4)
+	port := binary.BigEndian.Uint16(addr[2:4])
+	ip := net.IPv4(addr[4], addr[5], addr[6], addr[7])
+	return ip, port, nil
+}
+
+// socks5Connect performs SOCKS5 handshake with username/password auth and CONNECT.
+func socks5Connect(conn net.Conn, user, pass, dstIP string, dstPort uint16) error {
+	// Auth negotiation: offer username/password method (0x02)
+	if _, err := conn.Write([]byte{0x05, 0x01, 0x02}); err != nil {
+		return fmt.Errorf("auth negotiation write: %w", err)
+	}
+
+	resp := make([]byte, 2)
+	if _, err := io.ReadFull(conn, resp); err != nil {
+		return fmt.Errorf("auth negotiation read: %w", err)
+	}
+	if resp[0] != 0x05 || resp[1] != 0x02 {
+		return fmt.Errorf("auth method rejected: %x %x", resp[0], resp[1])
+	}
+
+	// Username/password auth (RFC 1929)
+	authBuf := make([]byte, 3+len(user)+len(pass))
+	authBuf[0] = 0x01 // subneg version
+	authBuf[1] = byte(len(user))
+	copy(authBuf[2:], user)
+	authBuf[2+len(user)] = byte(len(pass))
+	copy(authBuf[3+len(user):], pass)
+	if _, err := conn.Write(authBuf); err != nil {
+		return fmt.Errorf("auth write: %w", err)
+	}
+
+	if _, err := io.ReadFull(conn, resp); err != nil {
+		return fmt.Errorf("auth response read: %w", err)
+	}
+	if resp[1] != 0x00 {
+		return fmt.Errorf("auth failed: status %d", resp[1])
+	}
+
+	// CONNECT request (IPv4)
+	ip := net.ParseIP(dstIP).To4()
+	if ip == nil {
+		return fmt.Errorf("invalid IPv4: %s", dstIP)
+	}
+	req := make([]byte, 10)
+	req[0] = 0x05 // version
+	req[1] = 0x01 // CONNECT
+	req[2] = 0x00 // reserved
+	req[3] = 0x01 // IPv4
+	copy(req[4:8], ip)
+	binary.BigEndian.PutUint16(req[8:10], dstPort)
+	if _, err := conn.Write(req); err != nil {
+		return fmt.Errorf("connect write: %w", err)
+	}
+
+	// Read reply (minimum 10 bytes for IPv4)
+	reply := make([]byte, 10)
+	if _, err := io.ReadFull(conn, reply); err != nil {
+		return fmt.Errorf("connect reply read: %w", err)
+	}
+	if reply[1] != 0x00 {
+		return fmt.Errorf("connect failed: status %d", reply[1])
+	}
+
+	return nil
 }
