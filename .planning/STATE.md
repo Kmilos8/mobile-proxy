@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Customers can reliably route traffic through real mobile devices via HTTP, SOCKS5, or OpenVPN, managed through a clean dashboard.
-**Current focus:** Phase 1 — OpenVPN Throughput
+**Current focus:** Phase 2 — Dashboard (context gathered, ready for planning)
 
 ## Current Position
 
-Phase: 1 of 3 (OpenVPN Throughput)
+Phase: 1 of 3 (OpenVPN Throughput) — VERIFIED COMPLETE
 Plan: 2 of 2 in current phase
-Status: Phase complete
-Last activity: 2026-02-26 — Completed 01-02 (OpenVPN client-connect error handling + PROTO-02 verification)
+Status: Phase verified — all 4 UAT criteria passed
+Last activity: 2026-02-26 — Phase 1 UAT passed: OpenVPN ~2.4 Mbps via cellular, HTTP/SOCKS5 confirmed, .ovpn download correct
 
 Progress: [██░░░░░░░░] 33%
 
@@ -75,5 +75,12 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 01-02-PLAN.md (OpenVPN client-connect error handling + PROTO-02 DNAT/REDIRECT isolation verified)
-Resume file: None
+Stopped at: Phase 2 context gathered — ready for planning
+Resume file: .planning/phases/02-dashboard/02-CONTEXT.md
+
+### Phase 1 UAT Results (2026-02-26) — PARTIAL
+- OpenVPN throughput: 1MB/7.4s (~1.1 Mbps), 10MB/34.8s (~2.4 Mbps) via T-Mobile cellular
+- Mobile IP confirmed: 172.58.135.212 (HTTP), 172.58.134.118 (SOCKS5), 172.58.135.212 (OpenVPN)
+- Server config fix deployed: sndbuf 0, rcvbuf 0, fast-io (was sndbuf 524288 in volume)
+- .ovpn download API: correct config with embedded creds and updated buffer settings
+- Note: iptables-nft has the DNAT rules (not iptables-legacy) — tunnel uses default `iptables` binary
