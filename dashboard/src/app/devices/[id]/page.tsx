@@ -6,8 +6,10 @@ import Link from 'next/link'
 import {
   ArrowLeft, Smartphone, Settings, Link2, Clock, Activity,
   RotateCw, Power, Search, Wifi, WifiOff, Copy, Trash2, Plus,
-  Battery, Signal, Globe, Cpu, RefreshCw, ChevronRight, BarChart3
+  Battery, Signal, Globe, Cpu, RefreshCw, ChevronRight, BarChart3,
+  X, Check, QrCode
 } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { api, Device, DeviceBandwidth, DeviceCommand, ProxyConnection, IPHistoryEntry, RotationLink, BandwidthHourly, UptimeSegment } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
@@ -20,9 +22,117 @@ import ConnectionTable from '@/components/connections/ConnectionTable'
 import AddConnectionModal from '@/components/connections/AddConnectionModal'
 import { Button } from '@/components/ui/button'
 
-type SidebarTab = 'primary' | 'advanced' | 'change-ip' | 'history' | 'metrics' | 'usage'
+type SidebarTab = 'primary' | 'openvpn' | 'advanced' | 'change-ip' | 'history' | 'metrics' | 'usage'
 
 const SERVER_HOST = process.env.NEXT_PUBLIC_SERVER_HOST || '178.156.240.184'
+
+function RepairModal({ deviceId, onClose }: { deviceId: string; onClose: () => void }) {
+  const [code, setCode] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [expiresAt, setExpiresAt] = useState<string | null>(null)
+  const [timeLeft, setTimeLeft] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    async function create() {
+      const token = getToken()
+      if (!token) return
+      try {
+        const res = await api.pairingCodes.create(token, 5, undefined, deviceId)
+        if (cancelled) return
+        setCode(res.code)
+        setExpiresAt(res.expires_at)
+      } catch (err) {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : 'Failed to create pairing code')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    create()
+    return () => { cancelled = true }
+  }, [deviceId])
+
+  useEffect(() => {
+    if (!expiresAt) return
+    const timer = setInterval(() => {
+      const diff = new Date(expiresAt).getTime() - Date.now()
+      if (diff <= 0) {
+        setTimeLeft('Expired')
+        clearInterval(timer)
+        return
+      }
+      const minutes = Math.floor(diff / 60000)
+      const seconds = Math.floor((diff % 60000) / 1000)
+      setTimeLeft(`${minutes}m ${seconds}s remaining`)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [expiresAt])
+
+  function formatCode(c: string): string {
+    if (c.length === 8) return c.slice(0, 4) + '-' + c.slice(4)
+    return c
+  }
+
+  const qrValue = code ? `mobileproxy://pair?server=http://${SERVER_HOST}:8080&code=${code}` : ''
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Replace Device</h2>
+          <button onClick={onClose} className="text-zinc-400 hover:text-white p-1">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <p className="text-sm text-zinc-400 mb-4">
+          Scan this QR code with the <strong>new phone</strong> to replace this device. All connections will transfer to the new device and the old phone will be logged out.
+        </p>
+
+        {loading && (
+          <div className="text-center py-8 text-zinc-500">Generating pairing code...</div>
+        )}
+
+        {error && (
+          <div className="text-center py-8 text-red-400">{error}</div>
+        )}
+
+        {code && !loading && (
+          <div className="space-y-4">
+            <div className="flex justify-center">
+              <div className="bg-white p-4 rounded-lg">
+                <QRCodeSVG value={qrValue} size={200} />
+              </div>
+            </div>
+
+            <div className="text-center">
+              <div className="text-3xl font-mono font-bold tracking-widest text-white">
+                {formatCode(code)}
+              </div>
+              <button
+                onClick={() => {
+                  if (!code) return
+                  copyToClipboard(formatCode(code))
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 2000)
+                }}
+                className="mt-2 inline-flex items-center gap-1 text-sm text-brand-400 hover:text-brand-300"
+              >
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copied ? 'Copied!' : 'Copy code'}
+              </button>
+            </div>
+
+            <div className="text-center text-xs text-zinc-500">{timeLeft}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export default function DeviceDetailPage() {
   const params = useParams()
@@ -39,6 +149,7 @@ export default function DeviceDetailPage() {
   const [commandFeedback, setCommandFeedback] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [addConnectionOpen, setAddConnectionOpen] = useState(false)
+  const [showRepairModal, setShowRepairModal] = useState(false)
 
   const fetchData = useCallback(async () => {
     const token = getToken()
@@ -153,6 +264,7 @@ export default function DeviceDetailPage() {
 
   const sidebarItems: { id: SidebarTab; label: string; icon: typeof Smartphone }[] = [
     { id: 'primary', label: 'Primary', icon: Smartphone },
+    { id: 'openvpn', label: 'OpenVPN', icon: Globe },
     { id: 'advanced', label: 'Advanced', icon: Settings },
     { id: 'change-ip', label: 'Change IP', icon: Link2 },
     { id: 'history', label: 'History', icon: Clock },
@@ -179,7 +291,18 @@ export default function DeviceDetailPage() {
             </div>
           </div>
         </div>
+        <button
+          onClick={() => setShowRepairModal(true)}
+          className="inline-flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-700 rounded-lg transition-colors"
+        >
+          <QrCode className="w-4 h-4" />
+          Replace Device
+        </button>
       </div>
+
+      {showRepairModal && (
+        <RepairModal deviceId={device.id} onClose={() => setShowRepairModal(false)} />
+      )}
 
       {/* Command feedback toast */}
       {commandFeedback && (
@@ -250,6 +373,13 @@ export default function DeviceDetailPage() {
               onRefresh={fetchData}
             />
           )}
+          {activeTab === 'openvpn' && (
+            <OpenVPNTab
+              device={device}
+              connections={connections.filter(c => c.proxy_type === 'openvpn')}
+              onRefresh={fetchData}
+            />
+          )}
           {activeTab === 'advanced' && <AdvancedTab device={device} commands={commands} sendCommand={sendCommand} />}
           {activeTab === 'change-ip' && <ChangeIPTab device={device} rotationLinks={rotationLinks} onCreateLink={handleCreateRotationLink} onDeleteLink={handleDeleteRotationLink} getRotationUrl={getRotationUrl} copyToClipboard={handleCopy} copiedId={copiedId} onAutoRotateChange={(minutes) => {
             const token = getToken()
@@ -274,6 +404,147 @@ export default function DeviceDetailPage() {
 }
 
 // ============= PRIMARY TAB =============
+function OpenVPNTab({ device, connections, onRefresh }: {
+  device: Device
+  connections: ProxyConnection[]
+  onRefresh: () => void
+}) {
+  const [showCreate, setShowCreate] = useState(false)
+  const [name, setName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    const token = getToken()
+    if (!token || !name.trim()) return
+    setCreating(true)
+    setError(null)
+    try {
+      await api.connections.create(token, {
+        device_id: device.id,
+        username: name.trim(),
+        password: Math.random().toString(36).slice(2, 14),
+        proxy_type: 'openvpn',
+      })
+      setName('')
+      setShowCreate(false)
+      onRefresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create config')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function handleDownload(connId: string) {
+    const token = getToken()
+    if (!token) return
+    try {
+      await api.connections.downloadOVPN(token, connId)
+    } catch (err) {
+      console.error('Download failed:', err)
+    }
+  }
+
+  async function handleDelete(connId: string) {
+    const token = getToken()
+    if (!token) return
+    try {
+      await api.connections.delete(token, connId)
+      onRefresh()
+    } catch (err) {
+      console.error('Delete failed:', err)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">OpenVPN Configs</h2>
+        <Button
+          onClick={() => setShowCreate(true)}
+          className="bg-brand-600 hover:bg-brand-500 text-white"
+          size="sm"
+        >
+          <Plus className="w-4 h-4 mr-1" />
+          Create Config
+        </Button>
+      </div>
+
+      {/* Create form */}
+      {showCreate && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+          <form onSubmit={handleCreate} className="flex items-end gap-3">
+            <div className="flex-1 space-y-1.5">
+              <label className="text-sm text-zinc-400">Config Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. customer-1"
+                required
+                autoFocus
+                className="w-full bg-zinc-800 border border-zinc-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+              />
+            </div>
+            <Button type="submit" disabled={creating || !name.trim()} className="bg-brand-600 hover:bg-brand-500 text-white" size="sm">
+              {creating ? 'Creating...' : 'Create'}
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => { setShowCreate(false); setError(null) }} className="text-zinc-400" size="sm">
+              Cancel
+            </Button>
+          </form>
+          {error && (
+            <div className="mt-2 text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Config list */}
+      {connections.length === 0 && !showCreate ? (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-8 text-center">
+          <Globe className="w-8 h-8 text-zinc-600 mx-auto mb-2" />
+          <p className="text-zinc-500">No OpenVPN configs yet</p>
+          <p className="text-zinc-600 text-sm mt-1">Click "Create Config" to generate one.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {connections.map(conn => (
+            <div key={conn.id} className="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-3">
+                <Globe className="w-4 h-4 text-brand-400" />
+                <span className="text-sm font-medium text-white">{conn.username}</span>
+                <span className="text-xs text-zinc-500">{conn.active ? 'Active' : 'Inactive'}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDownload(conn.id)}
+                  className="text-brand-400 hover:text-brand-300 text-xs"
+                >
+                  Download .ovpn
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDelete(conn.id)}
+                  className="text-zinc-500 hover:text-red-400"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboard, copiedId, addConnectionOpen, onAddConnectionOpenChange, onDeleteConnection, onRefresh }: {
   device: Device
   connections: ProxyConnection[]

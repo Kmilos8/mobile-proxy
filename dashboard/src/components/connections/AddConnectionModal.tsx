@@ -34,7 +34,7 @@ function generatePassword(): string {
 }
 
 export default function AddConnectionModal({ deviceId, open, onOpenChange, onCreated }: AddConnectionModalProps) {
-  const [proxyType, setProxyType] = useState<'http' | 'socks5' | 'openvpn'>('http')
+  const [proxyType, setProxyType] = useState<'http' | 'socks5'>('http')
   const [username, setUsername] = useState(() => generateUsername())
   const [password, setPassword] = useState(() => generatePassword())
   const [loading, setLoading] = useState(false)
@@ -67,7 +67,7 @@ export default function AddConnectionModal({ deviceId, open, onOpenChange, onCre
         device_id: deviceId,
         username,
         password,
-        proxy_type: proxyType,
+        proxy_type: proxyType as string,
       })
       onOpenChange(false)
       // Reset for next open
@@ -95,7 +95,7 @@ export default function AddConnectionModal({ deviceId, open, onOpenChange, onCre
             <label className="text-sm text-zinc-400">Protocol</label>
             <Select
               value={proxyType}
-              onValueChange={(val) => setProxyType(val as 'http' | 'socks5' | 'openvpn')}
+              onValueChange={(val) => setProxyType(val as 'http' | 'socks5')}
             >
               <SelectTrigger className="bg-zinc-800 border-zinc-700 text-white focus:ring-brand-500">
                 <SelectValue />
@@ -103,7 +103,6 @@ export default function AddConnectionModal({ deviceId, open, onOpenChange, onCre
               <SelectContent className="bg-zinc-800 border-zinc-700">
                 <SelectItem value="http" className="text-white focus:bg-zinc-700">HTTP</SelectItem>
                 <SelectItem value="socks5" className="text-white focus:bg-zinc-700">SOCKS5</SelectItem>
-                <SelectItem value="openvpn" className="text-white focus:bg-zinc-700">OpenVPN</SelectItem>
               </SelectContent>
             </Select>
           </div>

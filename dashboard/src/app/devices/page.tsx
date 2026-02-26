@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, X, Copy, Check, Trash2 } from 'lucide-react'
+import Image from 'next/image'
+import { useRouter } from 'next/navigation'
+import { Plus, X, Copy, Check, Trash2, LogOut } from 'lucide-react'
 import { api, Device, PairingCode, ProxyConnection } from '@/lib/api'
-import { getToken } from '@/lib/auth'
+import { getToken, clearAuth } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
 import { timeAgo, copyToClipboard } from '@/lib/utils'
 import { QRCodeSVG } from 'qrcode.react'
@@ -26,21 +28,25 @@ function PairingModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     async function create() {
       const token = getToken()
       if (!token) return
       try {
         const res = await api.pairingCodes.create(token)
+        if (cancelled) return
         setCode(res.code)
         setCodeId(res.id)
         setExpiresAt(res.expires_at)
       } catch (err) {
+        if (cancelled) return
         setError(err instanceof Error ? err.message : 'Failed to create pairing code')
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     create()
+    return () => { cancelled = true }
   }, [])
 
   const qrValue = code ? `mobileproxy://pair?server=http://${SERVER_HOST}:8080&code=${code}` : ''
@@ -127,6 +133,7 @@ function PairingModal({ onClose }: { onClose: () => void }) {
 }
 
 export default function DevicesPage() {
+  const router = useRouter()
   const [devices, setDevices] = useState<Device[]>([])
   const [loading, setLoading] = useState(true)
   const [showPairingModal, setShowPairingModal] = useState(false)
@@ -212,20 +219,34 @@ export default function DevicesPage() {
 
   return (
     <div>
+      {/* Top bar with branding */}
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Devices</h1>
-          <p className="text-zinc-500 text-sm mt-1">
-            Manage your mobile device fleet
-          </p>
+        <div className="flex items-center gap-3">
+          <Image src="/logo.jpg" alt="PocketProxy" width={28} height={28} className="rounded-md" />
+          <div>
+            <h1 className="text-sm font-bold leading-none">
+              <span className="text-brand-400">Pocket</span><span className="text-brand-500">Proxy</span>
+            </h1>
+            <p className="text-zinc-500 text-xs mt-0.5">
+              Device Fleet
+            </p>
+          </div>
         </div>
-        <button
-          onClick={() => { setShowPairingModal(true) }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add Device
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowPairingModal(true) }}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add Device
+          </button>
+          <button
+            onClick={() => { clearAuth(); router.push('/login') }}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm text-zinc-500 hover:text-white hover:bg-zinc-800/70 rounded-lg transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Stat bar */}

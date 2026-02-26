@@ -143,9 +143,16 @@ func (s *PairingService) ClaimCode(ctx context.Context, req *domain.ClaimPairing
 	}
 
 	// If this pairing code is tied to a device, reassign all its connections to the new device
-	if pc.ReassignDeviceID != nil && s.connRepo != nil {
-		if err := s.connRepo.ReassignAllByDeviceID(ctx, *pc.ReassignDeviceID, regResp.DeviceID); err != nil {
-			return nil, fmt.Errorf("reassign connections: %w", err)
+	// and invalidate the old device's auth token so it gets logged out
+	if pc.ReassignDeviceID != nil {
+		if s.connRepo != nil {
+			if err := s.connRepo.ReassignAllByDeviceID(ctx, *pc.ReassignDeviceID, regResp.DeviceID); err != nil {
+				return nil, fmt.Errorf("reassign connections: %w", err)
+			}
+		}
+		// Clear old device auth token to force logout
+		if err := s.deviceRepo.SetAuthToken(ctx, *pc.ReassignDeviceID, ""); err != nil {
+			return nil, fmt.Errorf("clear old device token: %w", err)
 		}
 	}
 
