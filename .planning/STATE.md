@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-26T08:00:00.000Z"
+last_updated: "2026-02-26T08:03:43.127Z"
 progress:
-  total_phases: 3
+  total_phases: 2
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 5
+  completed_plans: 4
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Customers can reliably route traffic through real mobile devices via HTTP, SOCKS5, or OpenVPN, managed through a clean dashboard.
-**Current focus:** Phase 2 — Dashboard (Plan 01 complete, proceeding to Plan 02)
+**Current focus:** Phase 2 — Dashboard (Plan 02 complete, proceeding to Plan 03)
 
 ## Current Position
 
 Phase: 2 of 3 (Dashboard)
-Plan: 1 of N in current phase — COMPLETE
-Status: Plan 02-01 complete — shadcn/ui installed, sidebar rewritten, /devices home rebuilt
-Last activity: 2026-02-26 — Completed 02-01: StatBar + DeviceTable + collapsible sidebar
+Plan: 2 of N in current phase — COMPLETE
+Status: Plan 02-02 complete — device detail page rebuilt with unified connection CRUD, per-field copy, OpenVPN download
+Last activity: 2026-02-26 — Completed 02-02: ConnectionTable + AddConnectionModal + DeleteConnectionDialog + device detail rewrite
 
-Progress: [███░░░░░░░] 40%
+Progress: [████░░░░░░] 50%
 
 ## Performance Metrics
 
@@ -41,10 +41,10 @@ Progress: [███░░░░░░░] 40%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-openvpn-throughput | 2/2 | ~3 min | ~2 min |
-| 02-dashboard | 1/N | ~30 min | ~30 min |
+| 02-dashboard | 2/N | ~34 min | ~17 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (~1 min), 01-02 (~2 min), 02-01 (~30 min)
+- Last 5 plans: 01-01 (~1 min), 01-02 (~2 min), 02-01 (~30 min), 02-02 (~4 min)
 - Trend: —
 
 *Updated after each plan completion*
@@ -66,6 +66,9 @@ Recent decisions affecting current work:
 - 01-02: PROTO-02 confirmed via code review — REDIRECT rules use -s (source IP), DNAT rules use --dport (destination port); different match criteria, no conflict possible
 - 02-01: shadcn/ui uses zinc base color with CSS variable dark theme; brand emerald colors and glow shadows preserved alongside
 - 02-01: StatBar devices only (no connection counts); DeviceTable dense table (not cards); offline rows opacity-50 — all locked decisions followed
+- [Phase 02-dashboard]: 02-02: Passwords displayed in plaintext (no masking) per locked decision — operators need raw credentials
+- [Phase 02-dashboard]: 02-02: Copy All URL format is protocol://username:password@host:port; OpenVPN shows download button only
+- [Phase 02-dashboard]: 02-02: OpenVPN port displayed as 1195 (fixed) since http_port/socks5_port are null for OpenVPN connections
 
 ### Pending Todos
 
@@ -78,8 +81,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 02-01-PLAN.md — ready for Plan 02
-Resume file: .planning/phases/02-dashboard/02-01-SUMMARY.md
+Stopped at: Completed 02-02-PLAN.md — ready for Plan 03
+Resume file: .planning/phases/02-dashboard/02-02-SUMMARY.md
 
 ### Phase 1 UAT Results (2026-02-26) — PARTIAL
 - OpenVPN throughput: 1MB/7.4s (~1.1 Mbps), 10MB/34.8s (~2.4 Mbps) via T-Mobile cellular
