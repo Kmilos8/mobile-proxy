@@ -25,12 +25,13 @@ import (
 )
 
 const (
-	connectTimeout = 10 * time.Second
-	peekTimeout    = 200 * time.Millisecond // time to wait for initial client data (TLS ClientHello arrives in <10ms; 200ms covers slow clients without blocking speed tests)
-	idleTimeout    = 300 * time.Second // 5 min idle before killing connection
-	maxRetries     = 2
-	copyBufSize    = 128 * 1024 // 128KB copy buffer for throughput
-	peekSize       = 4096       // enough for TLS ClientHello or HTTP request line + headers
+	connectTimeout    = 30 * time.Second  // increased from 10s — device proxy response degrades under load via cellular UDP tunnel
+	peekTimeout       = 200 * time.Millisecond // time to wait for initial client data (TLS ClientHello arrives in <10ms; 200ms covers slow clients without blocking speed tests)
+	idleTimeout       = 300 * time.Second // 5 min idle before killing connection
+	maxRetries        = 2
+	copyBufSize       = 128 * 1024 // 128KB copy buffer for throughput
+	peekSize          = 4096       // enough for TLS ClientHello or HTTP request line + headers
+	maxConcurrentDial = 6          // limit concurrent CONNECT dials per device to prevent thundering herd
 )
 
 // proxyTarget holds the HTTP CONNECT proxy endpoint and credentials.
@@ -38,6 +39,7 @@ type proxyTarget struct {
 	Endpoint string // host:port (e.g. 192.168.255.2:8080)
 	Username string
 	Password string
+	dialSem  chan struct{} // limits concurrent CONNECT dials to this device
 }
 
 // connectResult holds the connection and any buffered reader from the CONNECT handshake.
@@ -70,6 +72,7 @@ func (p *Proxy) AddMapping(clientIP, proxyEndpoint, username, password string) {
 		Endpoint: proxyEndpoint,
 		Username: username,
 		Password: password,
+		dialSem:  make(chan struct{}, maxConcurrentDial),
 	}
 	log.Printf("[tproxy] added mapping: %s -> %s (user=%s)", clientIP, proxyEndpoint, username)
 }
@@ -159,6 +162,11 @@ func (p *Proxy) handleConn(conn net.Conn) {
 		}
 	}
 
+	// Acquire dial semaphore to limit concurrent connections to this device.
+	// Without this, a browser opening 30+ connections causes a thundering herd
+	// that overwhelms the device proxy over the cellular UDP tunnel.
+	target.dialSem <- struct{}{}
+
 	// Retry CONNECT
 	var result *connectResult
 	var lastErr error
@@ -172,6 +180,9 @@ func (p *Proxy) handleConn(conn net.Conn) {
 			time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
 		}
 	}
+
+	// Release semaphore after dial completes (whether success or failure)
+	<-target.dialSem
 
 	if lastErr != nil {
 		log.Printf("[tproxy] CONNECT %s via %s failed after %d attempts: %v", connectAddr, target.Endpoint, maxRetries, lastErr)
@@ -228,13 +239,10 @@ func (p *Proxy) handleConn(conn net.Conn) {
 }
 
 func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (*connectResult, error) {
-	log.Printf("[tproxy-debug] dialing %s for CONNECT %s", target.Endpoint, addr)
 	conn, err := net.DialTimeout("tcp", target.Endpoint, connectTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("dial proxy: %w", err)
 	}
-
-	log.Printf("[tproxy-debug] TCP connected: local=%s remote=%s", conn.LocalAddr(), conn.RemoteAddr())
 
 	// Set TCP_NODELAY for faster handshake
 	setTCPNoDelay(conn)
@@ -247,39 +255,23 @@ func (p *Proxy) dialHTTPConnect(target *proxyTarget, addr string) (*connectResul
 	}
 	connectReq += "\r\n"
 
-	log.Printf("[tproxy-debug] sending CONNECT request (%d bytes): %q", len(connectReq), connectReq)
-
 	conn.SetDeadline(time.Now().Add(connectTimeout))
-	nw, err := conn.Write([]byte(connectReq))
+	_, err = conn.Write([]byte(connectReq))
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("write CONNECT: %w", err)
 	}
-	log.Printf("[tproxy-debug] CONNECT written: %d bytes, waiting for response...", nw)
 
 	// Read response using a bufio.Reader. CRITICAL: we must keep this reader
 	// because it may have buffered data past the HTTP response headers.
 	// Passing the raw conn to io.Copy would lose those bytes.
 	br := bufio.NewReaderSize(conn, copyBufSize)
-
-	// Try reading first byte to see if ANY data arrives
-	conn.SetReadDeadline(time.Now().Add(connectTimeout))
-	firstByte, err := br.ReadByte()
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("read first byte of CONNECT response: %w", err)
-	}
-	br.UnreadByte()
-	log.Printf("[tproxy-debug] got first byte: 0x%02x ('%c')", firstByte, firstByte)
-
 	resp, err := http.ReadResponse(br, nil)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("read CONNECT response: %w", err)
 	}
 	resp.Body.Close()
-
-	log.Printf("[tproxy-debug] CONNECT response: %d %s", resp.StatusCode, resp.Status)
 
 	if resp.StatusCode != 200 {
 		conn.Close()
