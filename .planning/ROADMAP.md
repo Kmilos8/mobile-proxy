@@ -27,11 +27,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. A speed test run through the OpenVPN connection completes and reports measurable throughput (not timeout)
   3. HTTP and SOCKS5 proxies continue to respond correctly while OpenVPN config changes are applied
   4. The .ovpn download from the dashboard produces a working config without manual edits
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: Diagnose bottleneck (tcpdump on tun1, measure latency vs. bandwidth), then apply targeted OpenVPN config fixes (sndbuf/rcvbuf, mssfix, fast-io, peekTimeout)
-- [ ] 01-02: Add connection pooling to transparent proxy and fix iptables/mapping race condition in client-connect-ovpn.sh
+- [ ] 01-01-PLAN.md — Apply OpenVPN performance tuning: reduce peekTimeout to 200ms, switch sndbuf/rcvbuf to OS autotuning, add fast-io
+- [ ] 01-02-PLAN.md — Fix client-connect-ovpn.sh silent failure bug and verify HTTP/SOCKS5 DNAT isolation
 
 ### Phase 2: Dashboard
 **Goal**: An operator can manage their entire device fleet and proxy port inventory from the dashboard without touching the API
