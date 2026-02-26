@@ -212,15 +212,18 @@ func configureTUN(name string) {
 		}
 	}
 
-	// OpenVPN client subnet (10.9.0.0/24) — FORWARD + MASQUERADE rules
+	// OpenVPN client subnet (10.9.0.0/24) — FORWARD rules only.
+	// No MASQUERADE: packets keep their original source (10.9.0.x) so the server's
+	// tunToUdp can match them to the correct device via clientToDevice map.
+	// Response packets from the phone with dst=10.9.0.x route back via tun1 (OpenVPN).
 	ovpnSubnet := "10.9.0.0/24"
-	if _, err := runCmd("iptables", "-t", "nat", "-C", "POSTROUTING", "-s", ovpnSubnet, "-j", "MASQUERADE"); err != nil {
-		if out, err := runCmd("iptables", "-t", "nat", "-A", "POSTROUTING", "-s", ovpnSubnet, "-j", "MASQUERADE"); err != nil {
-			log.Printf("Warning: MASQUERADE rule for %s failed: %s: %v", ovpnSubnet, string(out), err)
-		} else {
-			log.Printf("Added MASQUERADE rule for %s", ovpnSubnet)
+	// Remove any leftover MASQUERADE from previous version
+	for {
+		if _, err := runCmd("iptables", "-t", "nat", "-D", "POSTROUTING", "-s", ovpnSubnet, "-j", "MASQUERADE"); err != nil {
+			break
 		}
 	}
+	log.Printf("Removed MASQUERADE for %s (NAT routing preserves source IP)", ovpnSubnet)
 	// Insert before UFW chains (which have policy DROP) so OpenVPN traffic is accepted
 	if _, err := runCmd("iptables", "-C", "FORWARD", "-s", ovpnSubnet, "-j", "ACCEPT"); err != nil {
 		if out, err := runCmd("iptables", "-I", "FORWARD", "2", "-s", ovpnSubnet, "-j", "ACCEPT"); err != nil {
@@ -426,13 +429,29 @@ func (s *tunnelServer) tunToUdp() {
 		c, ok := s.clients[dstIP]
 		s.mu.RUnlock()
 
-		if !ok {
+		if ok {
+			// Direct match: packet addressed to a registered device VPN IP
+			buf[0] = TypeData
+			s.udpConn.WriteToUDP(buf[:1+n], c.udpAddr)
 			continue
 		}
 
-		// Send DATA packet: [0x02][raw IP packet] — zero-copy from pre-allocated buffer
-		buf[0] = TypeData
-		s.udpConn.WriteToUDP(buf[:1+n], c.udpAddr)
+		// NAT-routed traffic: packet from OpenVPN client (10.9.0.x) routed through
+		// a device's routing table. Source IP tells us which device should get it.
+		srcIP := net.IPv4(buf[13], buf[14], buf[15], buf[16]).String()
+		s.routingMu.Lock()
+		deviceIP, mapped := s.clientToDevice[srcIP]
+		s.routingMu.Unlock()
+
+		if mapped {
+			s.mu.RLock()
+			c, ok = s.clients[deviceIP]
+			s.mu.RUnlock()
+			if ok {
+				buf[0] = TypeData
+				s.udpConn.WriteToUDP(buf[:1+n], c.udpAddr)
+			}
+		}
 	}
 }
 
