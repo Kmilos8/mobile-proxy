@@ -2,6 +2,7 @@ package com.mobileproxy.core.vpn
 
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.mobileproxy.core.network.NetworkManager
 import com.mobileproxy.service.ProxyVpnService
 import kotlinx.coroutines.*
 import java.io.FileInputStream
@@ -16,7 +17,8 @@ class VpnTunnelManager(
     private val vpnService: ProxyVpnService,
     private val serverAddress: String,
     private val serverPort: Int,
-    private val deviceId: String
+    private val deviceId: String,
+    private val networkManager: NetworkManager? = null
 ) {
     companion object {
         private const val TAG = "VpnTunnelManager"
@@ -61,6 +63,9 @@ class VpnTunnelManager(
     // Callback for server-pushed commands received via tunnel
     var commandListener: ((String) -> Unit)? = null
 
+    // IP forwarder for NAT-routed OpenVPN client traffic
+    private var ipForwarder: IpForwarder? = null
+
     suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
         shouldRun = true
         // Ensure we have a fresh scope (previous disconnect may have cancelled it)
@@ -98,6 +103,16 @@ class VpnTunnelManager(
             isConnected = true
             lastPongTime.set(System.currentTimeMillis())
 
+            // Start IP forwarder for NAT-routed traffic (if NetworkManager available)
+            if (networkManager != null) {
+                val forwarder = IpForwarder(networkManager) { pkt, off, len ->
+                    sendResponseThroughTunnel(pkt, off, len)
+                }
+                forwarder.start()
+                ipForwarder = forwarder
+                Log.i(TAG, "IP forwarder started for NAT routing")
+            }
+
             // Start packet relay coroutines
             scope.launch { tunToUdp() }
             scope.launch { udpToTun() }
@@ -124,6 +139,8 @@ class VpnTunnelManager(
 
     private fun teardownConnection() {
         isConnected = false
+        ipForwarder?.stop()
+        ipForwarder = null
         try { tunFd?.close() } catch (_: Exception) {}
         try { udpSocket?.close() } catch (_: Exception) {}
         tunFd = null
@@ -164,6 +181,24 @@ class VpnTunnelManager(
 
     fun protectSocket(socket: DatagramSocket): Boolean {
         return vpnService.protect(socket)
+    }
+
+    /**
+     * Send a response IP packet back through the VPN tunnel to the server.
+     * Called by IpForwarder when it receives data from a remote host.
+     * The packet is sent as [TYPE_DATA][raw IP packet] via the UDP tunnel socket.
+     */
+    private fun sendResponseThroughTunnel(pkt: ByteArray, off: Int, len: Int) {
+        val socket = udpSocket ?: return
+        if (!isConnected) return
+        try {
+            val sendBuf = ByteArray(len + 1)
+            sendBuf[0] = TYPE_DATA
+            System.arraycopy(pkt, off, sendBuf, 1, len)
+            socket.send(DatagramPacket(sendBuf, 0, len + 1))
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to send response through tunnel: ${e.message}")
+        }
     }
 
     private fun createTun(assignedIP: String): ParcelFileDescriptor? {
@@ -271,9 +306,18 @@ class VpnTunnelManager(
                         lastPongTime.set(System.currentTimeMillis())
                     }
                     TYPE_DATA -> {
-                        if (packet.length < 2) continue
-                        // Write raw IP packet to TUN (skip type byte)
-                        output.write(buffer, 1, packet.length - 1)
+                        if (packet.length < 22) continue // 1 type + 20 min IP header + 1 byte
+                        val ipLen = packet.length - 1
+                        // Check if packet is addressed to our VPN IP (local delivery)
+                        // or to somewhere else (NAT-routed traffic to forward through cellular)
+                        val dstIpStr = IpPacketUtils.dstIPString(buffer, 1)
+                        if (dstIpStr == vpnIP || ipForwarder == null) {
+                            // Local delivery — write to TUN for proxy servers
+                            output.write(buffer, 1, ipLen)
+                        } else {
+                            // NAT-routed traffic — forward through cellular
+                            ipForwarder?.forward(buffer, 1, ipLen)
+                        }
                     }
                     TYPE_COMMAND -> {
                         if (packet.length < 2) continue

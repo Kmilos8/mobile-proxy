@@ -3,6 +3,7 @@ package com.mobileproxy.service
 import android.content.Intent
 import android.net.VpnService
 import android.util.Log
+import com.mobileproxy.core.network.NetworkManager
 import com.mobileproxy.core.vpn.VpnTunnelManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,6 +45,9 @@ class ProxyVpnService : VpnService() {
 
         // Callback for commands pushed through VPN tunnel (set by ProxyForegroundService)
         var commandCallback: ((String) -> Unit)? = null
+
+        // NetworkManager for IP forwarding (set by ProxyForegroundService before VPN start)
+        var networkManagerRef: NetworkManager? = null
     }
 
     private var tunnelManager: VpnTunnelManager? = null
@@ -81,7 +85,8 @@ class ProxyVpnService : VpnService() {
             vpnService = this,
             serverAddress = serverIP,
             serverPort = 1194,
-            deviceId = deviceId
+            deviceId = deviceId,
+            networkManager = networkManagerRef
         )
         manager.commandListener = { json -> commandCallback?.invoke(json) }
         tunnelManager = manager

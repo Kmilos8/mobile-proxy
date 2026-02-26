@@ -66,7 +66,7 @@ func (h *OpenVPNHandler) Auth(c *gin.Context) {
 // Connect handles POST /api/internal/openvpn/connect
 // Called by OpenVPN client-connect script.
 // Looks up the connection -> device, then tells the tunnel server to set up
-// transparent proxy mapping + iptables REDIRECT.
+// policy routing (ip rule) so client traffic routes through the device tunnel.
 func (h *OpenVPNHandler) Connect(c *gin.Context) {
 	var req struct {
 		Username string `json:"username"`
@@ -99,7 +99,7 @@ func (h *OpenVPNHandler) Connect(c *gin.Context) {
 		return
 	}
 
-	// POST to tunnel push API to set up transparent proxy mapping
+	// POST to tunnel push API to set up policy routing
 	// Use device's relay server IP to reach the correct tunnel server
 	pushURL := h.tunnelPushURL
 	if device.RelayServerIP != "" {
@@ -108,9 +108,6 @@ func (h *OpenVPNHandler) Connect(c *gin.Context) {
 	body, _ := json.Marshal(map[string]interface{}{
 		"client_vpn_ip": req.VpnIP,
 		"device_vpn_ip": device.VpnIP,
-		"socks_port":    1080,
-		"socks_user":    conn.Username,
-		"socks_pass":    conn.PasswordPlain,
 	})
 	resp, err := http.Post(pushURL+"/openvpn-client-connect", "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -146,7 +143,7 @@ func (h *OpenVPNHandler) Disconnect(c *gin.Context) {
 		}
 	}
 
-	// POST to tunnel push API to remove transparent proxy mapping
+	// POST to tunnel push API to remove policy routing rule
 	body, _ := json.Marshal(map[string]interface{}{
 		"client_vpn_ip": req.VpnIP,
 	})

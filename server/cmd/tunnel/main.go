@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mobileproxy/server/internal/transparentproxy"
 	"github.com/songgao/water"
 )
 
@@ -80,8 +79,10 @@ type tunnelServer struct {
 	// Pre-allocated send buffer for tunToUdp (single goroutine, no lock needed)
 	tunBuf []byte
 
-	// Transparent proxy for OpenVPN client traffic
-	transparentProxy *transparentproxy.Proxy
+	// NAT routing: policy routing tables for OpenVPN client traffic
+	routingMu        sync.Mutex
+	deviceRouteTable map[string]int    // device VPN IP (192.168.255.x) -> routing table number
+	clientToDevice   map[string]string // client VPN IP (10.9.0.x) -> device VPN IP (192.168.255.x)
 }
 
 func main() {
@@ -123,12 +124,6 @@ func main() {
 	log.Printf("Listening on UDP port %d (buffers: recv=%dKB, send=%dKB)",
 		port, udpRecvBufSize/1024, udpSendBufSize/1024)
 
-	// Start transparent proxy for OpenVPN client traffic
-	tproxy := transparentproxy.New("0.0.0.0:12345")
-	if err := tproxy.Start(); err != nil {
-		log.Printf("Warning: transparent proxy failed to start: %v", err)
-	}
-
 	srv := &tunnelServer{
 		udpConn:          conn,
 		tunIface:         iface,
@@ -138,7 +133,8 @@ func main() {
 		deviceMap:        make(map[string]*client),
 		ipPool:           make([]bool, ipPoolEnd-ipPoolStart+1),
 		tunBuf:           make([]byte, maxPacketSize+1), // +1 for type prefix
-		transparentProxy: tproxy,
+		deviceRouteTable: make(map[string]int),
+		clientToDevice:   make(map[string]string),
 	}
 
 	// Start goroutines
@@ -236,22 +232,15 @@ func configureTUN(name string) {
 			log.Printf("Warning: FORWARD rule for %s failed: %s: %v", ovpnSubnet, string(out), err)
 		}
 	}
-	// Allow redirected OpenVPN client TCP traffic to reach the transparent proxy
-	if _, err := runCmd("iptables", "-C", "INPUT", "-s", ovpnSubnet, "-p", "tcp", "--dport", "12345", "-j", "ACCEPT"); err != nil {
-		if out, err := runCmd("iptables", "-I", "INPUT", "1", "-s", ovpnSubnet, "-p", "tcp", "--dport", "12345", "-j", "ACCEPT"); err != nil {
-			log.Printf("Warning: INPUT rule for tproxy failed: %s: %v", string(out), err)
-		}
-	}
-	// Reject QUIC (UDP 443) from OpenVPN clients to force TCP/HTTPS through the transparent proxy.
-	// REJECT (not DROP) sends ICMP unreachable so browsers fall back to TCP immediately.
-	if _, err := runCmd("iptables", "-C", "FORWARD", "-s", ovpnSubnet, "-p", "udp", "--dport", "443", "-j", "REJECT", "--reject-with", "icmp-port-unreachable"); err != nil {
-		// Remove any old DROP rule first
-		runCmd("iptables", "-D", "FORWARD", "-s", ovpnSubnet, "-p", "udp", "--dport", "443", "-j", "DROP")
-		if out, err := runCmd("iptables", "-I", "FORWARD", "1", "-s", ovpnSubnet, "-p", "udp", "--dport", "443", "-j", "REJECT", "--reject-with", "icmp-port-unreachable"); err != nil {
-			log.Printf("Warning: QUIC reject rule failed: %s: %v", string(out), err)
-		} else {
-			log.Printf("QUIC rejected for OpenVPN clients (%s)", ovpnSubnet)
-		}
+	// Blackhole safety: unmapped OpenVPN clients can't leak through server's internet.
+	// Table 99 has only "blackhole default" — any client without a specific routing rule
+	// will hit this and get dropped.
+	runCmd("ip", "route", "replace", "blackhole", "default", "table", "99")
+	runCmd("ip", "rule", "del", "from", ovpnSubnet, "priority", "32000") // idempotent cleanup
+	if out, err := runCmd("ip", "rule", "add", "from", ovpnSubnet, "lookup", "99", "priority", "32000"); err != nil {
+		log.Printf("Warning: blackhole rule failed: %s: %v", string(out), err)
+	} else {
+		log.Printf("Blackhole safety net: unmapped %s clients -> table 99", ovpnSubnet)
 	}
 
 	log.Printf("TUN interface %s configured: %s/24, MTU %d", name, tunIP, tunMTU)
@@ -361,6 +350,7 @@ func (s *tunnelServer) handleAuth(data []byte, addr *net.UDPAddr) {
 			copy(resp[1:5], c.vpnIP)
 			s.udpConn.WriteToUDP(resp, addr)
 			log.Printf("AUTH_OK (reconnect): device=%s ip=%s", deviceID, ipStr)
+			go s.setupDeviceRouting(ipStr)
 			return
 		}
 	}
@@ -399,7 +389,8 @@ func (s *tunnelServer) handleAuth(data []byte, addr *net.UDPAddr) {
 
 	log.Printf("AUTH_OK: device=%s assigned ip=%s", deviceID, ipStr)
 
-	// Notify API
+	// Set up routing table for this device + notify API
+	go s.setupDeviceRouting(ipStr)
 	go s.notifyConnected(deviceID, ipStr)
 }
 
@@ -476,10 +467,87 @@ func (s *tunnelServer) cleanupLoop() {
 				s.deviceMapMu.Unlock()
 
 				go s.notifyDisconnected(c.deviceID, ipStr)
+				go s.teardownDeviceRouting(ipStr)
 			}
 			s.mu.Unlock()
 		}
 	}
+}
+
+// routingTableForDevice returns a routing table number based on the device's VPN IP.
+// 192.168.255.2 -> table 102, 192.168.255.3 -> table 103, etc.
+func routingTableForDevice(deviceVPNIP string) (int, error) {
+	ip := net.ParseIP(deviceVPNIP)
+	if ip == nil {
+		return 0, fmt.Errorf("invalid IP: %s", deviceVPNIP)
+	}
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return 0, fmt.Errorf("not IPv4: %s", deviceVPNIP)
+	}
+	return int(ip4[3]) + 100, nil
+}
+
+// setupDeviceRouting creates a policy routing table for a device.
+// After this, any client with an ip rule pointing to this table will have their
+// traffic routed through the device's VPN IP on tun0.
+func (s *tunnelServer) setupDeviceRouting(deviceVPNIP string) {
+	tableNum, err := routingTableForDevice(deviceVPNIP)
+	if err != nil {
+		log.Printf("[routing] setupDeviceRouting failed: %v", err)
+		return
+	}
+
+	// Create routing table: default route via device IP through tun0
+	tableStr := strconv.Itoa(tableNum)
+	if out, err := runCmd("ip", "route", "replace", "default", "via", deviceVPNIP, "dev", tunName, "table", tableStr); err != nil {
+		log.Printf("[routing] ip route replace table %s failed: %s: %v", tableStr, string(out), err)
+		return
+	}
+
+	s.routingMu.Lock()
+	s.deviceRouteTable[deviceVPNIP] = tableNum
+	s.routingMu.Unlock()
+
+	log.Printf("[routing] setup: table %d -> default via %s dev %s", tableNum, deviceVPNIP, tunName)
+}
+
+// teardownDeviceRouting removes the routing table and all client ip rules for a device.
+func (s *tunnelServer) teardownDeviceRouting(deviceVPNIP string) {
+	s.routingMu.Lock()
+	tableNum, ok := s.deviceRouteTable[deviceVPNIP]
+	if !ok {
+		s.routingMu.Unlock()
+		return
+	}
+	delete(s.deviceRouteTable, deviceVPNIP)
+
+	// Find and remove all client rules pointing to this device
+	var clientsToRemove []string
+	for clientIP, devIP := range s.clientToDevice {
+		if devIP == deviceVPNIP {
+			clientsToRemove = append(clientsToRemove, clientIP)
+		}
+	}
+	for _, clientIP := range clientsToRemove {
+		delete(s.clientToDevice, clientIP)
+	}
+	s.routingMu.Unlock()
+
+	// Remove client ip rules
+	for _, clientIP := range clientsToRemove {
+		for {
+			if _, err := runCmd("ip", "rule", "del", "from", clientIP+"/32", "priority", "100"); err != nil {
+				break
+			}
+		}
+		log.Printf("[routing] removed client rule: %s/32", clientIP)
+	}
+
+	// Remove routing table
+	tableStr := strconv.Itoa(tableNum)
+	runCmd("ip", "route", "flush", "table", tableStr)
+	log.Printf("[routing] teardown: table %d for device %s", tableNum, deviceVPNIP)
 }
 
 type connInfo struct {
@@ -763,8 +831,6 @@ func (s *tunnelServer) startPushAPI() {
 	mux.HandleFunc("/teardown-dnat", s.handleTeardownDNAT)
 	mux.HandleFunc("/openvpn-client-connect", s.handleOpenVPNClientConnect)
 	mux.HandleFunc("/openvpn-client-disconnect", s.handleOpenVPNClientDisconnect)
-	mux.HandleFunc("/debug-proxy-test", s.handleDebugProxyTest)
-	mux.HandleFunc("/debug-concurrent-test", s.handleDebugConcurrentTest)
 
 	log.Printf("Push API listening on port %d", pushPort)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", pushPort), mux); err != nil {
@@ -883,7 +949,7 @@ func (s *tunnelServer) handleTeardownDNAT(w http.ResponseWriter, r *http.Request
 }
 
 // handleOpenVPNClientConnect is called by the API when an OpenVPN client connects.
-// It adds a transparent proxy mapping and iptables REDIRECT rule for the client's VPN IP.
+// It adds a policy routing rule so the client's traffic is routed through the device's tunnel.
 func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -891,59 +957,48 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 	}
 
 	var req struct {
-		ClientVPNIP string `json:"client_vpn_ip"`  // 10.9.0.x
-		DeviceVPNIP string `json:"device_vpn_ip"`  // 192.168.255.y
-		ProxyPort   int    `json:"proxy_port"`      // HTTP proxy port (default 8080)
-		SOCKSPort   int    `json:"socks_port"`      // legacy, unused
-		ProxyUser   string `json:"socks_user"`      // proxy username
-		ProxyPass   string `json:"socks_pass"`      // proxy password
+		ClientVPNIP string `json:"client_vpn_ip"` // 10.9.0.x
+		DeviceVPNIP string `json:"device_vpn_ip"` // 192.168.255.y
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 
-	if req.ProxyPort == 0 {
-		req.ProxyPort = 8080
+	// Look up routing table for this device
+	s.routingMu.Lock()
+	tableNum, ok := s.deviceRouteTable[req.DeviceVPNIP]
+	if !ok {
+		s.routingMu.Unlock()
+		log.Printf("[routing] no routing table for device %s, client %s cannot connect", req.DeviceVPNIP, req.ClientVPNIP)
+		http.Error(w, "device routing not ready", http.StatusServiceUnavailable)
+		return
 	}
+	s.clientToDevice[req.ClientVPNIP] = req.DeviceVPNIP
+	s.routingMu.Unlock()
 
-	proxyEndpoint := fmt.Sprintf("%s:%d", req.DeviceVPNIP, req.ProxyPort)
-
-	// Add transparent proxy mapping with HTTP CONNECT proxy
-	if s.transparentProxy != nil {
-		s.transparentProxy.AddMapping(req.ClientVPNIP, proxyEndpoint, req.ProxyUser, req.ProxyPass)
-	}
-
-	// Add iptables rules for transparent proxy:
-	// 1. RETURN rules to skip redirect for VPN subnet and tunnel subnet traffic
-	//    (so we can still SSH/communicate with VPN clients directly)
-	// 2. REDIRECT rule for all other TCP traffic -> port 12345
-	// First clean up any existing rules for this client IP to avoid duplicates
-	for _, rule := range []string{
-		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -d 10.9.0.0/24 -j RETURN", req.ClientVPNIP),
-		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -d 192.168.255.0/24 -j RETURN", req.ClientVPNIP),
-		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -j REDIRECT --to-port 12345", req.ClientVPNIP),
-	} {
-		runCmd("iptables", splitArgs(rule)...) // best effort cleanup
-	}
-	// Add RETURN rules before the REDIRECT rule
-	for _, rule := range []string{
-		fmt.Sprintf("-t nat -A PREROUTING -s %s -p tcp -d 10.9.0.0/24 -j RETURN", req.ClientVPNIP),
-		fmt.Sprintf("-t nat -A PREROUTING -s %s -p tcp -d 192.168.255.0/24 -j RETURN", req.ClientVPNIP),
-		fmt.Sprintf("-t nat -A PREROUTING -s %s -p tcp -j REDIRECT --to-port 12345", req.ClientVPNIP),
-	} {
-		if out, err := runCmd("iptables", splitArgs(rule)...); err != nil {
-			log.Printf("OpenVPN iptables rule failed (%s): %s: %v", rule, string(out), err)
+	// Remove any stale ip rule for this client (idempotent)
+	for {
+		if _, err := runCmd("ip", "rule", "del", "from", req.ClientVPNIP+"/32", "priority", "100"); err != nil {
+			break
 		}
 	}
-	log.Printf("OpenVPN REDIRECT rule added for %s -> tproxy (proxy=%s)", req.ClientVPNIP, proxyEndpoint)
 
+	// Add ip rule: traffic from this client uses the device's routing table
+	tableStr := strconv.Itoa(tableNum)
+	if out, err := runCmd("ip", "rule", "add", "from", req.ClientVPNIP+"/32", "lookup", tableStr, "priority", "100"); err != nil {
+		log.Printf("[routing] ip rule add failed: %s: %v", string(out), err)
+		http.Error(w, "routing rule failed", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[routing] client %s -> table %d (device %s)", req.ClientVPNIP, tableNum, req.DeviceVPNIP)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"ok":true}`))
 }
 
 // handleOpenVPNClientDisconnect is called by the API when an OpenVPN client disconnects.
-// It removes the transparent proxy mapping and iptables REDIRECT rule.
+// It removes the policy routing rule for the client.
 func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -958,188 +1013,19 @@ func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Remove transparent proxy mapping
-	if s.transparentProxy != nil {
-		s.transparentProxy.RemoveMapping(req.ClientVPNIP)
-	}
+	// Remove from client mapping
+	s.routingMu.Lock()
+	delete(s.clientToDevice, req.ClientVPNIP)
+	s.routingMu.Unlock()
 
-	// Remove iptables rules (RETURN + REDIRECT) — loop to remove all duplicates
-	for _, rule := range []string{
-		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -d 10.9.0.0/24 -j RETURN", req.ClientVPNIP),
-		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -d 192.168.255.0/24 -j RETURN", req.ClientVPNIP),
-		fmt.Sprintf("-t nat -D PREROUTING -s %s -p tcp -j REDIRECT --to-port 12345", req.ClientVPNIP),
-	} {
-		for {
-			if _, err := runCmd("iptables", splitArgs(rule)...); err != nil {
-				break
-			}
+	// Remove ip rules — loop to remove all duplicates
+	for {
+		if _, err := runCmd("ip", "rule", "del", "from", req.ClientVPNIP+"/32", "priority", "100"); err != nil {
+			break
 		}
 	}
-	log.Printf("OpenVPN client disconnect: removed mapping and REDIRECT for %s", req.ClientVPNIP)
 
+	log.Printf("[routing] client disconnect: removed rule for %s", req.ClientVPNIP)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"ok":true}`))
-}
-
-// handleDebugProxyTest makes a test TCP connection from WITHIN the tunnel process
-// to the device proxy, to diagnose if the in-process connection behaves differently
-// from external connections (curl, netcat).
-func (s *tunnelServer) handleDebugProxyTest(w http.ResponseWriter, r *http.Request) {
-	deviceIP := r.URL.Query().Get("ip")
-	if deviceIP == "" {
-		deviceIP = "192.168.255.2"
-	}
-	target := deviceIP + ":8080"
-
-	result := map[string]interface{}{}
-
-	// Step 1: TCP dial
-	log.Printf("[debug-test] dialing %s from within tunnel process...", target)
-	start := time.Now()
-	conn, err := net.DialTimeout("tcp", target, 5*time.Second)
-	if err != nil {
-		result["error"] = fmt.Sprintf("dial failed: %v", err)
-		result["duration_ms"] = time.Since(start).Milliseconds()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(result)
-		return
-	}
-	defer conn.Close()
-
-	result["dial_ok"] = true
-	result["local_addr"] = conn.LocalAddr().String()
-	result["remote_addr"] = conn.RemoteAddr().String()
-	result["dial_ms"] = time.Since(start).Milliseconds()
-	log.Printf("[debug-test] connected: local=%s remote=%s (%dms)", conn.LocalAddr(), conn.RemoteAddr(), result["dial_ms"])
-
-	// Step 2: Send CONNECT request (no auth — expect 407)
-	connectReq := "CONNECT google.com:443 HTTP/1.1\r\nHost: google.com:443\r\n\r\n"
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
-	nw, err := conn.Write([]byte(connectReq))
-	if err != nil {
-		result["error"] = fmt.Sprintf("write failed: %v", err)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(result)
-		return
-	}
-	result["write_ok"] = true
-	result["bytes_written"] = nw
-	log.Printf("[debug-test] wrote %d bytes, waiting for response...", nw)
-
-	// Step 3: Read response
-	readStart := time.Now()
-	respBuf := make([]byte, 4096)
-	nr, err := conn.Read(respBuf)
-	result["read_ms"] = time.Since(readStart).Milliseconds()
-	if err != nil {
-		result["error"] = fmt.Sprintf("read failed after %dms: %v", result["read_ms"], err)
-		log.Printf("[debug-test] read failed: %v", err)
-	} else {
-		result["read_ok"] = true
-		result["bytes_read"] = nr
-		result["response"] = string(respBuf[:nr])
-		log.Printf("[debug-test] got response (%d bytes, %dms): %s", nr, result["read_ms"], string(respBuf[:nr]))
-	}
-
-	result["total_ms"] = time.Since(start).Milliseconds()
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
-}
-
-// handleDebugConcurrentTest fires N concurrent CONNECT requests to the device proxy
-// from within the tunnel process, simulating browser-like behavior.
-func (s *tunnelServer) handleDebugConcurrentTest(w http.ResponseWriter, r *http.Request) {
-	deviceIP := r.URL.Query().Get("ip")
-	if deviceIP == "" {
-		deviceIP = "192.168.255.2"
-	}
-	countStr := r.URL.Query().Get("n")
-	count := 10
-	if n, err := strconv.Atoi(countStr); err == nil && n > 0 && n <= 50 {
-		count = n
-	}
-	target := deviceIP + ":8080"
-
-	type connResult struct {
-		ID      int    `json:"id"`
-		DialMs  int64  `json:"dial_ms"`
-		WriteOK bool   `json:"write_ok"`
-		ReadMs  int64  `json:"read_ms"`
-		ReadOK  bool   `json:"read_ok"`
-		Status  string `json:"status"`
-		Error   string `json:"error,omitempty"`
-	}
-
-	log.Printf("[debug-concurrent] starting %d concurrent connections to %s", count, target)
-	start := time.Now()
-	results := make([]connResult, count)
-	var wg sync.WaitGroup
-
-	for i := 0; i < count; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			cr := connResult{ID: idx}
-
-			dialStart := time.Now()
-			conn, err := net.DialTimeout("tcp", target, 10*time.Second)
-			cr.DialMs = time.Since(dialStart).Milliseconds()
-			if err != nil {
-				cr.Error = fmt.Sprintf("dial: %v", err)
-				results[idx] = cr
-				return
-			}
-			defer conn.Close()
-
-			connectReq := fmt.Sprintf("CONNECT test%d.example.com:443 HTTP/1.1\r\nHost: test%d.example.com:443\r\n\r\n", idx, idx)
-			conn.SetDeadline(time.Now().Add(10 * time.Second))
-			_, err = conn.Write([]byte(connectReq))
-			if err != nil {
-				cr.Error = fmt.Sprintf("write: %v", err)
-				results[idx] = cr
-				return
-			}
-			cr.WriteOK = true
-
-			readStart := time.Now()
-			buf := make([]byte, 4096)
-			n, err := conn.Read(buf)
-			cr.ReadMs = time.Since(readStart).Milliseconds()
-			if err != nil {
-				cr.Error = fmt.Sprintf("read: %v", err)
-			} else {
-				cr.ReadOK = true
-				// Extract status line
-				if idx := strings.Index(string(buf[:n]), "\r\n"); idx > 0 {
-					cr.Status = string(buf[:idx])
-				}
-			}
-			results[idx] = cr
-		}(i)
-	}
-
-	wg.Wait()
-	totalMs := time.Since(start).Milliseconds()
-
-	succeeded := 0
-	failed := 0
-	for _, cr := range results {
-		if cr.ReadOK {
-			succeeded++
-		} else {
-			failed++
-		}
-	}
-
-	log.Printf("[debug-concurrent] done: %d/%d succeeded, %d failed, %dms total", succeeded, count, failed, totalMs)
-
-	resp := map[string]interface{}{
-		"total":     count,
-		"succeeded": succeeded,
-		"failed":    failed,
-		"total_ms":  totalMs,
-		"results":   results,
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
 }

@@ -87,6 +87,9 @@ class ProxyForegroundService : Service() {
         // Wire up command push callback — commands pushed via VPN tunnel are executed instantly
         ProxyVpnService.commandCallback = { json -> statusReporter.handlePushedCommand(json) }
 
+        // Provide NetworkManager to VPN service for IP forwarding
+        ProxyVpnService.networkManagerRef = networkManager
+
         // Start VPN tunnel first
         val relayIP = credentialManager.getRelayServerIP()
         val vpnIntent = Intent(this, ProxyVpnService::class.java).apply {
