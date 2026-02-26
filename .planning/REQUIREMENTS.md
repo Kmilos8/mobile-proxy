@@ -14,10 +14,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Dashboard Redesign
 
-- [ ] **DASH-01**: Full UI redesign with modern component library (shadcn/ui) across all existing pages
+- [x] **DASH-01**: Full UI redesign with modern component library (shadcn/ui) across all existing pages
 - [ ] **DASH-02**: Connection creation UI on dashboard (currently API-only)
 - [ ] **DASH-03**: Connection detail page for viewing/managing individual proxy ports
-- [ ] **DASH-04**: Responsive layout for desktop and tablet
+- [x] **DASH-04**: Responsive layout for desktop and tablet
 
 ### Security
 
@@ -85,10 +85,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | PROTO-01 | Phase 1 | Complete |
 | PROTO-02 | Phase 1 | Complete |
-| DASH-01 | Phase 2 | Pending |
+| DASH-01 | Phase 2 | Complete |
 | DASH-02 | Phase 2 | Pending |
 | DASH-03 | Phase 2 | Pending |
-| DASH-04 | Phase 2 | Pending |
+| DASH-04 | Phase 2 | Complete |
 | SEC-01 | Phase 3 | Pending |
 | MON-01 | Phase 3 | Pending |
 | MON-02 | Phase 3 | Pending |
@@ -100,4 +100,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-25*
-*Last updated: 2026-02-25 after roadmap creation*
+*Last updated: 2026-02-26 after 02-01 plan completion*

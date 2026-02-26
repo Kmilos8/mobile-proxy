@@ -46,7 +46,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Install shadcn/ui, dark theme, collapsible sidebar, device table home page, backend openvpn proxy_type
+- [x] 02-01-PLAN.md — Install shadcn/ui, dark theme, collapsible sidebar, device table home page, backend openvpn proxy_type
 - [ ] 02-02-PLAN.md — Device detail page with connection management: create/view/copy/delete connections
 - [ ] 02-03-PLAN.md — Visual and functional verification checkpoint
 
@@ -72,5 +72,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. OpenVPN Throughput | 2/2 | Complete    | 2026-02-26 |
-| 2. Dashboard | 0/3 | Planning complete | - |
+| 2. Dashboard | 1/3 | In progress | - |
 | 3. Security and Monitoring | 0/2 | Not started | - |

@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-26T01:16:29.221Z"
+last_updated: "2026-02-26T08:00:00.000Z"
 progress:
-  total_phases: 1
+  total_phases: 3
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 3
+  completed_plans: 3
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Customers can reliably route traffic through real mobile devices via HTTP, SOCKS5, or OpenVPN, managed through a clean dashboard.
-**Current focus:** Phase 2 — Dashboard (context gathered, ready for planning)
+**Current focus:** Phase 2 — Dashboard (Plan 01 complete, proceeding to Plan 02)
 
 ## Current Position
 
-Phase: 1 of 3 (OpenVPN Throughput) — VERIFIED COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase verified — all 4 UAT criteria passed
-Last activity: 2026-02-26 — Phase 1 UAT passed: OpenVPN ~2.4 Mbps via cellular, HTTP/SOCKS5 confirmed, .ovpn download correct
+Phase: 2 of 3 (Dashboard)
+Plan: 1 of N in current phase — COMPLETE
+Status: Plan 02-01 complete — shadcn/ui installed, sidebar rewritten, /devices home rebuilt
+Last activity: 2026-02-26 — Completed 02-01: StatBar + DeviceTable + collapsible sidebar
 
-Progress: [██░░░░░░░░] 33%
+Progress: [███░░░░░░░] 40%
 
 ## Performance Metrics
 
@@ -41,9 +41,10 @@ Progress: [██░░░░░░░░] 33%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-openvpn-throughput | 2/2 | ~3 min | ~2 min |
+| 02-dashboard | 1/N | ~30 min | ~30 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (~1 min), 01-02 (~2 min)
+- Last 5 plans: 01-01 (~1 min), 01-02 (~2 min), 02-01 (~30 min)
 - Trend: —
 
 *Updated after each plan completion*
@@ -63,6 +64,8 @@ Recent decisions affecting current work:
 - 01-01: fast-io added — UDP-only optimization that skips poll/select before each UDP write (5-10% CPU reduction)
 - 01-02: client-connect hook retries set to 2 (1 immediate + 1 retry after 1s) — covers transient API errors without excessive rejection delay
 - 01-02: PROTO-02 confirmed via code review — REDIRECT rules use -s (source IP), DNAT rules use --dport (destination port); different match criteria, no conflict possible
+- 02-01: shadcn/ui uses zinc base color with CSS variable dark theme; brand emerald colors and glow shadows preserved alongside
+- 02-01: StatBar devices only (no connection counts); DeviceTable dense table (not cards); offline rows opacity-50 — all locked decisions followed
 
 ### Pending Todos
 
@@ -75,8 +78,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Phase 2 context gathered — ready for planning
-Resume file: .planning/phases/02-dashboard/02-CONTEXT.md
+Stopped at: Completed 02-01-PLAN.md — ready for Plan 02
+Resume file: .planning/phases/02-dashboard/02-01-SUMMARY.md
 
 ### Phase 1 UAT Results (2026-02-26) — PARTIAL
 - OpenVPN throughput: 1MB/7.4s (~1.1 Mbps), 10MB/34.8s (~2.4 Mbps) via T-Mobile cellular
