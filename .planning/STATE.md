@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-27T05:46:20.000Z"
+last_updated: "2026-02-27T05:57:00.000Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
   completed_plans: 9
 ---
@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Customers can reliably route traffic through real mobile devices via HTTP, SOCKS5, or OpenVPN, managed through a clean dashboard.
-**Current focus:** Phase 4 — Bug Fixes and Polish (IN PROGRESS)
+**Current focus:** Phase 4 — Bug Fixes and Polish (COMPLETE)
 
 ## Current Position
 
 Phase: 4 of 4 (Bug Fixes and Polish)
 Plan: 2 of 2 complete
-Status: 04-02-PLAN.md complete — device search bar, auto-rotation column, connection ID column
-Last activity: 2026-02-27 — Completed 04-02: dashboard UI polish (DASH-02)
+Status: All plans complete — recovery webhook, bandwidth reset propagation, OpenVPN modal, dashboard polish
+Last activity: 2026-02-27 — Completed 04-01: recovery webhook wiring, bandwidth reset propagation, OpenVPN modal
 
 Progress: [██████████] 100%
 
@@ -78,6 +78,9 @@ Recent decisions affecting current work:
 - [Phase 03-security-and-monitoring]: 03-02: Webhook cooldown only updates last_offline_alert_at on successful HTTP delivery — failed webhooks don't suppress future attempts
 - [Phase 04-bug-fixes-and-polish]: 04-02: Search input placed with ml-auto after status buttons; device count follows (no longer uses ml-auto itself)
 - [Phase 04-bug-fixes-and-polish]: 04-02: Connection ID shows first 8 chars; CopyButton copies full UUID using existing copiedKey pattern
+- [Phase 04-bug-fixes-and-polish]: 04-01: resetTunnelBandwidth is fire-and-forget — DB reset is source of truth, tunnel counter is best-effort
+- [Phase 04-bug-fixes-and-polish]: 04-01: Tunnel bandwidth reset uses username field (not client_vpn_ip) — service layer resolves username, tunnel does reverse lookup via clientSocksAuth
+- [Phase 04-bug-fixes-and-polish]: 04-01: Single routingMu.Lock/Unlock covers both clientSocksAuth read and clientBandwidthUsed write
 
 ### Pending Todos
 
@@ -90,8 +93,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 04-02-PLAN.md
-Resume file: .planning/phases/04-bug-fixes-and-polish/04-02-SUMMARY.md
+Stopped at: Completed 04-01-PLAN.md
+Resume file: .planning/phases/04-bug-fixes-and-polish/04-01-SUMMARY.md
 
 ### Phase 1 UAT Results (2026-02-26) — PARTIAL
 - OpenVPN throughput: 1MB/7.4s (~1.1 Mbps), 10MB/34.8s (~2.4 Mbps) via T-Mobile cellular
