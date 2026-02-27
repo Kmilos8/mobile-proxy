@@ -77,6 +77,11 @@ Plans:
   4. The devices page has a search bar that filters devices by name
   5. The device table shows an auto-rotation column indicating whether auto-rotation is enabled on each device
   6. Every connection has a visible connection ID assigned at creation, shown in the connection table
+**Plans**: 2 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Wire recovery webhook, propagate bandwidth reset to tunnel, add OpenVPN to Add Connection modal
+- [ ] 04-02-PLAN.md — Add device search bar, auto-rotation column, and connection ID column to dashboard
 
 ## Progress
 
@@ -88,4 +93,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. OpenVPN Throughput | 2/2 | Complete    | 2026-02-26 |
 | 2. Dashboard | 3/3 | Complete   | 2026-02-26 |
 | 3. Security and Monitoring | 2/2 | Complete   | 2026-02-27 |
-| 4. Bug Fixes and Polish | 0/0 | Not started | -          |
+| 4. Bug Fixes and Polish | 0/2 | Not started | -          |
