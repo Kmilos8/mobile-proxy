@@ -1,13 +1,22 @@
 'use client'
 
 import { useState } from 'react'
-import { Copy, Download, Trash2 } from 'lucide-react'
+import { Copy, Download, RefreshCw, Trash2 } from 'lucide-react'
 import { api, ProxyConnection, Device } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { cn, copyToClipboard } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog'
 import DeleteConnectionDialog from './DeleteConnectionDialog'
 
 interface ConnectionTableProps {
@@ -46,6 +55,11 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ProxyConnection | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
+  const [regeneratedPassword, setRegeneratedPassword] = useState<string | null>(null)
+  const [regeneratedConnId, setRegeneratedConnId] = useState<string | null>(null)
+  const [regenDialogOpen, setRegenDialogOpen] = useState(false)
+  const [copiedRegen, setCopiedRegen] = useState(false)
 
   function handleCopy(text: string, key: CopyKey) {
     copyToClipboard(text)
@@ -69,12 +83,12 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
     )
   }
 
-  async function handleDownloadOVPN(conn: ProxyConnection) {
+  async function handleDownloadOVPN(conn: ProxyConnection, password?: string) {
     const token = getToken()
     if (!token) return
     setDownloadingId(conn.id)
     try {
-      await api.connections.downloadOVPN(token, conn.id)
+      await api.connections.downloadOVPN(token, conn.id, password)
     } catch (err) {
       console.error('Failed to download .ovpn:', err)
     } finally {
@@ -92,6 +106,42 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
     setDeleteTarget(null)
     onDelete(id)
   }
+
+  async function handleRegeneratePassword(conn: ProxyConnection) {
+    const token = getToken()
+    if (!token) return
+    setRegeneratingId(conn.id)
+    try {
+      const result = await api.connections.regeneratePassword(token, conn.id)
+      setRegeneratedPassword(result.password)
+      setRegeneratedConnId(conn.id)
+      setCopiedRegen(false)
+      setRegenDialogOpen(true)
+    } catch (err) {
+      console.error('Failed to regenerate password:', err)
+    } finally {
+      setRegeneratingId(null)
+    }
+  }
+
+  function handleCopyRegenPassword() {
+    if (regeneratedPassword) {
+      copyToClipboard(regeneratedPassword)
+      setCopiedRegen(true)
+      setTimeout(() => setCopiedRegen(false), 2000)
+    }
+  }
+
+  function handleRegenDialogClose() {
+    setRegenDialogOpen(false)
+    setRegeneratedPassword(null)
+    setRegeneratedConnId(null)
+    setCopiedRegen(false)
+  }
+
+  const regenConn = regeneratedConnId
+    ? connections.find(c => c.id === regeneratedConnId)
+    : null
 
   if (connections.length === 0) {
     return (
@@ -178,6 +228,16 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
                           <Download className="w-3.5 h-3.5" />
                         </Button>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRegeneratePassword(conn)}
+                        disabled={regeneratingId === conn.id}
+                        className="h-7 w-7 text-zinc-400 hover:text-amber-400"
+                        title="Regenerate password"
+                      >
+                        <RefreshCw className={cn('w-3.5 h-3.5', regeneratingId === conn.id && 'animate-spin')} />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -274,6 +334,16 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
                 <Button
                   variant="ghost"
                   size="icon"
+                  onClick={() => handleRegeneratePassword(conn)}
+                  disabled={regeneratingId === conn.id}
+                  className="h-7 w-7 text-zinc-400 hover:text-amber-400"
+                  title="Regenerate password"
+                >
+                  <RefreshCw className={cn('w-3.5 h-3.5', regeneratingId === conn.id && 'animate-spin')} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => handleDeleteClick(conn)}
                   className="h-7 w-7 text-zinc-500 hover:text-red-400"
                   title="Delete connection"
@@ -292,6 +362,55 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
         onOpenChange={setDeleteOpen}
         onConfirm={handleDeleteConfirm}
       />
+
+      {/* Regenerate password dialog — shows new password once */}
+      <AlertDialog open={regenDialogOpen} onOpenChange={open => { if (!open) handleRegenDialogClose() }}>
+        <AlertDialogContent className="bg-zinc-900 border border-zinc-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white">New Password Generated</AlertDialogTitle>
+            <AlertDialogDescription className="text-zinc-400">
+              Save this password now. It will not be shown again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="my-4">
+            <div className="flex items-center gap-2 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2">
+              <span className="font-mono text-sm text-white flex-1 break-all">
+                {regeneratedPassword}
+              </span>
+              <button
+                onClick={handleCopyRegenPassword}
+                className="text-zinc-400 hover:text-white transition-colors flex-shrink-0"
+                title="Copy password"
+                type="button"
+              >
+                {copiedRegen
+                  ? <span className="text-green-400 text-xs">Copied!</span>
+                  : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+            {regenConn?.proxy_type === 'openvpn' && regeneratedPassword && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleDownloadOVPN(regenConn, regeneratedPassword)}
+                disabled={downloadingId === regenConn.id}
+                className="mt-3 w-full text-xs text-zinc-400 hover:text-white border border-zinc-700"
+              >
+                <Download className="w-3.5 h-3.5 mr-2" />
+                Download .ovpn with embedded credentials
+              </Button>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={handleRegenDialogClose}
+              className="bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:text-white"
+            >
+              Done
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

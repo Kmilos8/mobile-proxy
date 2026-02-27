@@ -204,8 +204,9 @@ export const api = {
       request(`/connections/${id}`, { method: 'PATCH', token, body: { active } }),
     delete: (token: string, id: string) =>
       request(`/connections/${id}`, { method: 'DELETE', token }),
-    downloadOVPN: async (token: string, id: string) => {
-      const res = await fetch(`${API_BASE}/connections/${id}/ovpn`, {
+    downloadOVPN: async (token: string, id: string, password?: string) => {
+      const qs = password ? `?password=${encodeURIComponent(password)}` : ''
+      const res = await fetch(`${API_BASE}/connections/${id}/ovpn${qs}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       })
       if (!res.ok) {
@@ -226,6 +227,8 @@ export const api = {
       a.click()
       URL.revokeObjectURL(url)
     },
+    regeneratePassword: (token: string, id: string) =>
+      request<{ password: string }>(`/connections/${id}/regenerate-password`, { method: 'POST', token }),
   },
   customers: {
     list: (token: string) =>

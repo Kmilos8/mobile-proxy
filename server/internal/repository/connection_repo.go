@@ -63,6 +63,12 @@ func (r *ConnectionRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+func (r *ConnectionRepository) UpdatePasswordHash(ctx context.Context, id uuid.UUID, hash string) error {
+	query := `UPDATE proxy_connections SET password_hash = $2, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, id, hash)
+	return err
+}
+
 func (r *ConnectionRepository) CountActive(ctx context.Context) (int, error) {
 	query := `SELECT COUNT(*) FROM proxy_connections WHERE active = TRUE`
 	var count int

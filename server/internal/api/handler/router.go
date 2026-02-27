@@ -70,6 +70,7 @@ func SetupRouter(
 		dashboard.GET("/connections/:id", connHandler.GetByID)
 		dashboard.PATCH("/connections/:id", connHandler.SetActive)
 		dashboard.DELETE("/connections/:id", connHandler.Delete)
+		dashboard.POST("/connections/:id/regenerate-password", connHandler.RegeneratePassword)
 
 		dashboard.GET("/customers", customerHandler.List)
 		dashboard.POST("/customers", customerHandler.Create)

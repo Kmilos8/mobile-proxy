@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -192,6 +194,35 @@ func (s *ConnectionService) Delete(ctx context.Context, id uuid.UUID) error {
 	}
 
 	return nil
+}
+
+func (s *ConnectionService) RegeneratePassword(ctx context.Context, id uuid.UUID) (string, error) {
+	// Generate 16-character random password
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate password: %w", err)
+	}
+	newPass := base64.URLEncoding.EncodeToString(b)[:16]
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPass), 12)
+	if err != nil {
+		return "", fmt.Errorf("hash password: %w", err)
+	}
+
+	if err := s.connRepo.UpdatePasswordHash(ctx, id, string(hash)); err != nil {
+		return "", fmt.Errorf("update password: %w", err)
+	}
+
+	// Sync credentials to device via heartbeat (device will get new hash as SOCKS5 credential)
+	conn, err := s.connRepo.GetByID(ctx, id)
+	if err == nil && s.syncService != nil {
+		conns, err := s.connRepo.ListByDevice(ctx, conn.DeviceID)
+		if err == nil {
+			go s.syncService.SyncConnections(conn.DeviceID, conns)
+		}
+	}
+
+	return newPass, nil
 }
 
 func (s *ConnectionService) refreshDNAT(tunnelURL string, deviceID string, basePort int, vpnIP string, proxyType string) {
