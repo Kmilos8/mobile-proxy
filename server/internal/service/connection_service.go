@@ -82,13 +82,15 @@ func (s *ConnectionService) Create(ctx context.Context, req *domain.CreateConnec
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
 
+	plaintext := req.Password
 	conn := &domain.ProxyConnection{
 		ID:             uuid.New(),
 		DeviceID:       req.DeviceID,
 		CustomerID:     req.CustomerID,
 		Username:       req.Username,
 		PasswordHash:   string(hash),
-		Password:       req.Password, // Return plaintext on creation only
+		PasswordPlain:  &plaintext,
+		Password:       req.Password,
 		IPWhitelist:    req.IPWhitelist,
 		BandwidthLimit: req.BandwidthLimit,
 		Active:         true,
@@ -209,7 +211,7 @@ func (s *ConnectionService) RegeneratePassword(ctx context.Context, id uuid.UUID
 		return "", fmt.Errorf("hash password: %w", err)
 	}
 
-	if err := s.connRepo.UpdatePasswordHash(ctx, id, string(hash)); err != nil {
+	if err := s.connRepo.UpdatePasswordHash(ctx, id, string(hash), newPass); err != nil {
 		return "", fmt.Errorf("update password: %w", err)
 	}
 

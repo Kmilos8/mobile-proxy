@@ -63,9 +63,9 @@ func (r *ConnectionRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-func (r *ConnectionRepository) UpdatePasswordHash(ctx context.Context, id uuid.UUID, hash string) error {
-	query := `UPDATE proxy_connections SET password_hash = $2, updated_at = NOW() WHERE id = $1`
-	_, err := r.db.Pool.Exec(ctx, query, id, hash)
+func (r *ConnectionRepository) UpdatePasswordHash(ctx context.Context, id uuid.UUID, hash string, plain string) error {
+	query := `UPDATE proxy_connections SET password_hash = $2, password_plain = $3, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, id, hash, plain)
 	return err
 }
 
@@ -127,6 +127,9 @@ func (r *ConnectionRepository) scanConnection(row interface{ Scan(dest ...interf
 		&c.ExpiresAt, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("scan connection: %w", err)
+	}
+	if c.PasswordPlain != nil {
+		c.Password = *c.PasswordPlain
 	}
 	return &c, nil
 }
