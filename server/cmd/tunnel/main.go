@@ -93,6 +93,10 @@ type tunnelServer struct {
 	clientSocksAuth    map[string]socksAuth        // client VPN IP (10.9.0.x) -> SOCKS5 credentials
 	clientBandwidthUsed  map[string]*atomic.Int64  // client VPN IP -> bytes forwarded
 	clientBandwidthLimit map[string]int64          // client VPN IP -> limit (0=unlimited)
+
+	// Per-port bandwidth tracking for HTTP/SOCKS5 DNAT connections
+	portToUsername    map[int]string    // external port -> connection username
+	portBandwidthAcc map[int]int64     // external port -> accumulated bytes (running total)
 }
 
 type socksAuth struct {
@@ -153,6 +157,8 @@ func main() {
 		clientSocksAuth:      make(map[string]socksAuth),
 		clientBandwidthUsed:  make(map[string]*atomic.Int64),
 		clientBandwidthLimit: make(map[string]int64),
+		portToUsername:       make(map[int]string),
+		portBandwidthAcc:     make(map[int]int64),
 	}
 
 	// Start goroutines
@@ -626,6 +632,7 @@ func (s *tunnelServer) teardownDeviceRouting(deviceVPNIP string) {
 type connInfo struct {
 	Port      int    `json:"port"`
 	ProxyType string `json:"proxy_type"`
+	Username  string `json:"username"`
 }
 
 func (s *tunnelServer) notifyConnected(deviceID, vpnIP string) {
@@ -647,6 +654,12 @@ func (s *tunnelServer) notifyConnected(deviceID, vpnIP string) {
 		setupDNAT(result.BasePort, vpnIP)
 		for _, ci := range result.Connections {
 			setupSingleDNAT(ci.Port, vpnIP, ci.ProxyType)
+			// Track port→username mapping for bandwidth accounting
+			if ci.Username != "" {
+				s.routingMu.Lock()
+				s.portToUsername[ci.Port] = ci.Username
+				s.routingMu.Unlock()
+			}
 		}
 		log.Printf("Notified API + DNAT setup: device %s vpn_ip=%s base_port=%d connections=%v", deviceID, vpnIP, result.BasePort, result.Connections)
 	} else {
@@ -672,6 +685,11 @@ func (s *tunnelServer) notifyDisconnected(deviceID, vpnIP string) {
 		teardownDNAT(result.BasePort, vpnIP)
 		for _, ci := range result.Connections {
 			teardownSingleDNAT(ci.Port, vpnIP, ci.ProxyType)
+			// Clean up port→username tracking
+			s.routingMu.Lock()
+			delete(s.portToUsername, ci.Port)
+			delete(s.portBandwidthAcc, ci.Port)
+			s.routingMu.Unlock()
 		}
 		log.Printf("Notified API + DNAT teardown: device %s vpn_ip=%s base_port=%d connections=%v", deviceID, vpnIP, result.BasePort, result.Connections)
 	} else {
@@ -975,6 +993,7 @@ func (s *tunnelServer) handleRefreshDNAT(w http.ResponseWriter, r *http.Request)
 		BasePort  int    `json:"base_port"`
 		VpnIP     string `json:"vpn_ip"`
 		ProxyType string `json:"proxy_type"`
+		Username  string `json:"username"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -987,7 +1006,13 @@ func (s *tunnelServer) handleRefreshDNAT(w http.ResponseWriter, r *http.Request)
 		} else {
 			setupDNAT(req.BasePort, req.VpnIP)
 		}
-		log.Printf("Refresh DNAT: device=%s base_port=%d vpn_ip=%s type=%s", req.DeviceID, req.BasePort, req.VpnIP, req.ProxyType)
+		// Track port→username mapping for bandwidth accounting
+		if req.Username != "" {
+			s.routingMu.Lock()
+			s.portToUsername[req.BasePort] = req.Username
+			s.routingMu.Unlock()
+		}
+		log.Printf("Refresh DNAT: device=%s base_port=%d vpn_ip=%s type=%s username=%s", req.DeviceID, req.BasePort, req.VpnIP, req.ProxyType, req.Username)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -1017,6 +1042,11 @@ func (s *tunnelServer) handleTeardownDNAT(w http.ResponseWriter, r *http.Request
 		} else {
 			teardownDNAT(req.BasePort, req.VpnIP)
 		}
+		// Clean up port→username tracking
+		s.routingMu.Lock()
+		delete(s.portToUsername, req.BasePort)
+		delete(s.portBandwidthAcc, req.BasePort)
+		s.routingMu.Unlock()
 		log.Printf("Teardown DNAT: device=%s base_port=%d vpn_ip=%s type=%s", req.DeviceID, req.BasePort, req.VpnIP, req.ProxyType)
 	}
 
@@ -1180,6 +1210,14 @@ func (s *tunnelServer) handleResetBandwidth(w http.ResponseWriter, r *http.Reque
 			ctr.Store(0)
 		}
 	}
+	// Also reset DNAT port bandwidth accumulator for this username
+	if req.Username != "" {
+		for port, user := range s.portToUsername {
+			if user == req.Username {
+				s.portBandwidthAcc[port] = 0
+			}
+		}
+	}
 	s.routingMu.Unlock()
 
 	w.WriteHeader(http.StatusOK)
@@ -1195,8 +1233,78 @@ func (s *tunnelServer) bandwidthFlushLoop() {
 	}
 }
 
+// readDNATBandwidth reads iptables byte counters for DNAT rules, zeros them,
+// and returns accumulated bandwidth per username for HTTP/SOCKS5 proxy connections.
+func (s *tunnelServer) readDNATBandwidth() map[string]int64 {
+	// Read counters: -v for verbose (includes bytes), -n for numeric, -x for exact counts
+	out, err := runCmd("iptables", "-t", "nat", "-L", "PREROUTING", "-v", "-n", "-x")
+	if err != nil {
+		log.Printf("[bandwidth] iptables read failed: %v", err)
+		return nil
+	}
+
+	// Parse output lines. Format example:
+	//   pkts bytes target prot opt in out source destination
+	//   42  12345 DNAT   tcp  --  *  *   0.0.0.0/0  0.0.0.0/0  tcp dpt:30048 to:192.168.255.2:8080
+	portBytes := make(map[int]int64)
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.Contains(line, "DNAT") || !strings.Contains(line, "tcp") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		byteCount, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil || byteCount == 0 {
+			continue
+		}
+		// Find dpt:NNNNN in the fields
+		for _, f := range fields {
+			if strings.HasPrefix(f, "dpt:") {
+				portStr := strings.TrimPrefix(f, "dpt:")
+				port, err := strconv.Atoi(portStr)
+				if err == nil {
+					portBytes[port] += byteCount
+				}
+			}
+		}
+	}
+
+	// Zero the counters after reading
+	if _, err := runCmd("iptables", "-t", "nat", "-Z", "PREROUTING"); err != nil {
+		log.Printf("[bandwidth] iptables zero failed: %v", err)
+	}
+
+	// Map port bytes to usernames using portToUsername
+	result := make(map[string]int64)
+	s.routingMu.Lock()
+	for port, bytes := range portBytes {
+		if username, ok := s.portToUsername[port]; ok {
+			s.portBandwidthAcc[port] += bytes
+			result[username] += s.portBandwidthAcc[port]
+		}
+	}
+	// Also include ports that had no new traffic but have accumulated bytes
+	for port, acc := range s.portBandwidthAcc {
+		if acc > 0 {
+			if username, ok := s.portToUsername[port]; ok {
+				if _, already := result[username]; !already {
+					result[username] = acc
+				}
+			}
+		}
+	}
+	s.routingMu.Unlock()
+
+	return result
+}
+
 // flushBandwidthToAPI sends a snapshot of bandwidth usage (by username) to the API.
 func (s *tunnelServer) flushBandwidthToAPI() {
+	// 1. Snapshot OpenVPN client bandwidth (tracked via SOCKS5 forwarder)
 	s.routingMu.Lock()
 	snapshot := make(map[string]int64)
 	for ip, ctr := range s.clientBandwidthUsed {
@@ -1205,6 +1313,20 @@ func (s *tunnelServer) flushBandwidthToAPI() {
 		}
 	}
 	s.routingMu.Unlock()
+
+	// 2. Read DNAT (HTTP/SOCKS5 proxy) bandwidth from iptables counters
+	dnatBW := s.readDNATBandwidth()
+	for username, bytes := range dnatBW {
+		// A connection is either OpenVPN or HTTP/SOCKS5, so they won't overlap.
+		// Use max in case both somehow report for the same username.
+		if existing, ok := snapshot[username]; ok {
+			if bytes > existing {
+				snapshot[username] = bytes
+			}
+		} else {
+			snapshot[username] = bytes
+		}
+	}
 
 	if len(snapshot) == 0 {
 		return
@@ -1222,7 +1344,7 @@ func (s *tunnelServer) flushBandwidthToAPI() {
 		return
 	}
 	resp.Body.Close()
-	log.Printf("[bandwidth] flushed %d connections to API", len(snapshot))
+	log.Printf("[bandwidth] flushed %d connections to API (ovpn=%d, dnat=%d)", len(snapshot), len(snapshot)-len(dnatBW), len(dnatBW))
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

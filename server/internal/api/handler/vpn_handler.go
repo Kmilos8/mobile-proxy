@@ -33,6 +33,7 @@ type vpnConnectRequest struct {
 type connectionPortInfo struct {
 	Port      int    `json:"port"`
 	ProxyType string `json:"proxy_type"`
+	Username  string `json:"username"`
 }
 
 // Connected is called by the tunnel server or OpenVPN client-connect script
@@ -86,6 +87,7 @@ func (h *VPNHandler) Connected(c *gin.Context) {
 					connections = append(connections, connectionPortInfo{
 						Port:      *conn.BasePort,
 						ProxyType: conn.ProxyType,
+						Username:  conn.Username,
 					})
 				}
 			}
@@ -143,6 +145,7 @@ func (h *VPNHandler) Disconnected(c *gin.Context) {
 					connections = append(connections, connectionPortInfo{
 						Port:      *conn.BasePort,
 						ProxyType: conn.ProxyType,
+						Username:  conn.Username,
 					})
 				}
 			}

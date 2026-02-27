@@ -123,7 +123,7 @@ func (s *ConnectionService) Create(ctx context.Context, req *domain.CreateConnec
 	// Skip DNAT for openvpn — it uses the shared VPN server port, not per-connection ports
 	tunnelURL := s.getTunnelPushURL(ctx, device)
 	if conn.BasePort != nil && device.VpnIP != "" && tunnelURL != "" && proxyType != "openvpn" {
-		go s.refreshDNAT(tunnelURL, device.ID.String(), *conn.BasePort, device.VpnIP, proxyType)
+		go s.refreshDNAT(tunnelURL, device.ID.String(), *conn.BasePort, device.VpnIP, proxyType, conn.Username)
 	}
 
 	// Sync all connections for this device to peer server
@@ -227,12 +227,13 @@ func (s *ConnectionService) RegeneratePassword(ctx context.Context, id uuid.UUID
 	return newPass, nil
 }
 
-func (s *ConnectionService) refreshDNAT(tunnelURL string, deviceID string, basePort int, vpnIP string, proxyType string) {
+func (s *ConnectionService) refreshDNAT(tunnelURL string, deviceID string, basePort int, vpnIP string, proxyType string, username string) {
 	body, _ := json.Marshal(map[string]interface{}{
 		"device_id":  deviceID,
 		"base_port":  basePort,
 		"vpn_ip":     vpnIP,
 		"proxy_type": proxyType,
+		"username":   username,
 	})
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Post(tunnelURL+"/refresh-dnat", "application/json", strings.NewReader(string(body)))
