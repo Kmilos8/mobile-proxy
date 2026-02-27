@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react'
+import { ArrowUp, ArrowDown, ChevronsUpDown, Search } from 'lucide-react'
 import {
   Table,
   TableBody,
@@ -15,7 +15,7 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import { cn } from '@/lib/utils'
 import type { Device } from '@/lib/api'
 
-type SortKey = 'name' | 'status' | 'cellular_ip' | 'connections'
+type SortKey = 'name' | 'status' | 'cellular_ip' | 'auto_rotate' | 'connections'
 type SortDir = 'asc' | 'desc'
 type StatusFilter = 'all' | 'online' | 'offline'
 
@@ -35,6 +35,7 @@ export default function DeviceTable({ devices, connectionCounts }: DeviceTablePr
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [searchQuery, setSearchQuery] = useState('')
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -46,6 +47,7 @@ export default function DeviceTable({ devices, connectionCounts }: DeviceTablePr
   }
 
   const filtered = devices.filter(d => {
+    if (searchQuery && !(d.name || '').toLowerCase().includes(searchQuery.toLowerCase())) return false
     if (statusFilter === 'online') return d.status === 'online'
     if (statusFilter === 'offline') return d.status !== 'online'
     return true
@@ -63,6 +65,9 @@ export default function DeviceTable({ devices, connectionCounts }: DeviceTablePr
     } else if (sortKey === 'cellular_ip') {
       aVal = a.cellular_ip || ''
       bVal = b.cellular_ip || ''
+    } else if (sortKey === 'auto_rotate') {
+      aVal = a.auto_rotate_minutes || 0
+      bVal = b.auto_rotate_minutes || 0
     } else if (sortKey === 'connections') {
       aVal = connectionCounts[a.id] ?? 0
       bVal = connectionCounts[b.id] ?? 0
@@ -93,7 +98,17 @@ export default function DeviceTable({ devices, connectionCounts }: DeviceTablePr
             {f.charAt(0).toUpperCase() + f.slice(1)}
           </button>
         ))}
-        <span className="text-xs text-zinc-600 ml-auto">{sorted.length} device{sorted.length !== 1 ? 's' : ''}</span>
+        <div className="relative ml-auto">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search devices..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-8 pr-3 py-1 bg-zinc-800 border border-zinc-700 text-white text-xs rounded focus:outline-none focus:border-brand-500"
+          />
+        </div>
+        <span className="text-xs text-zinc-600">{sorted.length} device{sorted.length !== 1 ? 's' : ''}</span>
       </div>
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
@@ -119,6 +134,12 @@ export default function DeviceTable({ devices, connectionCounts }: DeviceTablePr
                 IP <SortIcon column="cellular_ip" sortKey={sortKey} sortDir={sortDir} />
               </TableHead>
               <TableHead
+                className="text-zinc-400 hover:text-white cursor-pointer select-none h-10 px-4 hidden md:table-cell"
+                onClick={() => handleSort('auto_rotate')}
+              >
+                Auto-Rotate <SortIcon column="auto_rotate" sortKey={sortKey} sortDir={sortDir} />
+              </TableHead>
+              <TableHead
                 className="cursor-pointer select-none text-zinc-400 hover:text-white h-10 px-4 text-right"
                 onClick={() => handleSort('connections')}
               >
@@ -129,7 +150,7 @@ export default function DeviceTable({ devices, connectionCounts }: DeviceTablePr
           <TableBody>
             {sorted.length === 0 ? (
               <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableCell colSpan={4} className="text-center text-zinc-500 py-10">
+                <TableCell colSpan={5} className="text-center text-zinc-500 py-10">
                   No devices match the current filter.
                 </TableCell>
               </TableRow>
@@ -153,6 +174,11 @@ export default function DeviceTable({ devices, connectionCounts }: DeviceTablePr
                   </TableCell>
                   <TableCell className="px-4 py-3 font-mono text-xs text-zinc-400 hidden md:table-cell">
                     {device.cellular_ip || '-'}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-xs hidden md:table-cell">
+                    {device.auto_rotate_minutes > 0
+                      ? <span className="text-emerald-400">every {device.auto_rotate_minutes}m</span>
+                      : <span className="text-zinc-600">&mdash;</span>}
                   </TableCell>
                   <TableCell className="px-4 py-3 text-right text-zinc-300">
                     {connectionCounts[device.id] ?? 0}
