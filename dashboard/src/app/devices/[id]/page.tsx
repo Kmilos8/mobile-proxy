@@ -430,7 +430,7 @@ export default function DeviceDetailPage() {
               device={device}
               connections={connections}
               bandwidth={bandwidth}
-              serverHost={SERVER_HOST}
+              serverHost={device.relay_server_ip || '178.156.210.156'}
               copyToClipboard={handleCopy}
               copiedId={copiedId}
               addConnectionOpen={addConnectionOpen}
