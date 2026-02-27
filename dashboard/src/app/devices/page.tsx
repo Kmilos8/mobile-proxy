@@ -140,6 +140,7 @@ export default function DevicesPage() {
   const [showPairingModal, setShowPairingModal] = useState(false)
   const [pairingCodes, setPairingCodes] = useState<PairingCode[]>([])
   const [connectionCounts, setConnectionCounts] = useState<Record<string, number>>({})
+  const [connectionIds, setConnectionIds] = useState<Record<string, string>>({})
 
   const fetchDevices = useCallback(async () => {
     const token = getToken()
@@ -171,12 +172,17 @@ export default function DevicesPage() {
     try {
       const res = await api.connections.list(token)
       const counts: Record<string, number> = {}
+      const ids: Record<string, string> = {}
       for (const conn of res.connections || []) {
         if (conn.active) {
           counts[conn.device_id] = (counts[conn.device_id] || 0) + 1
+          if (!ids[conn.device_id]) {
+            ids[conn.device_id] = conn.id
+          }
         }
       }
       setConnectionCounts(counts)
+      setConnectionIds(ids)
     } catch (err) {
       console.error('Failed to fetch connections:', err)
     }
@@ -290,7 +296,7 @@ export default function DevicesPage() {
           <p className="text-zinc-600 text-sm mt-1">Click "Add Device" to generate a pairing code.</p>
         </div>
       ) : (
-        <DeviceTable devices={devices} connectionCounts={connectionCounts} />
+        <DeviceTable devices={devices} connectionCounts={connectionCounts} connectionIds={connectionIds} />
       )}
 
       {showPairingModal && (

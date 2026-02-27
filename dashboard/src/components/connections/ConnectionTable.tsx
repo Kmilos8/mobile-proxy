@@ -174,7 +174,6 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
         <Table>
           <TableHeader>
             <TableRow className="border-zinc-800 text-zinc-500 hover:bg-transparent">
-              <TableHead className="text-xs font-medium text-zinc-500">ID</TableHead>
               <TableHead className="text-xs font-medium text-zinc-500">Type</TableHead>
               <TableHead className="text-xs font-medium text-zinc-500">Host</TableHead>
               <TableHead className="text-xs font-medium text-zinc-500">Port</TableHead>
@@ -194,10 +193,6 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
 
               return (
                 <TableRow key={conn.id} className="border-zinc-800/30 hover:bg-zinc-800/20">
-                  <TableCell className="font-mono text-xs text-zinc-500">
-                    {conn.id.slice(0, 8)}
-                    <CopyButton text={conn.id} copyKey={`${conn.id}-id`} />
-                  </TableCell>
                   <TableCell>
                     <Badge variant={getProtocolBadgeVariant(conn.proxy_type)}>
                       {getProtocolLabel(conn.proxy_type)}
@@ -311,13 +306,6 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
               </div>
 
               <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">ID</span>
-                  <span className="font-mono text-xs text-zinc-400 flex items-center gap-1">
-                    {conn.id.slice(0, 8)}
-                    <CopyButton text={conn.id} copyKey={`m-${conn.id}-id`} />
-                  </span>
-                </div>
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-500">Host</span>
                   <span className="font-mono text-xs text-zinc-300 flex items-center">

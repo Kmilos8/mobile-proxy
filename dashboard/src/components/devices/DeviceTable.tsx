@@ -22,6 +22,7 @@ type StatusFilter = 'all' | 'online' | 'offline'
 interface DeviceTableProps {
   devices: Device[]
   connectionCounts: Record<string, number>
+  connectionIds: Record<string, string>
 }
 
 function SortIcon({ column, sortKey, sortDir }: { column: SortKey; sortKey: SortKey; sortDir: SortDir }) {
@@ -30,7 +31,7 @@ function SortIcon({ column, sortKey, sortDir }: { column: SortKey; sortKey: Sort
   return <ArrowDown className="w-3.5 h-3.5 text-brand-400 ml-1 inline" />
 }
 
-export default function DeviceTable({ devices, connectionCounts }: DeviceTableProps) {
+export default function DeviceTable({ devices, connectionCounts, connectionIds }: DeviceTableProps) {
   const router = useRouter()
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -133,6 +134,9 @@ export default function DeviceTable({ devices, connectionCounts }: DeviceTablePr
               >
                 IP <SortIcon column="cellular_ip" sortKey={sortKey} sortDir={sortDir} />
               </TableHead>
+              <TableHead className="text-zinc-400 h-10 px-4 hidden md:table-cell">
+                Conn. ID
+              </TableHead>
               <TableHead
                 className="text-zinc-400 hover:text-white cursor-pointer select-none h-10 px-4 hidden md:table-cell"
                 onClick={() => handleSort('auto_rotate')}
@@ -150,7 +154,7 @@ export default function DeviceTable({ devices, connectionCounts }: DeviceTablePr
           <TableBody>
             {sorted.length === 0 ? (
               <TableRow className="border-zinc-800 hover:bg-transparent">
-                <TableCell colSpan={5} className="text-center text-zinc-500 py-10">
+                <TableCell colSpan={6} className="text-center text-zinc-500 py-10">
                   No devices match the current filter.
                 </TableCell>
               </TableRow>
@@ -174,6 +178,9 @@ export default function DeviceTable({ devices, connectionCounts }: DeviceTablePr
                   </TableCell>
                   <TableCell className="px-4 py-3 font-mono text-xs text-zinc-400 hidden md:table-cell">
                     {device.cellular_ip || '-'}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 font-mono text-xs text-zinc-500 hidden md:table-cell">
+                    {connectionIds[device.id] ? connectionIds[device.id].slice(0, 8) : <span className="text-zinc-600">&mdash;</span>}
                   </TableCell>
                   <TableCell className="px-4 py-3 text-xs hidden md:table-cell">
                     {device.auto_rotate_minutes > 0
