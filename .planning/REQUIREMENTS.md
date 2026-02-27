@@ -25,8 +25,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Monitoring
 
-- [ ] **MON-01**: Device offline notification via email or webhook
-- [ ] **MON-02**: Enforce bandwidth limits per connection (field exists but not enforced)
+- [x] **MON-01**: Device offline notification via email or webhook
+- [x] **MON-02**: Enforce bandwidth limits per connection (field exists but not enforced)
 
 ## Already Working (Keep As-Is)
 
@@ -90,8 +90,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DASH-03 | Phase 2 | Complete |
 | DASH-04 | Phase 2 | Complete |
 | SEC-01 | Phase 3 | Complete |
-| MON-01 | Phase 3 | Pending |
-| MON-02 | Phase 3 | Pending |
+| MON-01 | Phase 3 | Complete |
+| MON-02 | Phase 3 | Complete |
 
 **Coverage:**
 - v1 requirements: 9 total

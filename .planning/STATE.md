@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Customers can reliably route traffic through real mobile devices via HTTP, SOCKS5, or OpenVPN, managed through a clean dashboard.
-**Current focus:** Phase 3 — Security and Monitoring (Plan 01 complete)
+**Current focus:** Phase 3 — Security and Monitoring (COMPLETE)
 
 ## Current Position
 
 Phase: 3 of 3 (Security and Monitoring)
-Plan: 1 of 2 complete
-Status: 03-01-PLAN.md complete — bcrypt auth, SOCKS5 hash credential, regenerate-password endpoint
-Last activity: 2026-02-27 — Completed 03-01: security hardening, migration 010, dashboard Regenerate button
+Plan: 2 of 2 complete
+Status: 03-02-PLAN.md complete — bandwidth enforcement, offline webhooks, settings page
+Last activity: 2026-02-27 — Completed 03-02: tunnel bandwidth enforcement, webhook dispatch, dashboard monitoring UI
 
-Progress: [█████████░] 90%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Progress: [█████████░] 90%
 - Trend: —
 
 | Phase 03-security-and-monitoring P01 | 25 | 2 tasks | 11 files |
+| Phase 03-security-and-monitoring P02 | 15 | 3 tasks | 16 files |
 
 *Updated after each plan completion*
 
@@ -73,6 +74,8 @@ Recent decisions affecting current work:
 - [Phase 02-dashboard]: 02-02: OpenVPN port displayed as 1195 (fixed) since http_port/socks5_port are null for OpenVPN connections
 - [Phase 03-security-and-monitoring]: SOCKS5 credential migration: PasswordHash string used as SOCKS5 auth token on both sides — opaque shared secret between tunnel server and Android device
 - [Phase 03-security-and-monitoring]: 03-01: PasswordPlain changed to *string in domain model — migration nulls column, nullable Go type prevents runtime panic on DB scan
+- [Phase 03-security-and-monitoring]: 03-02: Bandwidth flush sends {username -> bytes} not {vpnIP -> bytes} — username available in same routingMu lock scope via clientSocksAuth[ip].user
+- [Phase 03-security-and-monitoring]: 03-02: Webhook cooldown only updates last_offline_alert_at on successful HTTP delivery — failed webhooks don't suppress future attempts
 
 ### Pending Todos
 
@@ -85,8 +88,8 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 03-01-PLAN.md
-Resume file: .planning/phases/03-security-and-monitoring/03-01-SUMMARY.md
+Stopped at: Completed 03-02-PLAN.md
+Resume file: .planning/phases/03-security-and-monitoring/03-02-SUMMARY.md
 
 ### Phase 1 UAT Results (2026-02-26) — PARTIAL
 - OpenVPN throughput: 1MB/7.4s (~1.1 Mbps), 10MB/34.8s (~2.4 Mbps) via T-Mobile cellular
