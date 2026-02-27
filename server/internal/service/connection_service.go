@@ -247,7 +247,34 @@ func (s *ConnectionService) UpdateBandwidthUsedByUsername(ctx context.Context, u
 }
 
 func (s *ConnectionService) ResetBandwidth(ctx context.Context, id uuid.UUID) error {
-	return s.connRepo.ResetBandwidthUsed(ctx, id)
+	if err := s.connRepo.ResetBandwidthUsed(ctx, id); err != nil {
+		return err
+	}
+	// Best-effort: reset tunnel in-memory counter to prevent 30s flush overwriting the zero
+	conn, err := s.connRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil // DB reset succeeded; tunnel reset is best-effort
+	}
+	device, err := s.deviceRepo.GetByID(ctx, conn.DeviceID)
+	if err != nil {
+		return nil
+	}
+	tunnelURL := s.getTunnelPushURL(ctx, device)
+	if tunnelURL != "" {
+		go s.resetTunnelBandwidth(tunnelURL, conn.Username)
+	}
+	return nil
+}
+
+func (s *ConnectionService) resetTunnelBandwidth(tunnelURL, username string) {
+	body, _ := json.Marshal(map[string]string{"username": username})
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Post(tunnelURL+"/openvpn-client-reset-bandwidth", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		log.Printf("[reset-bandwidth] tunnel call failed for %s: %v", username, err)
+		return
+	}
+	resp.Body.Close()
 }
 
 func (s *ConnectionService) teardownDNAT(tunnelURL string, deviceID string, basePort int, vpnIP string, proxyType string) {
