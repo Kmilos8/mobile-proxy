@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -126,4 +127,34 @@ func (h *ConnectionHandler) RegeneratePassword(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"password": newPass})
+}
+
+// BandwidthFlush is an internal endpoint (no JWT) called by the tunnel server every 30s.
+// Receives a map of {username -> bytes_used} and updates the DB.
+func (h *ConnectionHandler) BandwidthFlush(c *gin.Context) {
+	var data map[string]int64 // username -> bytes used
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	for username, used := range data {
+		if err := h.connService.UpdateBandwidthUsedByUsername(c.Request.Context(), username, used); err != nil {
+			log.Printf("[bandwidth-flush] failed for %s: %v", username, err)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// ResetBandwidth resets bandwidth_used to 0 for a connection (DB and tunnel in-memory counter).
+func (h *ConnectionHandler) ResetBandwidth(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid connection id"})
+		return
+	}
+	if err := h.connService.ResetBandwidth(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

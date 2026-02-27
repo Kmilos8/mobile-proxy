@@ -242,6 +242,14 @@ func (s *ConnectionService) refreshDNAT(tunnelURL string, deviceID string, baseP
 	log.Printf("Refresh DNAT sent for device=%s port=%d type=%s via %s", deviceID, basePort, proxyType, tunnelURL)
 }
 
+func (s *ConnectionService) UpdateBandwidthUsedByUsername(ctx context.Context, username string, used int64) error {
+	return s.connRepo.UpdateBandwidthUsed(ctx, username, used)
+}
+
+func (s *ConnectionService) ResetBandwidth(ctx context.Context, id uuid.UUID) error {
+	return s.connRepo.ResetBandwidthUsed(ctx, id)
+}
+
 func (s *ConnectionService) teardownDNAT(tunnelURL string, deviceID string, basePort int, vpnIP string, proxyType string) {
 	body, _ := json.Marshal(map[string]interface{}{
 		"device_id":  deviceID,

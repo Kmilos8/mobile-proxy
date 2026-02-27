@@ -107,10 +107,12 @@ func (h *OpenVPNHandler) Connect(c *gin.Context) {
 		pushURL = fmt.Sprintf("http://%s:8081", device.RelayServerIP)
 	}
 	body, _ := json.Marshal(map[string]interface{}{
-		"client_vpn_ip": req.VpnIP,
-		"device_vpn_ip": device.VpnIP,
-		"socks_user":    conn.Username,
-		"socks_pass":    conn.PasswordHash,
+		"client_vpn_ip":   req.VpnIP,
+		"device_vpn_ip":   device.VpnIP,
+		"socks_user":      conn.Username,
+		"socks_pass":      conn.PasswordHash,
+		"bandwidth_limit": conn.BandwidthLimit,
+		"bandwidth_used":  conn.BandwidthUsed,
 	})
 	resp, err := http.Post(pushURL+"/openvpn-client-connect", "application/json", bytes.NewReader(body))
 	if err != nil {

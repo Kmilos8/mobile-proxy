@@ -69,6 +69,18 @@ func (r *ConnectionRepository) UpdatePasswordHash(ctx context.Context, id uuid.U
 	return err
 }
 
+func (r *ConnectionRepository) UpdateBandwidthUsed(ctx context.Context, username string, used int64) error {
+	query := `UPDATE proxy_connections SET bandwidth_used = $2, updated_at = NOW() WHERE username = $1`
+	_, err := r.db.Pool.Exec(ctx, query, username, used)
+	return err
+}
+
+func (r *ConnectionRepository) ResetBandwidthUsed(ctx context.Context, id uuid.UUID) error {
+	query := `UPDATE proxy_connections SET bandwidth_used = 0, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, id)
+	return err
+}
+
 func (r *ConnectionRepository) CountActive(ctx context.Context) (int, error) {
 	query := `SELECT COUNT(*) FROM proxy_connections WHERE active = TRUE`
 	var count int

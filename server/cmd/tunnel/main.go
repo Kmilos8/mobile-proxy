@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -86,10 +87,12 @@ type tunnelServer struct {
 	tunBuf []byte
 
 	// NAT routing: policy routing tables for OpenVPN client traffic
-	routingMu        sync.Mutex
-	deviceRouteTable map[string]int         // device VPN IP (192.168.255.x) -> routing table number
-	clientToDevice   map[string]string      // client VPN IP (10.9.0.x) -> device VPN IP (192.168.255.x)
-	clientSocksAuth  map[string]socksAuth   // client VPN IP (10.9.0.x) -> SOCKS5 credentials
+	routingMu          sync.Mutex
+	deviceRouteTable   map[string]int              // device VPN IP (192.168.255.x) -> routing table number
+	clientToDevice     map[string]string           // client VPN IP (10.9.0.x) -> device VPN IP (192.168.255.x)
+	clientSocksAuth    map[string]socksAuth        // client VPN IP (10.9.0.x) -> SOCKS5 credentials
+	clientBandwidthUsed  map[string]*atomic.Int64  // client VPN IP -> bytes forwarded
+	clientBandwidthLimit map[string]int64          // client VPN IP -> limit (0=unlimited)
 }
 
 type socksAuth struct {
@@ -137,17 +140,19 @@ func main() {
 		port, udpRecvBufSize/1024, udpSendBufSize/1024)
 
 	srv := &tunnelServer{
-		udpConn:          conn,
-		tunIface:         iface,
-		apiURL:           apiURL,
-		clients:          make(map[string]*client),
-		addrMap:          make(map[string]string),
-		deviceMap:        make(map[string]*client),
-		ipPool:           make([]bool, ipPoolEnd-ipPoolStart+1),
-		tunBuf:           make([]byte, maxPacketSize+1), // +1 for type prefix
-		deviceRouteTable: make(map[string]int),
-		clientToDevice:   make(map[string]string),
-		clientSocksAuth:  make(map[string]socksAuth),
+		udpConn:              conn,
+		tunIface:             iface,
+		apiURL:               apiURL,
+		clients:              make(map[string]*client),
+		addrMap:              make(map[string]string),
+		deviceMap:            make(map[string]*client),
+		ipPool:               make([]bool, ipPoolEnd-ipPoolStart+1),
+		tunBuf:               make([]byte, maxPacketSize+1), // +1 for type prefix
+		deviceRouteTable:     make(map[string]int),
+		clientToDevice:       make(map[string]string),
+		clientSocksAuth:      make(map[string]socksAuth),
+		clientBandwidthUsed:  make(map[string]*atomic.Int64),
+		clientBandwidthLimit: make(map[string]int64),
 	}
 
 	// Start goroutines
@@ -467,9 +472,21 @@ func (s *tunnelServer) tunToUdp() {
 		srcIP := net.IPv4(buf[13], buf[14], buf[15], buf[16]).String()
 		s.routingMu.Lock()
 		deviceIP, mapped := s.clientToDevice[srcIP]
+		ctr := s.clientBandwidthUsed[srcIP]
+		limit := s.clientBandwidthLimit[srcIP]
 		s.routingMu.Unlock()
 
 		if mapped {
+			// Bandwidth enforcement — atomic increment outside lock
+			var used int64
+			if ctr != nil {
+				used = ctr.Add(int64(n))
+			}
+			// Hard cutoff: drop packet silently if limit exceeded
+			if limit > 0 && used > limit {
+				continue
+			}
+
 			s.mu.RLock()
 			c, ok = s.clients[deviceIP]
 			s.mu.RUnlock()
@@ -577,6 +594,8 @@ func (s *tunnelServer) teardownDeviceRouting(deviceVPNIP string) {
 	for _, clientIP := range clientsToRemove {
 		delete(s.clientToDevice, clientIP)
 		delete(s.clientSocksAuth, clientIP)
+		delete(s.clientBandwidthUsed, clientIP)
+		delete(s.clientBandwidthLimit, clientIP)
 	}
 	s.routingMu.Unlock()
 
@@ -879,12 +898,15 @@ func (s *tunnelServer) startPushAPI() {
 		}
 	}
 
+	go s.bandwidthFlushLoop()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/push-command", s.handlePushCommand)
 	mux.HandleFunc("/refresh-dnat", s.handleRefreshDNAT)
 	mux.HandleFunc("/teardown-dnat", s.handleTeardownDNAT)
 	mux.HandleFunc("/openvpn-client-connect", s.handleOpenVPNClientConnect)
 	mux.HandleFunc("/openvpn-client-disconnect", s.handleOpenVPNClientDisconnect)
+	mux.HandleFunc("/openvpn-client-reset-bandwidth", s.handleResetBandwidth)
 
 	log.Printf("Push API listening on port %d", pushPort)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", pushPort), mux); err != nil {
@@ -1014,10 +1036,12 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 	}
 
 	var req struct {
-		ClientVPNIP string `json:"client_vpn_ip"` // 10.9.0.x
-		DeviceVPNIP string `json:"device_vpn_ip"` // 192.168.255.y
-		SocksUser   string `json:"socks_user"`
-		SocksPass   string `json:"socks_pass"`
+		ClientVPNIP    string `json:"client_vpn_ip"`    // 10.9.0.x
+		DeviceVPNIP    string `json:"device_vpn_ip"`    // 192.168.255.y
+		SocksUser      string `json:"socks_user"`
+		SocksPass      string `json:"socks_pass"`
+		BandwidthLimit int64  `json:"bandwidth_limit"` // bytes, 0 = unlimited
+		BandwidthUsed  int64  `json:"bandwidth_used"`  // current DB value — initial offset
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -1035,6 +1059,11 @@ func (s *tunnelServer) handleOpenVPNClientConnect(w http.ResponseWriter, r *http
 	}
 	s.clientToDevice[req.ClientVPNIP] = req.DeviceVPNIP
 	s.clientSocksAuth[req.ClientVPNIP] = socksAuth{user: req.SocksUser, pass: req.SocksPass}
+	// Initialize bandwidth counter from DB value (survives tunnel restarts)
+	ctr := &atomic.Int64{}
+	ctr.Store(req.BandwidthUsed)
+	s.clientBandwidthUsed[req.ClientVPNIP] = ctr
+	s.clientBandwidthLimit[req.ClientVPNIP] = req.BandwidthLimit
 	s.routingMu.Unlock()
 
 	// Remove any stale ip rule for this client (idempotent)
@@ -1097,6 +1126,8 @@ func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *h
 	s.routingMu.Lock()
 	delete(s.clientToDevice, req.ClientVPNIP)
 	delete(s.clientSocksAuth, req.ClientVPNIP)
+	delete(s.clientBandwidthUsed, req.ClientVPNIP)
+	delete(s.clientBandwidthLimit, req.ClientVPNIP)
 	s.routingMu.Unlock()
 
 	// Remove ip rules — loop to remove all duplicates
@@ -1119,6 +1150,66 @@ func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *h
 	log.Printf("[routing] client disconnect: removed rules for %s", req.ClientVPNIP)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"ok":true}`))
+}
+
+// handleResetBandwidth resets the in-memory bandwidth counter for a client VPN IP.
+func (s *tunnelServer) handleResetBandwidth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ClientVPNIP string `json:"client_vpn_ip"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	s.routingMu.Lock()
+	if ctr, ok := s.clientBandwidthUsed[req.ClientVPNIP]; ok {
+		ctr.Store(0)
+	}
+	s.routingMu.Unlock()
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"ok":true}`))
+}
+
+// bandwidthFlushLoop periodically flushes bandwidth counters to the API server.
+func (s *tunnelServer) bandwidthFlushLoop() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.flushBandwidthToAPI()
+	}
+}
+
+// flushBandwidthToAPI sends a snapshot of bandwidth usage (by username) to the API.
+func (s *tunnelServer) flushBandwidthToAPI() {
+	s.routingMu.Lock()
+	snapshot := make(map[string]int64)
+	for ip, ctr := range s.clientBandwidthUsed {
+		if auth, ok := s.clientSocksAuth[ip]; ok {
+			snapshot[auth.user] = ctr.Load()
+		}
+	}
+	s.routingMu.Unlock()
+
+	if len(snapshot) == 0 {
+		return
+	}
+
+	body, _ := json.Marshal(snapshot)
+	apiURL := s.apiURL
+	if apiURL == "" {
+		apiURL = "http://127.0.0.1:8080"
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(apiURL+"/api/internal/bandwidth-flush", "application/json", bytes.NewReader(body))
+	if err != nil {
+		log.Printf("[bandwidth] flush failed: %v", err)
+		return
+	}
+	resp.Body.Close()
+	log.Printf("[bandwidth] flushed %d connections to API", len(snapshot))
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

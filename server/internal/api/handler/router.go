@@ -71,6 +71,7 @@ func SetupRouter(
 		dashboard.PATCH("/connections/:id", connHandler.SetActive)
 		dashboard.DELETE("/connections/:id", connHandler.Delete)
 		dashboard.POST("/connections/:id/regenerate-password", connHandler.RegeneratePassword)
+		dashboard.POST("/connections/:id/reset-bandwidth", connHandler.ResetBandwidth)
 
 		dashboard.GET("/customers", customerHandler.List)
 		dashboard.POST("/customers", customerHandler.Create)
@@ -107,6 +108,9 @@ func SetupRouter(
 			syncGroup.POST("/connections", syncHandler.SyncConnections)
 		}
 	}
+
+	// Internal bandwidth flush (called by tunnel server, no JWT)
+	r.POST("/api/internal/bandwidth-flush", connHandler.BandwidthFlush)
 
 	// Internal OpenVPN client routes (called by OpenVPN client-server scripts)
 	if openvpnHandler != nil {
