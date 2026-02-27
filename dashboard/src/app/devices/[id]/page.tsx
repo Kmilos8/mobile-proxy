@@ -150,6 +150,10 @@ export default function DeviceDetailPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [addConnectionOpen, setAddConnectionOpen] = useState(false)
   const [showRepairModal, setShowRepairModal] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const fetchData = useCallback(async () => {
     const token = getToken()
@@ -282,13 +286,75 @@ export default function DeviceDetailPage() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
           <div>
-            <h1 className="text-xl font-bold flex items-center gap-2">
-              {device.name || 'Unnamed Device'}
-              <StatusBadge status={device.status} />
-            </h1>
-            <div className="text-sm text-zinc-500 mt-0.5">
-              {device.device_model} &middot; Connection ID: {device.id.slice(0, 8)}
-            </div>
+            {editing ? (
+              <div className="space-y-2">
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="Device name"
+                  className="bg-zinc-800 border border-zinc-700 text-white text-lg font-bold px-3 py-1 rounded focus:outline-none focus:border-brand-500 w-64"
+                  autoFocus
+                />
+                <input
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Description (optional)"
+                  className="bg-zinc-800 border border-zinc-700 text-zinc-300 text-sm px-3 py-1 rounded focus:outline-none focus:border-brand-500 w-64 block"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      const token = getToken()
+                      if (!token) return
+                      setSaving(true)
+                      try {
+                        const updated = await api.devices.update(token, device.id, { name: editName, description: editDescription })
+                        setDevice(updated)
+                        setEditing(false)
+                      } catch (err) {
+                        console.error('Failed to update device:', err)
+                      } finally {
+                        setSaving(false)
+                      }
+                    }}
+                    disabled={saving}
+                    className="inline-flex items-center gap-1 px-3 py-1 bg-brand-600 hover:bg-brand-500 text-white text-xs font-medium rounded transition-colors"
+                  >
+                    <Check className="w-3 h-3" />
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => setEditing(false)}
+                    className="inline-flex items-center gap-1 px-3 py-1 text-zinc-400 hover:text-white text-xs rounded transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <h1 className="text-xl font-bold flex items-center gap-2">
+                  {device.name || 'Unnamed Device'}
+                  <StatusBadge status={device.status} />
+                  <button
+                    onClick={() => {
+                      setEditName(device.name || '')
+                      setEditDescription(device.description || '')
+                      setEditing(true)
+                    }}
+                    className="text-zinc-500 hover:text-white transition-colors"
+                    title="Edit device"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
+                </h1>
+                <div className="text-sm text-zinc-500 mt-0.5">
+                  {device.device_model} &middot; Connection ID: {device.id.slice(0, 8)}
+                  {device.description && <span> &middot; {device.description}</span>}
+                </div>
+              </>
+            )}
           </div>
         </div>
         <button
