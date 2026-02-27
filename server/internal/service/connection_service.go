@@ -249,6 +249,12 @@ func (s *ConnectionService) UpdateBandwidthUsedByUsername(ctx context.Context, u
 	return s.connRepo.UpdateBandwidthUsed(ctx, username, used)
 }
 
+func (s *ConnectionService) SyncBandwidth(data map[string]int64) {
+	if s.syncService != nil {
+		go s.syncService.SyncBandwidth(data)
+	}
+}
+
 func (s *ConnectionService) ResetBandwidth(ctx context.Context, id uuid.UUID) error {
 	if err := s.connRepo.ResetBandwidthUsed(ctx, id); err != nil {
 		return err
