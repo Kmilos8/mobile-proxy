@@ -21,7 +21,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Security
 
-- [ ] **SEC-01**: Replace plaintext proxy password storage with secure approach (bcrypt hash exists but PasswordPlain also stored and used by OpenVPN auth)
+- [x] **SEC-01**: Replace plaintext proxy password storage with secure approach (bcrypt hash exists but PasswordPlain also stored and used by OpenVPN auth)
 
 ### Monitoring
 
@@ -89,7 +89,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DASH-02 | Phase 2 | Complete |
 | DASH-03 | Phase 2 | Complete |
 | DASH-04 | Phase 2 | Complete |
-| SEC-01 | Phase 3 | Pending |
+| SEC-01 | Phase 3 | Complete |
 | MON-01 | Phase 3 | Pending |
 | MON-02 | Phase 3 | Pending |
 

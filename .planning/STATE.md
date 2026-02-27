@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-26T20:38:21.040Z"
+last_updated: "2026-02-27T04:38:15.674Z"
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 7
+  completed_plans: 6
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Customers can reliably route traffic through real mobile devices via HTTP, SOCKS5, or OpenVPN, managed through a clean dashboard.
-**Current focus:** Phase 2 — Dashboard (Plan 03 at checkpoint — awaiting operator verification)
+**Current focus:** Phase 3 — Security and Monitoring (Plan 01 complete)
 
 ## Current Position
 
-Phase: 2 of 3 (Dashboard)
-Plan: 3 of 3 in current phase — AT CHECKPOINT
-Status: Plan 02-03 checkpoint reached — dev server running at http://localhost:3000 for operator visual verification
-Last activity: 2026-02-26 — Started 02-03: verification checkpoint, dev server started
+Phase: 3 of 3 (Security and Monitoring)
+Plan: 1 of 2 complete
+Status: 03-01-PLAN.md complete — bcrypt auth, SOCKS5 hash credential, regenerate-password endpoint
+Last activity: 2026-02-27 — Completed 03-01: security hardening, migration 010, dashboard Regenerate button
 
-Progress: [████████░░] 80%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -44,8 +44,10 @@ Progress: [████████░░] 80%
 | 02-dashboard | 2/N | ~34 min | ~17 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (~1 min), 01-02 (~2 min), 02-01 (~30 min), 02-02 (~4 min)
+- Last 5 plans: 01-01 (~1 min), 01-02 (~2 min), 02-01 (~30 min), 02-02 (~4 min), 03-01 (~25 min)
 - Trend: —
+
+| Phase 03-security-and-monitoring P01 | 25 | 2 tasks | 11 files |
 
 *Updated after each plan completion*
 
@@ -69,6 +71,8 @@ Recent decisions affecting current work:
 - [Phase 02-dashboard]: 02-02: Passwords displayed in plaintext (no masking) per locked decision — operators need raw credentials
 - [Phase 02-dashboard]: 02-02: Copy All URL format is protocol://username:password@host:port; OpenVPN shows download button only
 - [Phase 02-dashboard]: 02-02: OpenVPN port displayed as 1195 (fixed) since http_port/socks5_port are null for OpenVPN connections
+- [Phase 03-security-and-monitoring]: SOCKS5 credential migration: PasswordHash string used as SOCKS5 auth token on both sides — opaque shared secret between tunnel server and Android device
+- [Phase 03-security-and-monitoring]: 03-01: PasswordPlain changed to *string in domain model — migration nulls column, nullable Go type prevents runtime panic on DB scan
 
 ### Pending Todos
 
@@ -80,9 +84,9 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-26
-Stopped at: 02-03-PLAN.md checkpoint — awaiting operator verification at http://localhost:3000
-Resume file: .planning/phases/02-dashboard/02-03-SUMMARY.md
+Last session: 2026-02-27
+Stopped at: Completed 03-01-PLAN.md
+Resume file: .planning/phases/03-security-and-monitoring/03-01-SUMMARY.md
 
 ### Phase 1 UAT Results (2026-02-26) — PARTIAL
 - OpenVPN throughput: 1MB/7.4s (~1.1 Mbps), 10MB/34.8s (~2.4 Mbps) via T-Mobile cellular
