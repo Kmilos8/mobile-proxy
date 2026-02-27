@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mobileproxy/server/internal/repository"
 	"github.com/mobileproxy/server/internal/service"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type OpenVPNHandler struct {
@@ -53,7 +54,7 @@ func (h *OpenVPNHandler) Auth(c *gin.Context) {
 		return
 	}
 
-	if conn.PasswordPlain != req.Password {
+	if err := bcrypt.CompareHashAndPassword([]byte(conn.PasswordHash), []byte(req.Password)); err != nil {
 		log.Printf("[openvpn-auth] password mismatch for user %s", req.Username)
 		c.JSON(http.StatusUnauthorized, gin.H{"ok": false})
 		return
@@ -109,7 +110,7 @@ func (h *OpenVPNHandler) Connect(c *gin.Context) {
 		"client_vpn_ip": req.VpnIP,
 		"device_vpn_ip": device.VpnIP,
 		"socks_user":    conn.Username,
-		"socks_pass":    conn.PasswordPlain,
+		"socks_pass":    conn.PasswordHash,
 	})
 	resp, err := http.Post(pushURL+"/openvpn-client-connect", "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -218,12 +219,14 @@ func (h *OpenVPNHandler) DownloadOVPN(c *gin.Context) {
 	ovpn.WriteString("verb 3\n")
 	ovpn.WriteString("\n")
 
-	// Embed credentials inline so the user isn't prompted
-	ovpn.WriteString("<auth-user-pass>\n")
-	ovpn.WriteString(conn.Username + "\n")
-	ovpn.WriteString(conn.PasswordPlain + "\n")
-	ovpn.WriteString("</auth-user-pass>\n")
-	ovpn.WriteString("\n")
+	// Embed credentials inline only when ?password= is provided (creation/regen time)
+	if passParam := c.Query("password"); passParam != "" {
+		ovpn.WriteString("<auth-user-pass>\n")
+		ovpn.WriteString(conn.Username + "\n")
+		ovpn.WriteString(passParam + "\n")
+		ovpn.WriteString("</auth-user-pass>\n")
+		ovpn.WriteString("\n")
+	}
 
 	ovpn.WriteString("<ca>\n")
 	ovpn.WriteString(strings.TrimSpace(string(caCert)))

@@ -82,7 +82,7 @@ func (s *SyncService) SyncConnections(deviceID uuid.UUID, connections []domain.P
 			CustomerID:     c.CustomerID,
 			Username:       c.Username,
 			PasswordHash:   c.PasswordHash,
-			PasswordPlain:  c.PasswordPlain,
+			PasswordPlain:  c.PasswordHash,
 			IPWhitelist:    c.IPWhitelist,
 			BandwidthLimit: c.BandwidthLimit,
 			BandwidthUsed:  c.BandwidthUsed,

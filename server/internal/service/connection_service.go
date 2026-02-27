@@ -86,7 +86,6 @@ func (s *ConnectionService) Create(ctx context.Context, req *domain.CreateConnec
 		CustomerID:     req.CustomerID,
 		Username:       req.Username,
 		PasswordHash:   string(hash),
-		PasswordPlain:  req.Password,
 		Password:       req.Password, // Return plaintext on creation only
 		IPWhitelist:    req.IPWhitelist,
 		BandwidthLimit: req.BandwidthLimit,
@@ -139,7 +138,6 @@ func (s *ConnectionService) GetByID(ctx context.Context, id uuid.UUID) (*domain.
 	if err != nil {
 		return nil, err
 	}
-	conn.Password = conn.PasswordPlain
 	return conn, nil
 }
 
@@ -148,9 +146,6 @@ func (s *ConnectionService) ListByDevice(ctx context.Context, deviceID uuid.UUID
 	if err != nil {
 		return nil, err
 	}
-	for i := range conns {
-		conns[i].Password = conns[i].PasswordPlain
-	}
 	return conns, nil
 }
 
@@ -158,9 +153,6 @@ func (s *ConnectionService) List(ctx context.Context) ([]domain.ProxyConnection,
 	conns, err := s.connRepo.List(ctx)
 	if err != nil {
 		return nil, err
-	}
-	for i := range conns {
-		conns[i].Password = conns[i].PasswordPlain
 	}
 	return conns, nil
 }

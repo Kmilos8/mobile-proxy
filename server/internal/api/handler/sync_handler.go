@@ -111,7 +111,7 @@ func (h *SyncHandler) SyncConnections(c *gin.Context) {
 			CustomerID:     ci.CustomerID,
 			Username:       ci.Username,
 			PasswordHash:   ci.PasswordHash,
-			PasswordPlain:  ci.PasswordPlain,
+			// PasswordPlain is deprecated (nullable after migration); not synced
 			IPWhitelist:    ci.IPWhitelist,
 			BandwidthLimit: ci.BandwidthLimit,
 			BandwidthUsed:  ci.BandwidthUsed,

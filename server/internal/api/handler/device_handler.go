@@ -160,10 +160,10 @@ func (h *DeviceHandler) Heartbeat(c *gin.Context) {
 		if err == nil {
 			var creds []domain.ProxyCredential
 			for _, conn := range conns {
-				if conn.Active && conn.PasswordPlain != "" {
+				if conn.Active && conn.PasswordHash != "" {
 					creds = append(creds, domain.ProxyCredential{
 						Username: conn.Username,
-						Password: conn.PasswordPlain,
+						Password: conn.PasswordHash,
 					})
 				}
 			}

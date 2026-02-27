@@ -99,8 +99,8 @@ type ProxyConnection struct {
 	DeviceID       uuid.UUID  `json:"device_id" db:"device_id"`
 	CustomerID     *uuid.UUID `json:"customer_id" db:"customer_id"`
 	Username       string     `json:"username" db:"username"`
-	PasswordHash   string     `json:"-" db:"password_hash"`
-	PasswordPlain  string     `json:"-" db:"password_plain"`
+	PasswordHash   string  `json:"-" db:"password_hash"`
+	PasswordPlain  *string `json:"-" db:"password_plain"` // nullable after migration
 	Password       string     `json:"password,omitempty" db:"-"` // plaintext only on creation response
 	IPWhitelist    []string   `json:"ip_whitelist" db:"ip_whitelist"`
 	BandwidthLimit int64      `json:"bandwidth_limit" db:"bandwidth_limit"` // bytes, 0 = unlimited
