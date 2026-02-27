@@ -3,6 +3,7 @@ package handler
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -27,6 +28,10 @@ func (h *ConnectionHandler) Create(c *gin.Context) {
 
 	conn, err := h.connService.Create(c.Request.Context(), &req)
 	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

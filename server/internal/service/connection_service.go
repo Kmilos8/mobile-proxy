@@ -76,6 +76,15 @@ func (s *ConnectionService) Create(ctx context.Context, req *domain.CreateConnec
 		return nil, fmt.Errorf("invalid proxy_type: must be 'http', 'socks5', or 'openvpn'")
 	}
 
+	// Reject duplicate usernames for the same device
+	exists, err := s.connRepo.ExistsByDeviceAndUsername(ctx, req.DeviceID, req.Username)
+	if err != nil {
+		return nil, fmt.Errorf("check duplicate username: %w", err)
+	}
+	if exists {
+		return nil, fmt.Errorf("username '%s' already exists for this device", req.Username)
+	}
+
 	// Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {

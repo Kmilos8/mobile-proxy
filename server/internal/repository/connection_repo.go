@@ -93,6 +93,13 @@ func (r *ConnectionRepository) GetByUsername(ctx context.Context, username strin
 	return r.scanConnection(r.db.Pool.QueryRow(ctx, query, username))
 }
 
+func (r *ConnectionRepository) ExistsByDeviceAndUsername(ctx context.Context, deviceID uuid.UUID, username string) (bool, error) {
+	query := `SELECT COUNT(*) FROM proxy_connections WHERE device_id = $1 AND username = $2 AND active = TRUE`
+	var count int
+	err := r.db.Pool.QueryRow(ctx, query, deviceID, username).Scan(&count)
+	return count > 0, err
+}
+
 func (r *ConnectionRepository) ReplaceAllByDeviceID(ctx context.Context, deviceID uuid.UUID, conns []domain.ProxyConnection) error {
 	tx, err := r.db.Pool.Begin(ctx)
 	if err != nil {
