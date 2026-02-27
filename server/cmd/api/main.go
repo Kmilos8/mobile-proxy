@@ -41,6 +41,7 @@ func main() {
 	statusLogRepo := repository.NewStatusLogRepository(db)
 	deviceService := service.NewDeviceService(deviceRepo, ipHistRepo, commandRepo, portService, vpnService)
 	deviceService.SetStatusLogRepo(statusLogRepo)
+	deviceService.SetUserRepo(userRepo)
 	deviceService.SetRelayServerRepo(relayServerRepo)
 	if v := os.Getenv("TUNNEL_PUSH_URL"); v != "" {
 		deviceService.SetTunnelPushURL(v)

@@ -1153,6 +1153,7 @@ func (s *tunnelServer) handleOpenVPNClientDisconnect(w http.ResponseWriter, r *h
 }
 
 // handleResetBandwidth resets the in-memory bandwidth counter for a client VPN IP.
+// Accepts client_vpn_ip directly or username for reverse lookup.
 func (s *tunnelServer) handleResetBandwidth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1160,12 +1161,24 @@ func (s *tunnelServer) handleResetBandwidth(w http.ResponseWriter, r *http.Reque
 	}
 	var req struct {
 		ClientVPNIP string `json:"client_vpn_ip"`
+		Username    string `json:"username"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
 	s.routingMu.Lock()
-	if ctr, ok := s.clientBandwidthUsed[req.ClientVPNIP]; ok {
-		ctr.Store(0)
+	targetIP := req.ClientVPNIP
+	if targetIP == "" && req.Username != "" {
+		for ip, auth := range s.clientSocksAuth {
+			if auth.user == req.Username {
+				targetIP = ip
+				break
+			}
+		}
+	}
+	if targetIP != "" {
+		if ctr, ok := s.clientBandwidthUsed[targetIP]; ok {
+			ctr.Store(0)
+		}
 	}
 	s.routingMu.Unlock()
 
