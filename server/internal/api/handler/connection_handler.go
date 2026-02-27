@@ -142,8 +142,10 @@ func (h *ConnectionHandler) BandwidthFlush(c *gin.Context) {
 			log.Printf("[bandwidth-flush] failed for %s: %v", username, err)
 		}
 	}
-	// Forward bandwidth data to peer (dashboard VPS)
-	h.connService.SyncBandwidth(data)
+	// Forward bandwidth data to peer (dashboard VPS), unless this is already a peer sync
+	if c.Query("from_peer") != "1" {
+		h.connService.SyncBandwidth(data)
+	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

@@ -118,7 +118,7 @@ func (s *SyncService) SyncConnections(deviceID uuid.UUID, connections []domain.P
 // SyncBandwidth forwards bandwidth flush data to the peer API server.
 func (s *SyncService) SyncBandwidth(data map[string]int64) {
 	body, _ := json.Marshal(data)
-	resp, err := s.client.Post(s.peerAPIURL+"/api/internal/bandwidth-flush", "application/json", bytes.NewReader(body))
+	resp, err := s.client.Post(s.peerAPIURL+"/api/internal/bandwidth-flush?from_peer=1", "application/json", bytes.NewReader(body))
 	if err != nil {
 		log.Printf("[sync] SyncBandwidth to peer failed: %v", err)
 		return
