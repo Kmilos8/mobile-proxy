@@ -229,6 +229,16 @@ export const api = {
     },
     regeneratePassword: (token: string, id: string) =>
       request<{ password: string }>(`/connections/${id}/regenerate-password`, { method: 'POST', token }),
+    resetBandwidth: (token: string, id: string) =>
+      request<{ ok: boolean }>(`/connections/${id}/reset-bandwidth`, { method: 'POST', token }),
+  },
+  settings: {
+    getWebhook: (token: string) =>
+      request<{ webhook_url: string | null }>('/settings/webhook', { token }),
+    setWebhook: (token: string, webhookUrl: string) =>
+      request<{ ok: boolean }>('/settings/webhook', { method: 'PUT', token, body: { webhook_url: webhookUrl } }),
+    testWebhook: (token: string, webhookUrl: string) =>
+      request<{ ok: boolean; status: number }>('/settings/webhook/test', { method: 'POST', token, body: { webhook_url: webhookUrl } }),
   },
   customers: {
     list: (token: string) =>

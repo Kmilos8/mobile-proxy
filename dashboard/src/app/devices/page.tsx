@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { Plus, X, Copy, Check, Trash2, LogOut } from 'lucide-react'
+import { Plus, X, Copy, Check, Trash2, LogOut, Settings } from 'lucide-react'
+import Link from 'next/link'
 import { api, Device, PairingCode, ProxyConnection } from '@/lib/api'
 import { getToken, clearAuth } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
@@ -240,6 +241,13 @@ export default function DevicesPage() {
             <Plus className="w-4 h-4" />
             Add Device
           </button>
+          <Link
+            href="/settings"
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm text-zinc-500 hover:text-white hover:bg-zinc-800/70 rounded-lg transition-colors"
+            title="Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </Link>
           <button
             onClick={() => { clearAuth(); router.push('/login') }}
             className="inline-flex items-center gap-2 px-3 py-2 text-sm text-zinc-500 hover:text-white hover:bg-zinc-800/70 rounded-lg transition-colors"

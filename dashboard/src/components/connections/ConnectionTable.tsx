@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Copy, Download, RefreshCw, Trash2 } from 'lucide-react'
+import { Copy, Download, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
 import { api, ProxyConnection, Device } from '@/lib/api'
 import { getToken } from '@/lib/auth'
 import { cn, copyToClipboard } from '@/lib/utils'
@@ -17,6 +17,7 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
+import BandwidthBar from '@/components/ui/BandwidthBar'
 import DeleteConnectionDialog from './DeleteConnectionDialog'
 
 interface ConnectionTableProps {
@@ -60,6 +61,7 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
   const [regeneratedConnId, setRegeneratedConnId] = useState<string | null>(null)
   const [regenDialogOpen, setRegenDialogOpen] = useState(false)
   const [copiedRegen, setCopiedRegen] = useState(false)
+  const [resettingBandwidthId, setResettingBandwidthId] = useState<string | null>(null)
 
   function handleCopy(text: string, key: CopyKey) {
     copyToClipboard(text)
@@ -139,6 +141,20 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
     setCopiedRegen(false)
   }
 
+  async function handleResetBandwidth(conn: ProxyConnection) {
+    const token = getToken()
+    if (!token) return
+    setResettingBandwidthId(conn.id)
+    try {
+      await api.connections.resetBandwidth(token, conn.id)
+      onRefresh()
+    } catch (err) {
+      console.error('Failed to reset bandwidth:', err)
+    } finally {
+      setResettingBandwidthId(null)
+    }
+  }
+
   const regenConn = regeneratedConnId
     ? connections.find(c => c.id === regeneratedConnId)
     : null
@@ -163,6 +179,7 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
               <TableHead className="text-xs font-medium text-zinc-500">Port</TableHead>
               <TableHead className="text-xs font-medium text-zinc-500">Username</TableHead>
               <TableHead className="text-xs font-medium text-zinc-500">Password</TableHead>
+              <TableHead className="text-xs font-medium text-zinc-500">Usage</TableHead>
               <TableHead className="text-xs font-medium text-zinc-500">Status</TableHead>
               <TableHead className="text-xs font-medium text-zinc-500 text-right">Actions</TableHead>
             </TableRow>
@@ -197,6 +214,9 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
                     {conn.password}
                     {conn.password && <CopyButton text={conn.password} copyKey={`${conn.id}-pass`} />}
                   </TableCell>
+                  <TableCell className="min-w-[120px]">
+                    <BandwidthBar used={conn.bandwidth_used} limit={conn.bandwidth_limit} />
+                  </TableCell>
                   <TableCell>
                     <span className={cn('text-xs', conn.active ? 'text-green-400' : 'text-zinc-500')}>
                       {conn.active ? 'Active' : 'Disabled'}
@@ -228,6 +248,16 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
                           <Download className="w-3.5 h-3.5" />
                         </Button>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleResetBandwidth(conn)}
+                        disabled={resettingBandwidthId === conn.id}
+                        className="h-7 w-7 text-zinc-400 hover:text-emerald-400"
+                        title="Reset usage"
+                      >
+                        <RotateCcw className={cn('w-3.5 h-3.5', resettingBandwidthId === conn.id && 'animate-spin')} />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -304,6 +334,10 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
                     {conn.password && <CopyButton text={conn.password} copyKey={`m-${conn.id}-pass`} />}
                   </span>
                 </div>
+                <div>
+                  <span className="text-zinc-500 block mb-1 text-xs">Usage</span>
+                  <BandwidthBar used={conn.bandwidth_used} limit={conn.bandwidth_limit} />
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1 border-t border-zinc-800">
@@ -331,6 +365,16 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
                     <Download className="w-3.5 h-3.5" />
                   </Button>
                 )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => handleResetBandwidth(conn)}
+                  disabled={resettingBandwidthId === conn.id}
+                  className="h-7 w-7 text-zinc-400 hover:text-emerald-400"
+                  title="Reset usage"
+                >
+                  <RotateCcw className={cn('w-3.5 h-3.5', resettingBandwidthId === conn.id && 'animate-spin')} />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"

@@ -37,6 +37,7 @@ export default function AddConnectionModal({ deviceId, open, onOpenChange, onCre
   const [proxyType, setProxyType] = useState<'http' | 'socks5'>('http')
   const [username, setUsername] = useState(() => generateUsername())
   const [password, setPassword] = useState(() => generatePassword())
+  const [bandwidthLimitGB, setBandwidthLimitGB] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -47,6 +48,7 @@ export default function AddConnectionModal({ deviceId, open, onOpenChange, onCre
         setProxyType('http')
         setUsername(generateUsername())
         setPassword(generatePassword())
+        setBandwidthLimitGB('')
         setError(null)
       }
       onOpenChange(newOpen)
@@ -62,12 +64,17 @@ export default function AddConnectionModal({ deviceId, open, onOpenChange, onCre
     }
     setLoading(true)
     setError(null)
+    // Convert GB to bytes (0 = unlimited)
+    const bandwidthLimit = bandwidthLimitGB
+      ? Math.round(parseFloat(bandwidthLimitGB) * 1024 * 1024 * 1024)
+      : 0
     try {
       await api.connections.create(token, {
         device_id: deviceId,
         username,
         password,
         proxy_type: proxyType as string,
+        bandwidth_limit: bandwidthLimit,
       })
       onOpenChange(false)
       // Reset for next open
@@ -128,6 +135,20 @@ export default function AddConnectionModal({ deviceId, open, onOpenChange, onCre
               onChange={(e) => setPassword(e.target.value)}
               required
               className="w-full bg-zinc-800 border border-zinc-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+            />
+          </div>
+
+          {/* Bandwidth Limit */}
+          <div className="space-y-1.5">
+            <label className="text-sm text-zinc-400">Bandwidth Limit (GB) <span className="text-zinc-600">— optional, leave blank for unlimited</span></label>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={bandwidthLimitGB}
+              onChange={(e) => setBandwidthLimitGB(e.target.value)}
+              placeholder="e.g. 10 for 10 GB, blank = unlimited"
+              className="w-full bg-zinc-800 border border-zinc-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 placeholder-zinc-600"
             />
           </div>
 
