@@ -29,12 +29,14 @@ func main() {
 	commandRepo := repository.NewCommandRepository(db)
 	bwRepo := repository.NewBandwidthRepository(db)
 	relayServerRepo := repository.NewRelayServerRepository(db)
+	userRepo := repository.NewUserRepository(db)
 
 	statusLogRepo := repository.NewStatusLogRepository(db)
 	portService := service.NewPortService(deviceRepo, cfg.Ports)
 	deviceService := service.NewDeviceService(deviceRepo, ipHistRepo, commandRepo, portService, nil)
 	deviceService.SetStatusLogRepo(statusLogRepo)
 	deviceService.SetRelayServerRepo(relayServerRepo)
+	deviceService.SetUserRepo(userRepo)
 	if v := os.Getenv("TUNNEL_PUSH_URL"); v != "" {
 		deviceService.SetTunnelPushURL(v)
 	}

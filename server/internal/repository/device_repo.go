@@ -81,6 +81,19 @@ func (r *DeviceRepository) UpdateStatus(ctx context.Context, id uuid.UUID, statu
 	return err
 }
 
+func (r *DeviceRepository) GetLastOfflineAlertAt(ctx context.Context, deviceID uuid.UUID) (*time.Time, error) {
+	query := `SELECT last_offline_alert_at FROM devices WHERE id = $1`
+	var t *time.Time
+	err := r.db.Pool.QueryRow(ctx, query, deviceID).Scan(&t)
+	return t, err
+}
+
+func (r *DeviceRepository) SetLastOfflineAlertAt(ctx context.Context, deviceID uuid.UUID, t time.Time) error {
+	query := `UPDATE devices SET last_offline_alert_at = $2 WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, deviceID, t)
+	return err
+}
+
 func (r *DeviceRepository) UpdateHeartbeat(ctx context.Context, id uuid.UUID, req *domain.HeartbeatRequest) error {
 	query := `UPDATE devices SET
 		cellular_ip = NULLIF($2, '')::inet,

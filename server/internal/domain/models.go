@@ -41,6 +41,7 @@ type User struct {
 	PasswordHash string    `json:"-" db:"password_hash"`
 	Name         string    `json:"name" db:"name"`
 	Role         string    `json:"role" db:"role"` // admin, operator
+	WebhookURL   *string   `json:"webhook_url,omitempty" db:"webhook_url"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
 }
@@ -74,8 +75,9 @@ type Device struct {
 	SOCKS5Port      int          `json:"socks5_port" db:"socks5_port"`
 	UDPRelayPort    int          `json:"udp_relay_port" db:"udp_relay_port"`
 	OVPNPort        int          `json:"ovpn_port" db:"ovpn_port"`
-	LastHeartbeat   *time.Time   `json:"last_heartbeat" db:"last_heartbeat"`
-	AppVersion      string       `json:"app_version" db:"app_version"`
+	LastHeartbeat      *time.Time   `json:"last_heartbeat" db:"last_heartbeat"`
+	LastOfflineAlertAt *time.Time   `json:"-" db:"last_offline_alert_at"`
+	AppVersion         string       `json:"app_version" db:"app_version"`
 	DeviceModel     string       `json:"device_model" db:"device_model"`
 	AndroidVersion  string       `json:"android_version" db:"android_version"`
 	RelayServerID   *uuid.UUID   `json:"relay_server_id" db:"relay_server_id"`

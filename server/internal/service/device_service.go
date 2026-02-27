@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,6 +21,7 @@ type DeviceService struct {
 	commandRepo     *repository.CommandRepository
 	statusLogRepo   *repository.StatusLogRepository
 	relayServerRepo *repository.RelayServerRepository
+	userRepo        *repository.UserRepository
 	portService     *PortService
 	vpnService      *VPNService
 	tunnelPushURL   string // fallback static URL (e.g. http://178.156.210.156:8081)
@@ -49,6 +51,11 @@ func (s *DeviceService) SetTunnelPushURL(url string) {
 // SetStatusLogRepo configures the status log repository for tracking status transitions.
 func (s *DeviceService) SetStatusLogRepo(repo *repository.StatusLogRepository) {
 	s.statusLogRepo = repo
+}
+
+// SetUserRepo configures the user repository for webhook dispatch.
+func (s *DeviceService) SetUserRepo(repo *repository.UserRepository) {
+	s.userRepo = repo
 }
 
 // SetRelayServerRepo configures the relay server repository for dynamic tunnel URL resolution.
@@ -134,7 +141,8 @@ func (s *DeviceService) Heartbeat(ctx context.Context, deviceID uuid.UUID, req *
 		return nil, fmt.Errorf("get device: %w", err)
 	}
 
-	// Log status transition
+	// Log status transition and send recovery webhook if device was offline
+	wasOffline := device.Status == domain.DeviceStatusOffline
 	if s.statusLogRepo != nil {
 		now := time.Now().UTC()
 		if device.Status != domain.DeviceStatusOnline {
@@ -146,6 +154,10 @@ func (s *DeviceService) Heartbeat(ctx context.Context, deviceID uuid.UUID, req *
 				_ = s.statusLogRepo.Insert(ctx, deviceID, string(domain.DeviceStatusOnline), string(domain.DeviceStatusOnline), now)
 			}
 		}
+	}
+	// Send recovery webhook if device transitioned from offline to online
+	if wasOffline {
+		go s.sendRecoveryWebhook(ctx, *device)
 	}
 
 	// Update heartbeat
@@ -332,6 +344,7 @@ func (s *DeviceService) MarkStaleOfflineWithLogs(ctx context.Context) (int64, er
 				continue
 			}
 			_ = s.statusLogRepo.Insert(ctx, d.ID, string(domain.DeviceStatusOffline), string(d.Status), now)
+			go s.sendOfflineWebhook(ctx, d)
 			count++
 		}
 	}
@@ -394,4 +407,77 @@ func (s *DeviceService) GetUptimeSegments(ctx context.Context, deviceID uuid.UUI
 	}
 
 	return segments, nil
+}
+
+// sendOfflineWebhook dispatches a webhook notification when a device goes offline.
+// Respects a 5-minute cooldown per device to avoid duplicate alerts.
+func (s *DeviceService) sendOfflineWebhook(ctx context.Context, d domain.Device) {
+	if s.userRepo == nil {
+		return
+	}
+
+	// Check 5-minute cooldown
+	lastAlert, err := s.deviceRepo.GetLastOfflineAlertAt(ctx, d.ID)
+	if err == nil && lastAlert != nil && time.Since(*lastAlert) < 5*time.Minute {
+		return // cooldown active
+	}
+
+	webhookURL, err := s.userRepo.GetWebhookURLForDevice(ctx, d.ID)
+	if err != nil || webhookURL == "" {
+		return
+	}
+
+	var lastSeen string
+	if d.LastHeartbeat != nil {
+		lastSeen = d.LastHeartbeat.Format(time.RFC3339)
+	}
+	payload, _ := json.Marshal(map[string]interface{}{
+		"event":       "device.offline",
+		"device_id":   d.ID.String(),
+		"device_name": d.Name,
+		"last_seen":   lastSeen,
+		"timestamp":   time.Now().UTC().Format(time.RFC3339),
+	})
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(webhookURL, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		log.Printf("[webhook] offline alert failed for device %s: %v", d.ID, err)
+		return
+	}
+	resp.Body.Close()
+
+	// Only update cooldown on successful delivery
+	_ = s.deviceRepo.SetLastOfflineAlertAt(ctx, d.ID, time.Now().UTC())
+	log.Printf("[webhook] offline alert sent for device %s (status=%d)", d.Name, resp.StatusCode)
+}
+
+// sendRecoveryWebhook dispatches a webhook notification when a device comes back online.
+func (s *DeviceService) sendRecoveryWebhook(ctx context.Context, d domain.Device) {
+	if s.userRepo == nil {
+		return
+	}
+
+	webhookURL, err := s.userRepo.GetWebhookURLForDevice(ctx, d.ID)
+	if err != nil || webhookURL == "" {
+		return
+	}
+
+	now := time.Now().UTC()
+	payload, _ := json.Marshal(map[string]interface{}{
+		"event":          "device.online",
+		"device_id":      d.ID.String(),
+		"device_name":    d.Name,
+		"reconnected_at": now.Format(time.RFC3339),
+		"timestamp":      now.Format(time.RFC3339),
+	})
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(webhookURL, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		log.Printf("[webhook] recovery alert failed for device %s: %v", d.ID, err)
+		return
+	}
+	resp.Body.Close()
+	log.Printf("[webhook] recovery alert sent for device %s (status=%d)", d.Name, resp.StatusCode)
 }

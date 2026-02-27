@@ -17,10 +17,10 @@ func NewUserRepository(db *DB) *UserRepository {
 }
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
-	query := `SELECT id, email, password_hash, name, role, created_at, updated_at FROM users WHERE email = $1`
+	query := `SELECT id, email, password_hash, name, role, webhook_url, created_at, updated_at FROM users WHERE email = $1`
 	var u domain.User
 	err := r.db.Pool.QueryRow(ctx, query, email).Scan(
-		&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+		&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.WebhookURL, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get user by email: %w", err)
 	}
@@ -28,10 +28,10 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*domain.
 }
 
 func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
-	query := `SELECT id, email, password_hash, name, role, created_at, updated_at FROM users WHERE id = $1`
+	query := `SELECT id, email, password_hash, name, role, webhook_url, created_at, updated_at FROM users WHERE id = $1`
 	var u domain.User
 	err := r.db.Pool.QueryRow(ctx, query, id).Scan(
-		&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+		&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Role, &u.WebhookURL, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get user by id: %w", err)
 	}
@@ -42,4 +42,22 @@ func (r *UserRepository) Create(ctx context.Context, u *domain.User) error {
 	query := `INSERT INTO users (id, email, password_hash, name, role) VALUES ($1, $2, $3, $4, $5)`
 	_, err := r.db.Pool.Exec(ctx, query, u.ID, u.Email, u.PasswordHash, u.Name, u.Role)
 	return err
+}
+
+func (r *UserRepository) UpdateWebhookURL(ctx context.Context, id uuid.UUID, url *string) error {
+	query := `UPDATE users SET webhook_url = $2, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, id, url)
+	return err
+}
+
+// GetWebhookURLForDevice returns the first configured webhook URL from any user.
+// In a single-tenant system, there is typically one operator with a webhook configured.
+func (r *UserRepository) GetWebhookURLForDevice(ctx context.Context, deviceID uuid.UUID) (string, error) {
+	query := `SELECT webhook_url FROM users WHERE webhook_url IS NOT NULL AND webhook_url != '' LIMIT 1`
+	var url string
+	err := r.db.Pool.QueryRow(ctx, query).Scan(&url)
+	if err != nil {
+		return "", err
+	}
+	return url, nil
 }

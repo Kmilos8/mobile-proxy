@@ -1,8 +1,15 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"time"
+
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/mobileproxy/server/internal/api/middleware"
+	"github.com/mobileproxy/server/internal/repository"
 	"github.com/mobileproxy/server/internal/service"
 )
 
@@ -20,6 +27,7 @@ func SetupRouter(
 	wsHub *WSHub,
 	openvpnHandler *OpenVPNHandler,
 	syncHandler *SyncHandler,
+	userRepo *repository.UserRepository,
 ) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.CORSMiddleware())
@@ -89,6 +97,62 @@ func SetupRouter(
 		dashboard.GET("/relay-servers", relayServerHandler.List)
 		dashboard.GET("/relay-servers/active", relayServerHandler.ListActive)
 		dashboard.POST("/relay-servers", relayServerHandler.Create)
+
+		// Settings: webhook URL management
+		dashboard.GET("/settings/webhook", func(c *gin.Context) {
+			userIDVal, _ := c.Get("user_id")
+			uid := userIDVal.(uuid.UUID)
+			user, err := userRepo.GetByID(c.Request.Context(), uid)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"webhook_url": user.WebhookURL})
+		})
+
+		dashboard.PUT("/settings/webhook", func(c *gin.Context) {
+			var body struct {
+				WebhookURL string `json:"webhook_url"`
+			}
+			if err := c.ShouldBindJSON(&body); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			userIDVal, _ := c.Get("user_id")
+			uid := userIDVal.(uuid.UUID)
+			var urlPtr *string
+			if body.WebhookURL != "" {
+				urlPtr = &body.WebhookURL
+			}
+			if err := userRepo.UpdateWebhookURL(c.Request.Context(), uid, urlPtr); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"ok": true})
+		})
+
+		dashboard.POST("/settings/webhook/test", func(c *gin.Context) {
+			var body struct {
+				WebhookURL string `json:"webhook_url"`
+			}
+			if err := c.ShouldBindJSON(&body); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			payload, _ := json.Marshal(map[string]interface{}{
+				"event":     "test",
+				"message":   "This is a test webhook from PocketProxy",
+				"timestamp": time.Now().UTC().Format(time.RFC3339),
+			})
+			client := &http.Client{Timeout: 10 * time.Second}
+			resp, err := client.Post(body.WebhookURL, "application/json", bytes.NewReader(payload))
+			if err != nil {
+				c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+				return
+			}
+			resp.Body.Close()
+			c.JSON(http.StatusOK, gin.H{"ok": true, "status": resp.StatusCode})
+		})
 	}
 
 	// Internal VPN routes (called by OpenVPN scripts)
