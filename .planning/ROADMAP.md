@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: OpenVPN Throughput** - Fix the broken customer VPN path so all three protocols work at usable speed
 - [x] **Phase 2: Dashboard** - Build the operator UI so devices and proxy ports can be managed without hitting the API directly (completed 2026-02-26)
 - [x] **Phase 3: Security and Monitoring** - Harden credentials, enforce bandwidth limits, and alert on device offline before customer exposure (completed 2026-02-27)
-- [ ] **Phase 4: Bug Fixes and Polish** - Close audit gaps (recovery webhook, bandwidth reset), fix OpenVPN creation bug, add device search bar
+- [ ] **Phase 4: Bug Fixes and Polish** - Close audit gaps, fix OpenVPN bug, add search/auto-rotation column/connection ID
 
 ## Phase Details
 
@@ -66,7 +66,7 @@ Plans:
 - [ ] 03-02-PLAN.md — Bandwidth enforcement in tunnel server, offline webhook dispatch, dashboard settings/monitoring UI
 
 ### Phase 4: Bug Fixes and Polish
-**Goal**: Close audit gaps, fix OpenVPN creation bug, and add device search to dashboard
+**Goal**: Close audit gaps, fix OpenVPN creation bug, and add dashboard improvements (search, auto-rotation column, connection ID)
 **Depends on**: Phase 3
 **Requirements**: MON-01, MON-02, DASH-02
 **Gap Closure**: Closes gaps from v1.0 milestone audit + user-reported bugs
@@ -75,6 +75,8 @@ Plans:
   2. Clicking Reset Usage in the dashboard resets both the DB value and the tunnel's in-memory counter — usage does not reappear after the next 30s flush
   3. Creating an OpenVPN config from the OpenVPN tab succeeds without "must be http or socks5" error
   4. The devices page has a search bar that filters devices by name
+  5. The device table shows an auto-rotation column indicating whether auto-rotation is enabled on each device
+  6. Every connection has a visible connection ID assigned at creation, shown in the connection table
 
 ## Progress
 
