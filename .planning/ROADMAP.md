@@ -58,11 +58,11 @@ Plans:
   1. The PasswordPlain field is no longer populated in the database; OpenVPN auth uses bcrypt comparison
   2. A proxy connection with a 1 GB bandwidth limit stops passing traffic after 1 GB is consumed
   3. An operator receives an email or webhook notification within 5 minutes of a device going offline
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: Remove PasswordPlain storage; migrate existing records; update openvpn_handler.go auth to use bcrypt.CompareHashAndPassword
-- [ ] 03-02: Enforce bandwidth limit in the proxy routing layer; implement device offline notification via email or webhook
+- [ ] 03-01-PLAN.md — Swap OpenVPN auth to bcrypt, add regenerate-password endpoint, migration SQL for webhook/alerting columns
+- [ ] 03-02-PLAN.md — Bandwidth enforcement in tunnel server, offline webhook dispatch, dashboard settings/monitoring UI
 
 ## Progress
 
