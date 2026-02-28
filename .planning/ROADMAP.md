@@ -104,7 +104,12 @@ Plans:
   2. A customer who signs up with a Google account is logged in immediately with no separate verification step required
   3. A customer who forgets their password can reset it via an emailed link within 24 hours of the link being issued
   4. The signup and login forms display a Cloudflare Turnstile challenge and the Go backend rejects requests where the Turnstile token fails server-side verification
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Database migration, domain models, and repositories for customer auth
+- [ ] 05-02-PLAN.md — Backend auth services, handlers, and route wiring (signup, login, verify, reset, Google OAuth, Turnstile)
+- [ ] 05-03-PLAN.md — Frontend auth pages (login extension, signup, verify email, forgot/reset password, Turnstile widget)
 
 ### Phase 6: Multi-Tenant Isolation
 **Goal**: Every customer sees only their own assigned devices and connections; no cross-customer data is accessible through any portal endpoint
@@ -154,8 +159,8 @@ Plans:
 ## Progress
 
 **Execution Order:**
-v1.0 phases execute in numeric order: 1 → 2 → 3 → 4
-v2.0 phases execute in numeric order: 5 → 6 → 7 → 8 → 9
+v1.0 phases execute in numeric order: 1 -> 2 -> 3 -> 4
+v2.0 phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -163,7 +168,7 @@ v2.0 phases execute in numeric order: 5 → 6 → 7 → 8 → 9
 | 2. Dashboard | 3/3 | Complete | 2026-02-26 |
 | 3. Security and Monitoring | 2/2 | Complete | 2026-02-27 |
 | 4. Bug Fixes and Polish | 2/2 | Complete | 2026-02-27 |
-| 5. Auth Foundation | 0/TBD | Not started | - |
+| 5. Auth Foundation | 0/3 | Planned | - |
 | 6. Multi-Tenant Isolation | 0/TBD | Not started | - |
 | 7. Customer Portal | 0/TBD | Not started | - |
 | 8. Landing Page and IP Whitelist | 0/TBD | Not started | - |
