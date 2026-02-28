@@ -7,8 +7,8 @@ last_updated: "2026-02-28"
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 3
+  completed_plans: 3
 ---
 
 # Project State
@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 5 of 9 (Phase 5: Auth Foundation)
-Plan: 2 of TBD in current phase (05-02 complete)
+Plan: 3 of TBD in current phase (05-03 complete — checkpoint:human-verify pending)
 Status: In progress
-Last activity: 2026-02-28 — 05-02-PLAN.md executed: Service layer, HTTP handlers, and route wiring for all customer auth flows
+Last activity: 2026-02-28 — 05-03-PLAN.md executed: Six customer-facing auth pages (login extended, signup, verify-confirm, verify-email, forgot-password, reset-password) with Turnstile and Google OAuth
 
 Progress: [██░░░░░░░░] 20% (v2.0 phases)
 
@@ -47,6 +47,10 @@ Progress: [██░░░░░░░░] 20% (v2.0 phases)
 - Error sentinel string "email_not_verified" drives 403 vs 401 in Login handler — avoids custom error types for a single case
 - Dev-mode fallbacks for EmailService (no API key) and Turnstile (no secret key) allow local testing without external credentials
 - GoogleCallback redirect pattern: returns JWT via /login?token=X&google=true so frontend can store token then navigate
+- Turnstile widget conditionally rendered via NEXT_PUBLIC_TURNSTILE_SITE_KEY — no widget in dev, forms still work (backend dev-mode auto-passes)
+- Single login form with customer-first fallback to admin login — no separate operator login URL needed
+- Two-step email verification: GET check on mount, user clicks Verify button, POST confirms — prevents link scanner token consumption
+- Generic forgot-password success regardless of error type (except 429) — email enumeration prevention
 
 ### Blockers/Concerns
 
@@ -62,5 +66,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 05-02-PLAN.md (service layer, HTTP handlers, and route wiring for customer auth)
+Stopped at: 05-03-PLAN.md — Task 3 checkpoint:human-verify (tasks 1+2 complete, awaiting user visual verification of auth flow)
 Resume file: None

@@ -23,7 +23,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### v2.0 Phases (Current Milestone)
 
-- [ ] **Phase 5: Auth Foundation** - Enable customer self-signup with email/password, Google OAuth, email verification, password reset, and Turnstile bot protection
+- [x] **Phase 5: Auth Foundation** - Enable customer self-signup with email/password, Google OAuth, email verification, password reset, and Turnstile bot protection (completed 2026-02-28)
 - [ ] **Phase 6: Multi-Tenant Isolation** - Scope all data access by customer_id so each customer sees only their own devices and connections
 - [ ] **Phase 7: Customer Portal** - Give customers a self-service portal to view credentials, rotate IPs, download .ovpn configs, and see bandwidth usage
 - [ ] **Phase 8: Landing Page and IP Whitelist** - Ship the public marketing page and server-side CIDR-based IP whitelist auth per proxy port
@@ -168,7 +168,7 @@ v2.0 phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9
 | 2. Dashboard | 3/3 | Complete | 2026-02-26 |
 | 3. Security and Monitoring | 2/2 | Complete | 2026-02-27 |
 | 4. Bug Fixes and Polish | 2/2 | Complete | 2026-02-27 |
-| 5. Auth Foundation | 2/3 | In Progress|  |
+| 5. Auth Foundation | 3/3 | Complete   | 2026-02-28 |
 | 6. Multi-Tenant Isolation | 0/TBD | Not started | - |
 | 7. Customer Portal | 0/TBD | Not started | - |
 | 8. Landing Page and IP Whitelist | 0/TBD | Not started | - |
