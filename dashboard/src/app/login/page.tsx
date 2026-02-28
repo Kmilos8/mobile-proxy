@@ -38,7 +38,7 @@ export default function LoginPage() {
 
       <div className="bg-zinc-900 p-8 rounded-xl border border-zinc-800 w-full max-w-md shadow-glow-sm relative">
         <div className="flex flex-col items-center mb-6">
-          <Image src="/logo.jpg" alt="PocketProxy" width={48} height={48} className="rounded-xl mb-3" />
+          <Image src="/logo.svg" alt="PocketProxy" width={48} height={48} className="rounded-xl mb-3" />
           <h1 className="text-2xl font-bold">
             <span className="text-brand-400">Pocket</span><span className="text-brand-500">Proxy</span>
           </h1>

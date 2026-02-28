@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#11BE6E"/>
+      <stop offset="100%" stop-color="#24F55C"/>
+    </linearGradient>
+    <linearGradient id="phoneGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#24F55C"/>
+      <stop offset="100%" stop-color="#11BE6E"/>
+    </linearGradient>
+    <linearGradient id="pocketFill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#11BE6E" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#24F55C" stop-opacity="0.04"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="200" height="200" fill="#0A0E14" rx="12"/>
+
+  <!-- Subtle grid pattern -->
+  <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#11BE6E" stroke-opacity="0.04" stroke-width="0.5"/>
+  </pattern>
+  <rect width="200" height="200" fill="url(#grid)" rx="12"/>
+
+  <!-- Icon centered -->
+  <g transform="translate(30, 10)">
+
+    <!-- Pocket shape (shield-like) -->
+    <path d="M20 70 
+             L20 130 
+             C20 155 35 170 65 175 
+             C95 170 110 155 110 130 
+             L110 70 
+             Z" 
+          fill="url(#pocketFill)" stroke="url(#brandGrad)" stroke-width="2"/>
+
+    <!-- Pocket top fold -->
+    <path d="M16 70 L114 70" stroke="url(#brandGrad)" stroke-width="2.5" stroke-linecap="round"/>
+    
+    <!-- Stitch details -->
+    <path d="M24 78 L24 128 C24 150 37 162 65 167 C93 162 106 150 106 128 L106 78" 
+          fill="none" stroke="#24F55C" stroke-width="0.8" stroke-dasharray="3 3" opacity="0.3"/>
+
+    <!-- Pocket flap curves -->
+    <path d="M16 70 C16 64 18 60 24 58" fill="none" stroke="url(#brandGrad)" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+    <path d="M114 70 C114 64 112 60 106 58" fill="none" stroke="url(#brandGrad)" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+
+    <!-- Phone tilted, poking out -->
+    <g transform="rotate(-8, 65, 80)">
+      <rect x="40" y="10" width="50" height="100" rx="9" ry="9" fill="#0A0E14" stroke="url(#phoneGrad)" stroke-width="2.5"/>
+      <rect x="46" y="22" width="38" height="70" rx="3" fill="#11BE6E" opacity="0.1"/>
+      <rect x="57" y="14.5" width="16" height="3" rx="1.5" fill="#11BE6E" opacity="0.4"/>
+      <path d="M60 44 L72 48 L72 58 C72 63 67 67 66 68 C65 67 58 63 58 58 L58 48 Z" 
+            fill="none" stroke="#24F55C" stroke-width="1.5" opacity="0.5"/>
+      <circle cx="65" cy="56" r="2.5" fill="#24F55C" opacity="0.6"/>
+      <rect x="50" y="26" width="2" height="5" rx="1" fill="#24F55C" opacity="0.3"/>
+      <rect x="54" y="24" width="2" height="7" rx="1" fill="#24F55C" opacity="0.4"/>
+      <rect x="58" y="22" width="2" height="9" rx="1" fill="#24F55C" opacity="0.5"/>
+    </g>
+
+    <!-- Signal waves -->
+    <path d="M95 28 C101 28 105 32 105 38" fill="none" stroke="#24F55C" stroke-width="1.8" stroke-linecap="round" opacity="0.7"/>
+    <path d="M95 20 C107 20 115 28 115 38" fill="none" stroke="#24F55C" stroke-width="1.8" stroke-linecap="round" opacity="0.45"/>
+    <path d="M95 12 C113 12 125 24 125 38" fill="none" stroke="#24F55C" stroke-width="1.8" stroke-linecap="round" opacity="0.2"/>
+
+    <!-- Data dots -->
+    <circle cx="108" cy="48" r="2" fill="#24F55C" opacity="0.6">
+      <animate attributeName="opacity" values="0.6;0.1;0.6" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="116" cy="54" r="1.5" fill="#11BE6E" opacity="0.4">
+      <animate attributeName="opacity" values="0.4;0.1;0.4" dur="2.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="112" cy="60" r="1.8" fill="#24F55C" opacity="0.5">
+      <animate attributeName="opacity" values="0.5;0.1;0.5" dur="1.8s" repeatCount="indefinite"/>
+    </circle>
+
+  </g>
+
+</svg>

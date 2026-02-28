@@ -53,14 +53,14 @@ export default function Sidebar() {
       )}>
         {!collapsed && (
           <div className="flex items-center gap-2 min-w-0">
-            <Image src="/logo.jpg" alt="PocketProxy" width={28} height={28} className="rounded-md flex-shrink-0" />
+            <Image src="/logo.svg" alt="PocketProxy" width={28} height={28} className="rounded-md flex-shrink-0" />
             <h1 className="text-sm font-bold leading-none whitespace-nowrap overflow-hidden text-ellipsis">
               <span className="text-brand-400">Pocket</span><span className="text-brand-500">Proxy</span>
             </h1>
           </div>
         )}
         {collapsed && (
-          <Image src="/logo.jpg" alt="PocketProxy" width={28} height={28} className="rounded-md" />
+          <Image src="/logo.svg" alt="PocketProxy" width={28} height={28} className="rounded-md" />
         )}
         <button
           onClick={toggleCollapsed}

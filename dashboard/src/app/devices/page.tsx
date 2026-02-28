@@ -229,7 +229,7 @@ export default function DevicesPage() {
       {/* Top bar with branding */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <Image src="/logo.jpg" alt="PocketProxy" width={28} height={28} className="rounded-md" />
+          <Image src="/logo.svg" alt="PocketProxy" width={28} height={28} className="rounded-md" />
           <div>
             <h1 className="text-sm font-bold leading-none">
               <span className="text-brand-400">Pocket</span><span className="text-brand-500">Proxy</span>
