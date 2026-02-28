@@ -88,12 +88,26 @@ type Device struct {
 }
 
 type Customer struct {
-	ID        uuid.UUID `json:"id" db:"id"`
-	Name      string    `json:"name" db:"name"`
-	Email     string    `json:"email" db:"email"`
-	Active    bool      `json:"active" db:"active"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+	ID            uuid.UUID `json:"id" db:"id"`
+	Name          string    `json:"name" db:"name"`
+	Email         string    `json:"email" db:"email"`
+	Active        bool      `json:"active" db:"active"`
+	PasswordHash  *string   `json:"-" db:"password_hash"`
+	EmailVerified bool      `json:"email_verified" db:"email_verified"`
+	GoogleID      *string   `json:"-" db:"google_id"`
+	GoogleEmail   *string   `json:"google_email,omitempty" db:"google_email"`
+	CreatedAt     time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
+}
+
+type CustomerAuthToken struct {
+	ID         uuid.UUID  `json:"id" db:"id"`
+	CustomerID uuid.UUID  `json:"customer_id" db:"customer_id"`
+	TokenHash  string     `json:"-" db:"token_hash"`
+	Type       string     `json:"type" db:"type"` // "email_verify" or "password_reset"
+	ExpiresAt  time.Time  `json:"expires_at" db:"expires_at"`
+	UsedAt     *time.Time `json:"used_at,omitempty" db:"used_at"`
+	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
 }
 
 type ProxyConnection struct {
@@ -279,6 +293,44 @@ type ClaimPairingCodeResponse struct {
 	VpnConfig     string    `json:"vpn_config"`
 	BasePort      int       `json:"base_port"`
 	RelayServerIP string    `json:"relay_server_ip"`
+}
+
+// Customer auth request/response types
+
+type CustomerSignupRequest struct {
+	Email          string `json:"email" binding:"required,email"`
+	Password       string `json:"password" binding:"required,min=8"`
+	TurnstileToken string `json:"turnstile_token" binding:"required"`
+}
+
+type CustomerLoginRequest struct {
+	Email          string `json:"email" binding:"required,email"`
+	Password       string `json:"password" binding:"required"`
+	TurnstileToken string `json:"turnstile_token" binding:"required"`
+}
+
+type CustomerLoginResponse struct {
+	Token    string   `json:"token"`
+	Customer Customer `json:"customer"`
+}
+
+type ForgotPasswordRequest struct {
+	Email          string `json:"email" binding:"required,email"`
+	TurnstileToken string `json:"turnstile_token" binding:"required"`
+}
+
+type ResetPasswordRequest struct {
+	Token           string `json:"token" binding:"required"`
+	Password        string `json:"password" binding:"required,min=8"`
+	ConfirmPassword string `json:"confirm_password" binding:"required,min=8"`
+}
+
+type VerifyEmailRequest struct {
+	Token string `json:"token" binding:"required"`
+}
+
+type ResendVerificationRequest struct {
+	Email string `json:"email" binding:"required,email"`
 }
 
 // WebSocket message types

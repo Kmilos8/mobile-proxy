@@ -3,11 +3,14 @@ package domain
 import "fmt"
 
 type Config struct {
-	Server   ServerConfig   `json:"server"`
-	Database DatabaseConfig `json:"database"`
-	JWT      JWTConfig      `json:"jwt"`
-	VPN      VPNConfig      `json:"vpn"`
-	Ports    PortConfig     `json:"ports"`
+	Server    ServerConfig      `json:"server"`
+	Database  DatabaseConfig    `json:"database"`
+	JWT       JWTConfig         `json:"jwt"`
+	VPN       VPNConfig         `json:"vpn"`
+	Ports     PortConfig        `json:"ports"`
+	Google    GoogleOAuthConfig `json:"google"`
+	Resend    ResendConfig      `json:"resend"`
+	Turnstile TurnstileConfig   `json:"turnstile"`
 }
 
 type ServerConfig struct {
@@ -46,9 +49,26 @@ type VPNConfig struct {
 }
 
 type PortConfig struct {
-	BasePort       int `json:"base_port"`       // 30000
-	MaxPort        int `json:"max_port"`        // 39999
+	BasePort       int `json:"base_port"`        // 30000
+	MaxPort        int `json:"max_port"`         // 39999
 	PortsPerDevice int `json:"ports_per_device"` // 4
+}
+
+type GoogleOAuthConfig struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RedirectURL  string `json:"redirect_url"`
+}
+
+type ResendConfig struct {
+	APIKey    string `json:"api_key"`
+	FromEmail string `json:"from_email"`
+	BaseURL   string `json:"base_url"` // dashboard base URL for links in emails
+}
+
+type TurnstileConfig struct {
+	SiteKey   string `json:"site_key"`
+	SecretKey string `json:"secret_key"`
 }
 
 func DefaultConfig() Config {
@@ -65,5 +85,19 @@ func DefaultConfig() Config {
 			CCDDir: "/etc/openvpn/ccd", ConfigDir: "/etc/openvpn",
 		},
 		Ports: PortConfig{BasePort: 30000, MaxPort: 39999, PortsPerDevice: 4},
+		Google: GoogleOAuthConfig{
+			ClientID:     "",
+			ClientSecret: "",
+			RedirectURL:  "",
+		},
+		Resend: ResendConfig{
+			APIKey:    "",
+			FromEmail: "",
+			BaseURL:   "",
+		},
+		Turnstile: TurnstileConfig{
+			SiteKey:   "",
+			SecretKey: "",
+		},
 	}
 }
