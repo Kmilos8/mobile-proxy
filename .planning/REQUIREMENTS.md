@@ -3,9 +3,7 @@
 **Defined:** 2026-02-25
 **Core Value:** Customers can reliably route traffic through real mobile devices via HTTP, SOCKS5, or OpenVPN, managed through a clean dashboard.
 
-## v1 Requirements
-
-Requirements for initial release. Each maps to roadmap phases.
+## v1 Requirements (Complete)
 
 ### Protocol Stability
 
@@ -28,6 +26,62 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **MON-01**: Device offline notification via email or webhook
 - [x] **MON-02**: Enforce bandwidth limits per connection (field exists but not enforced)
 
+## v2 Requirements
+
+Requirements for v2.0 SaaS Platform milestone. Each maps to roadmap phases.
+
+### Bug Fix
+
+- [ ] **BUG-01**: Auto-rotation fires at the configured interval and rotations appear in IP history
+
+### Authentication & Signup
+
+- [ ] **AUTH-01**: Customer can sign up with email and password
+- [ ] **AUTH-02**: Customer receives email verification after signup and must verify before accessing portal
+- [ ] **AUTH-03**: Customer can sign up and log in with Google account (OAuth)
+- [ ] **AUTH-04**: Customer can reset password via email link
+- [ ] **AUTH-05**: Signup and login forms are protected by Cloudflare Turnstile bot protection
+
+### Multi-Tenant Access
+
+- [ ] **TENANT-01**: Customer sees only their own assigned devices and connections
+- [ ] **TENANT-02**: Operator (admin) can assign devices to customers
+- [ ] **TENANT-03**: Customer JWT carries customer_id; all portal queries filter by it
+
+### Customer Portal
+
+- [ ] **PORTAL-01**: Customer can view their assigned devices and connection credentials
+- [ ] **PORTAL-02**: Customer can download .ovpn config files for their connections
+- [ ] **PORTAL-03**: Customer can trigger IP rotation on their connections
+- [ ] **PORTAL-04**: Customer can view bandwidth usage for their connections
+
+### Landing Page
+
+- [ ] **LAND-01**: Public marketing page with hero section, feature highlights, and signup CTA
+- [ ] **LAND-02**: Landing page is mobile responsive and matches dashboard design system
+
+### IP Whitelist
+
+- [ ] **IPWL-01**: Operator can add IP addresses/CIDRs to a connection's whitelist
+- [ ] **IPWL-02**: Whitelisted IPs can use the proxy without username/password credentials
+- [ ] **IPWL-03**: Whitelist is enforced server-side using proper CIDR parsing
+
+### API Documentation
+
+- [ ] **APIDOC-01**: All API endpoints are documented with Swagger/OpenAPI spec
+- [ ] **APIDOC-02**: Interactive Swagger UI is accessible at /swagger/
+
+### Device Grouping
+
+- [ ] **GROUP-01**: Operator can create named device groups and add/remove devices
+- [ ] **GROUP-02**: Operator can bulk rotate IPs for all devices in a group
+- [ ] **GROUP-03**: Operator can bulk enable/disable auto-rotation for a group
+
+### Traffic Logs
+
+- [ ] **TLOG-01**: Customer can view per-connection traffic history with time-range filtering
+- [ ] **TLOG-02**: Traffic logs have a 30-day retention policy enforced automatically
+
 ## Already Working (Keep As-Is)
 
 These features are implemented and functional. Do not modify unless explicitly requested.
@@ -46,36 +100,37 @@ These features are implemented and functional. Do not modify unless explicitly r
 - WebSocket real-time updates
 - JWT authentication for dashboard
 - Admin user passwords stored as bcrypt (secure)
+- Offline/recovery webhooks
+- Bandwidth enforcement per connection
 
-## v2 Requirements
+## Deferred (v2.1+)
 
-Deferred to future release. Tracked but not in current roadmap.
+### White-Label
+
+- **WL-01**: Custom logo upload per operator
+- **WL-02**: Custom brand colors (primary, accent) per operator
+- **WL-03**: Custom page title / brand name per operator
 
 ### Advanced Features
 
-- **ADV-01**: IP whitelist authentication per proxy port
-- **ADV-02**: REST API documentation and versioning
-- **ADV-03**: Device grouping with bulk actions
-- **ADV-04**: Per-port traffic logs (downloadable)
-
-### SaaS Features
-
-- **SAAS-01**: Multi-tenant / team access with permission levels
-- **SAAS-02**: White-label dashboard theming
-- **SAAS-03**: Customer self-service portal
+- **ADV-01**: Per-port traffic logs downloadable as CSV/export
+- **ADV-02**: Customer self-service connection creation (within operator-set limits)
+- **ADV-03**: Custom domain support for white-label (CNAME)
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
 | iOS app | iOS background restrictions prevent reliable proxy serving |
-| Payment/billing integration | Handle externally (Stripe Checkout) until SaaS milestone |
+| Payment/billing integration | Handle externally (Stripe Checkout) until billing milestone |
 | Telegram bot | Dashboard + API + rotation links cover all use cases |
 | Real-time traffic interception | Legal/privacy liability, storage costs |
 | Shared IP pools | Defeats core value of private mobile proxies |
 | Geolocation targeting | Architecture assumes specific devices, not location pools |
 | SMS forwarding | Legal risk; requires deliberate TOS design |
 | Passive OS fingerprint spoofing | High complexity, limited audience |
+| NextAuth.js | Conflicts with Go JWT auth system — Go backend handles all auth |
+| PostgreSQL RLS | App-level scoping simpler at this scale |
 
 ## Traceability
 
@@ -83,21 +138,37 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROTO-01 | Phase 1 | Complete |
-| PROTO-02 | Phase 1 | Complete |
-| DASH-01 | Phase 2 | Complete |
-| DASH-02 | Phase 2 | Complete |
-| DASH-03 | Phase 2 | Complete |
-| DASH-04 | Phase 2 | Complete |
-| SEC-01 | Phase 3 | Complete |
-| MON-01 | Phase 4 (gap closure) | Complete |
-| MON-02 | Phase 4 (gap closure) | Complete |
+| BUG-01 | — | Pending |
+| AUTH-01 | — | Pending |
+| AUTH-02 | — | Pending |
+| AUTH-03 | — | Pending |
+| AUTH-04 | — | Pending |
+| AUTH-05 | — | Pending |
+| TENANT-01 | — | Pending |
+| TENANT-02 | — | Pending |
+| TENANT-03 | — | Pending |
+| PORTAL-01 | — | Pending |
+| PORTAL-02 | — | Pending |
+| PORTAL-03 | — | Pending |
+| PORTAL-04 | — | Pending |
+| LAND-01 | — | Pending |
+| LAND-02 | — | Pending |
+| IPWL-01 | — | Pending |
+| IPWL-02 | — | Pending |
+| IPWL-03 | — | Pending |
+| APIDOC-01 | — | Pending |
+| APIDOC-02 | — | Pending |
+| GROUP-01 | — | Pending |
+| GROUP-02 | — | Pending |
+| GROUP-03 | — | Pending |
+| TLOG-01 | — | Pending |
+| TLOG-02 | — | Pending |
 
 **Coverage:**
-- v1 requirements: 9 total
-- Mapped to phases: 9
-- Unmapped: 0
+- v2 requirements: 20 total
+- Mapped to phases: 0
+- Unmapped: 20
 
 ---
 *Requirements defined: 2026-02-25*
-*Last updated: 2026-02-27 after v1.0 milestone audit gap closure*
+*Last updated: 2026-02-27 after v2.0 milestone requirements definition*
