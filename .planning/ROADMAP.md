@@ -1,27 +1,25 @@
 # Roadmap: PocketProxy
 
-## Overview
+## Milestones
 
-PocketProxy has a working infrastructure (Go backend, Android tunnel, PostgreSQL, HTTP/SOCKS5 proxies, Docker Compose) but two things block production use: OpenVPN throughput is effectively broken, and the dashboard is a scaffold with no functional UI. This roadmap fixes the blocker first, builds the operator interface second, then hardens security and adds monitoring before exposing the product to customers.
-
-v2.0 transforms PocketProxy from an operator-only tool into a customer-facing SaaS platform with self-signup, multi-tenant access, and a public landing page.
+- ✅ **v1.0 MVP** — Phases 1-4 (shipped 2026-02-28)
+- 🚧 **v2.0 SaaS Platform** — Phases 5-9 (in progress)
 
 ## Phases
 
-**Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+<details>
+<summary>✅ v1.0 MVP (Phases 1-4) — SHIPPED 2026-02-28</summary>
 
-Decimal phases appear between their surrounding integers in numeric order.
+- [x] Phase 1: OpenVPN Throughput (2/2 plans) — completed 2026-02-26
+- [x] Phase 2: Dashboard (3/3 plans) — completed 2026-02-26
+- [x] Phase 3: Security and Monitoring (2/2 plans) — completed 2026-02-27
+- [x] Phase 4: Bug Fixes and Polish (2/2 plans) — completed 2026-02-27
 
-### v1.0 Phases (Complete)
+See: `.planning/milestones/v1.0-ROADMAP.md` for full details.
 
-- [x] **Phase 1: OpenVPN Throughput** - Fix the broken customer VPN path so all three protocols work at usable speed
-- [x] **Phase 2: Dashboard** - Build the operator UI so devices and proxy ports can be managed without hitting the API directly (completed 2026-02-26)
-- [x] **Phase 3: Security and Monitoring** - Harden credentials, enforce bandwidth limits, and alert on device offline before customer exposure (completed 2026-02-27)
-- [x] **Phase 4: Bug Fixes and Polish** - Close audit gaps, fix OpenVPN bug, add search/auto-rotation column/connection ID (completed 2026-02-27)
+</details>
 
-### v2.0 Phases (Current Milestone)
+### 🚧 v2.0 SaaS Platform (In Progress)
 
 - [x] **Phase 5: Auth Foundation** - Enable customer self-signup with email/password, Google OAuth, email verification, password reset, and Turnstile bot protection (completed 2026-02-28)
 - [ ] **Phase 6: Multi-Tenant Isolation** - Scope all data access by customer_id so each customer sees only their own devices and connections
@@ -30,70 +28,6 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 9: Device Grouping, API Docs, and Traffic Logs** - Add operator bulk tools (device groups, bulk rotation), public Swagger UI, and per-port traffic history for customers
 
 ## Phase Details
-
-### Phase 1: OpenVPN Throughput
-**Goal**: Customers can connect via .ovpn file and browse the web through a device's cellular connection at usable speed
-**Depends on**: Nothing (first phase)
-**Requirements**: PROTO-01, PROTO-02
-**Success Criteria** (what must be TRUE):
-  1. A customer importing a generated .ovpn file can fully load a webpage through the VPN tunnel
-  2. A speed test run through the OpenVPN connection completes and reports measurable throughput (not timeout)
-  3. HTTP and SOCKS5 proxies continue to respond correctly while OpenVPN config changes are applied
-  4. The .ovpn download from the dashboard produces a working config without manual edits
-**Plans**: 2 plans
-
-Plans:
-- [x] 01-01-PLAN.md — Apply OpenVPN performance tuning: reduce peekTimeout to 200ms, switch sndbuf/rcvbuf to OS autotuning, add fast-io
-- [x] 01-02-PLAN.md — Fix client-connect-ovpn.sh silent failure bug and verify HTTP/SOCKS5 DNAT isolation
-
-### Phase 2: Dashboard
-**Goal**: An operator can manage their entire device fleet and proxy port inventory from the dashboard without touching the API
-**Depends on**: Phase 1
-**Requirements**: DASH-01, DASH-02, DASH-03, DASH-04
-**Success Criteria** (what must be TRUE):
-  1. Operator can see all devices with online/offline status, current IP, carrier, battery, and signal strength on one screen
-  2. Operator can create a new proxy connection (HTTP, SOCKS5, or OpenVPN) from the dashboard and immediately see credentials
-  3. Operator can view a connection detail page showing host, port, username, password, and .ovpn download with one-click copy for each field
-  4. Dashboard layout is usable on desktop and tablet (no horizontal scroll, no broken layouts at 768px+)
-  5. Operator can delete a proxy connection and the port is freed
-**Plans**: 3 plans
-
-Plans:
-- [x] 02-01-PLAN.md — Install shadcn/ui, dark theme, collapsible sidebar, device table home page, backend openvpn proxy_type
-- [x] 02-02-PLAN.md — Device detail page with connection management: create/view/copy/delete connections
-- [x] 02-03-PLAN.md — Visual and functional verification checkpoint
-
-### Phase 3: Security and Monitoring
-**Goal**: Credentials are not stored or transmitted in plaintext, bandwidth limits are enforced, and operators are alerted when devices go offline
-**Depends on**: Phase 2
-**Requirements**: SEC-01, MON-01, MON-02
-**Success Criteria** (what must be TRUE):
-  1. The PasswordPlain field is no longer populated in the database; OpenVPN auth uses bcrypt comparison
-  2. A proxy connection with a 1 GB bandwidth limit stops passing traffic after 1 GB is consumed
-  3. An operator receives an email or webhook notification within 5 minutes of a device going offline
-**Plans**: 2 plans
-
-Plans:
-- [ ] 03-01-PLAN.md — Swap OpenVPN auth to bcrypt, add regenerate-password endpoint, migration SQL for webhook/alerting columns
-- [ ] 03-02-PLAN.md — Bandwidth enforcement in tunnel server, offline webhook dispatch, dashboard settings/monitoring UI
-
-### Phase 4: Bug Fixes and Polish
-**Goal**: Close audit gaps, fix OpenVPN creation bug, and add dashboard improvements (search, auto-rotation column, connection ID)
-**Depends on**: Phase 3
-**Requirements**: MON-01, MON-02, DASH-02
-**Gap Closure**: Closes gaps from v1.0 milestone audit + user-reported bugs
-**Success Criteria** (what must be TRUE):
-  1. When a device reconnects after being offline, a recovery webhook POST is delivered to the operator's configured URL
-  2. Clicking Reset Usage in the dashboard resets both the DB value and the tunnel's in-memory counter — usage does not reappear after the next 30s flush
-  3. Creating an OpenVPN config from the OpenVPN tab succeeds without "must be http or socks5" error
-  4. The devices page has a search bar that filters devices by name
-  5. The device table shows an auto-rotation column indicating whether auto-rotation is enabled on each device
-  6. Every connection has a visible connection ID assigned at creation, shown in the connection table
-**Plans**: 2 plans
-
-Plans:
-- [ ] 04-01-PLAN.md — Wire recovery webhook, propagate bandwidth reset to tunnel, add OpenVPN to Add Connection modal
-- [ ] 04-02-PLAN.md — Add device search bar, auto-rotation column, and connection ID column to dashboard
 
 ### Phase 5: Auth Foundation
 **Goal**: Customers can self-register and log in securely using email/password or Google, with email verification and bot protection on all public forms
@@ -107,9 +41,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Database migration, domain models, and repositories for customer auth
-- [ ] 05-02-PLAN.md — Backend auth services, handlers, and route wiring (signup, login, verify, reset, Google OAuth, Turnstile)
-- [ ] 05-03-PLAN.md — Frontend auth pages (login extension, signup, verify email, forgot/reset password, Turnstile widget)
+- [x] 05-01-PLAN.md — Database migration, domain models, and repositories for customer auth
+- [x] 05-02-PLAN.md — Backend auth services, handlers, and route wiring (signup, login, verify, reset, Google OAuth, Turnstile)
+- [x] 05-03-PLAN.md — Frontend auth pages (login extension, signup, verify email, forgot/reset password, Turnstile widget)
 
 ### Phase 6: Multi-Tenant Isolation
 **Goal**: Every customer sees only their own assigned devices and connections; no cross-customer data is accessible through any portal endpoint
@@ -159,17 +93,17 @@ Plans:
 ## Progress
 
 **Execution Order:**
-v1.0 phases execute in numeric order: 1 -> 2 -> 3 -> 4
-v2.0 phases execute in numeric order: 5 -> 6 -> 7 -> 8 -> 9
+v1.0 phases: 1 → 2 → 3 → 4 (complete)
+v2.0 phases: 5 → 6 → 7 → 8 → 9
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. OpenVPN Throughput | 2/2 | Complete | 2026-02-26 |
-| 2. Dashboard | 3/3 | Complete | 2026-02-26 |
-| 3. Security and Monitoring | 2/2 | Complete | 2026-02-27 |
-| 4. Bug Fixes and Polish | 2/2 | Complete | 2026-02-27 |
-| 5. Auth Foundation | 3/3 | Complete   | 2026-02-28 |
-| 6. Multi-Tenant Isolation | 0/TBD | Not started | - |
-| 7. Customer Portal | 0/TBD | Not started | - |
-| 8. Landing Page and IP Whitelist | 0/TBD | Not started | - |
-| 9. Device Grouping, API Docs, and Traffic Logs | 0/TBD | Not started | - |
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. OpenVPN Throughput | v1.0 | 2/2 | Complete | 2026-02-26 |
+| 2. Dashboard | v1.0 | 3/3 | Complete | 2026-02-26 |
+| 3. Security and Monitoring | v1.0 | 2/2 | Complete | 2026-02-27 |
+| 4. Bug Fixes and Polish | v1.0 | 2/2 | Complete | 2026-02-27 |
+| 5. Auth Foundation | v2.0 | 3/3 | Complete | 2026-02-28 |
+| 6. Multi-Tenant Isolation | v2.0 | 0/TBD | Not started | - |
+| 7. Customer Portal | v2.0 | 0/TBD | Not started | - |
+| 8. Landing Page and IP Whitelist | v2.0 | 0/TBD | Not started | - |
+| 9. Device Grouping, API Docs, and Traffic Logs | v2.0 | 0/TBD | Not started | - |

@@ -41,20 +41,24 @@ Customers can reliably route traffic through real mobile devices via any of the 
 - ✓ Bcrypt auth (PasswordPlain removed) — v1.0 Phase 3
 - ✓ Bandwidth enforcement per connection — v1.0 Phase 3
 - ✓ Device offline/recovery webhooks — v1.0 Phase 4
+- ✓ Customer self-signup with email and Google OAuth — v2.0 Phase 5
+- ✓ Email verification on signup — v2.0 Phase 5
+- ✓ Cloudflare Turnstile on login/signup — v2.0 Phase 5
+- ✓ Password reset via email link — v2.0 Phase 5
 
 ### Active
 
-- [ ] Marketing/sales landing page
-- [ ] Customer self-signup with email and Google OAuth
-- [ ] Email verification on signup
-- [ ] Cloudflare Turnstile on login/signup
 - [ ] Multi-tenant access (customer isolation)
 - [ ] Customer self-service portal
-- [ ] White-label dashboard theming
+- [ ] Marketing/sales landing page
 - [ ] IP whitelist auth per proxy port
 - [ ] REST API documentation and versioning
 - [ ] Device grouping with bulk actions
 - [ ] Per-port traffic logs
+
+### Deferred (v2.1+)
+
+- White-label dashboard theming
 
 ### Out of Scope
 
@@ -69,12 +73,13 @@ Customers can reliably route traffic through real mobile devices via any of the 
 
 ## Context
 
-- Server is written in Go (go.mod in server/)
+- Server is written in Go (7,864 LOC, go.mod in server/)
 - Android app handles device-side proxy serving
-- Dashboard is Next.js 14 + TypeScript + Tailwind CSS with shadcn/ui, recharts, lucide-react, qrcode.react
+- Dashboard is Next.js 14 + TypeScript + Tailwind CSS (6,731 LOC) with shadcn/ui, recharts, lucide-react, qrcode.react
 - Docker Compose orchestrates deployment on two VPSes (relay + dashboard)
 - OpenVPN configs generated for client connections
 - v1.0 shipped: protocol stability, dashboard redesign, security hardening, monitoring
+- v2.0 in progress: Phase 5 (auth foundation) shipped — customer signup, login, Google OAuth, email verification, password reset, Turnstile bot protection
 - Auto-rotation exists but interval may not be firing correctly — needs investigation
 
 ## Constraints
@@ -94,6 +99,8 @@ Customers can reliably route traffic through real mobile devices via any of the 
 | OpenVPN for direct access | Industry standard for tunnel-based proxy access | ✓ Good |
 | Fix protocols before dashboard | Stable proxy = core product, dashboard is management layer | ✓ Good |
 | v2.0 = SaaS transformation | Customer self-signup, multi-tenant, landing page — major scope change | — Pending |
+| Go backend owns all auth | NextAuth.js excluded — JWT issued by Go, customer and operator auth separate | ✓ Good |
+| App-level tenant scoping | PostgreSQL RLS excluded — WHERE customer_id simpler at this scale | — Pending |
 
 ---
-*Last updated: 2026-02-27 after v2.0 milestone start*
+*Last updated: 2026-02-28 after v1.0 milestone completion*
