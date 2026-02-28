@@ -53,7 +53,12 @@ Plans:
   1. Logging in as Customer A returns only Customer A's devices and connections — Customer B's data does not appear in any portal response
   2. An operator can assign a device to a specific customer from the admin dashboard, and that device then appears in the customer's portal
   3. All customer portal API responses are filtered by the customer_id embedded in the JWT; manually crafting a request with another customer's device ID returns 403
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Database migration, domain models, and customer-scoped repository methods
+- [ ] 06-02-PLAN.md — Backend middleware, role-branching handlers, device share service, route wiring
+- [ ] 06-03-PLAN.md — Frontend role-aware UI (sidebar gating, admin customer management, pairing code assignment)
 
 ### Phase 7: Customer Portal
 **Goal**: Customers can manage their assigned proxies end-to-end through a self-service portal without contacting the operator
@@ -103,7 +108,7 @@ v2.0 phases: 5 → 6 → 7 → 8 → 9
 | 3. Security and Monitoring | v1.0 | 2/2 | Complete | 2026-02-27 |
 | 4. Bug Fixes and Polish | v1.0 | 2/2 | Complete | 2026-02-27 |
 | 5. Auth Foundation | v2.0 | 3/3 | Complete | 2026-02-28 |
-| 6. Multi-Tenant Isolation | v2.0 | 0/TBD | Not started | - |
+| 6. Multi-Tenant Isolation | v2.0 | 0/3 | Not started | - |
 | 7. Customer Portal | v2.0 | 0/TBD | Not started | - |
 | 8. Landing Page and IP Whitelist | v2.0 | 0/TBD | Not started | - |
 | 9. Device Grouping, API Docs, and Traffic Logs | v2.0 | 0/TBD | Not started | - |
