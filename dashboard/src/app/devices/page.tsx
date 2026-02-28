@@ -5,8 +5,8 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { Plus, X, Copy, Check, Trash2, LogOut, Settings } from 'lucide-react'
 import Link from 'next/link'
-import { api, Device, PairingCode, ProxyConnection } from '@/lib/api'
-import { getToken, clearAuth } from '@/lib/auth'
+import { api, Customer, Device, PairingCode } from '@/lib/api'
+import { getToken, clearAuth, isAdmin } from '@/lib/auth'
 import { addWSHandler } from '@/lib/websocket'
 import { timeAgo, copyToClipboard } from '@/lib/utils'
 import { QRCodeSVG } from 'qrcode.react'
@@ -20,35 +20,33 @@ function formatCodeDisplay(code: string): string {
   return code
 }
 
-function PairingModal({ onClose }: { onClose: () => void }) {
+function PairingModal({ onClose, customers }: { onClose: () => void; customers: Customer[] }) {
   const [code, setCode] = useState<string | null>(null)
   const [codeId, setCodeId] = useState<string | null>(null)
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('')
+  const [step, setStep] = useState<'config' | 'code'>('config')
 
-  useEffect(() => {
-    let cancelled = false
-    async function create() {
-      const token = getToken()
-      if (!token) return
-      try {
-        const res = await api.pairingCodes.create(token)
-        if (cancelled) return
-        setCode(res.code)
-        setCodeId(res.id)
-        setExpiresAt(res.expires_at)
-      } catch (err) {
-        if (cancelled) return
-        setError(err instanceof Error ? err.message : 'Failed to create pairing code')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+  async function handleGenerate() {
+    setLoading(true)
+    setError(null)
+    const token = getToken()
+    if (!token) return
+    try {
+      const res = await api.pairingCodes.create(token, undefined, undefined, undefined, selectedCustomerId || undefined)
+      setCode(res.code)
+      setCodeId(res.id)
+      setExpiresAt(res.expires_at)
+      setStep('code')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create pairing code')
+    } finally {
+      setLoading(false)
     }
-    create()
-    return () => { cancelled = true }
-  }, [])
+  }
 
   const qrValue = code ? `mobileproxy://pair?server=http://${SERVER_HOST}:8080&code=${code}` : ''
 
@@ -87,15 +85,39 @@ function PairingModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        {loading && (
-          <div className="text-center py-8 text-zinc-500">Generating pairing code...</div>
+        {step === 'config' && (
+          <div className="space-y-4">
+            {customers.length > 0 && (
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">Assign to Customer <span className="text-zinc-600">(optional)</span></label>
+                <select
+                  value={selectedCustomerId}
+                  onChange={e => setSelectedCustomerId(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-white text-sm focus:outline-none focus:border-brand-500"
+                >
+                  <option value="">-- No assignment --</option>
+                  {customers.map(c => (
+                    <option key={c.id} value={c.id}>{c.name} ({c.email})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {error && (
+              <div className="text-red-400 text-sm">{error}</div>
+            )}
+
+            <button
+              onClick={handleGenerate}
+              disabled={loading}
+              className="w-full px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+            >
+              {loading ? 'Generating...' : 'Generate Pairing Code'}
+            </button>
+          </div>
         )}
 
-        {error && (
-          <div className="text-center py-8 text-red-400">{error}</div>
-        )}
-
-        {code && !loading && (
+        {step === 'code' && code && (
           <div className="space-y-6">
             <p className="text-sm text-zinc-400">
               Scan this QR code with the PocketProxy app, or enter the code manually.
@@ -141,6 +163,8 @@ export default function DevicesPage() {
   const [pairingCodes, setPairingCodes] = useState<PairingCode[]>([])
   const [connectionCounts, setConnectionCounts] = useState<Record<string, number>>({})
   const [connectionIds, setConnectionIds] = useState<Record<string, string>>({})
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [adminMode, setAdminMode] = useState(false)
 
   const fetchDevices = useCallback(async () => {
     const token = getToken()
@@ -163,6 +187,17 @@ export default function DevicesPage() {
       setPairingCodes((res.pairing_codes || []).filter(pc => !pc.claimed_at && new Date(pc.expires_at) > new Date()))
     } catch (err) {
       console.error('Failed to fetch pairing codes:', err)
+    }
+  }, [])
+
+  const fetchCustomers = useCallback(async () => {
+    const token = getToken()
+    if (!token) return
+    try {
+      const res = await api.customers.list(token)
+      setCustomers(res.customers || [])
+    } catch {
+      // Customers endpoint is admin-only; customers will get a 403 which we silently ignore
     }
   }, [])
 
@@ -189,9 +224,12 @@ export default function DevicesPage() {
   }, [])
 
   useEffect(() => {
+    const admin = isAdmin()
+    setAdminMode(admin)
     fetchDevices()
     fetchPairingCodes()
     fetchConnections()
+    if (admin) fetchCustomers()
     const unsub = addWSHandler((msg) => {
       if (msg.type === 'device_update') {
         const updated = msg.payload as Device
@@ -200,7 +238,7 @@ export default function DevicesPage() {
     })
     const interval = setInterval(fetchDevices, 15000)
     return () => { unsub(); clearInterval(interval) }
-  }, [fetchDevices, fetchPairingCodes, fetchConnections])
+  }, [fetchDevices, fetchPairingCodes, fetchConnections, fetchCustomers])
 
   async function handleRevokePairingCode(id: string) {
     const token = getToken()
@@ -240,13 +278,15 @@ export default function DevicesPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => { setShowPairingModal(true) }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Add Device
-          </button>
+          {adminMode && (
+            <button
+              onClick={() => { setShowPairingModal(true) }}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Add Device
+            </button>
+          )}
           <Link
             href="/settings"
             className="inline-flex items-center gap-2 px-3 py-2 text-sm text-zinc-500 hover:text-white hover:bg-zinc-800/70 rounded-lg transition-colors"
@@ -300,7 +340,7 @@ export default function DevicesPage() {
       )}
 
       {showPairingModal && (
-        <PairingModal onClose={() => { setShowPairingModal(false); fetchPairingCodes() }} />
+        <PairingModal onClose={() => { setShowPairingModal(false); fetchPairingCodes() }} customers={customers} />
       )}
     </div>
   )

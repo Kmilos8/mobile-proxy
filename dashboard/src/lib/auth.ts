@@ -27,3 +27,17 @@ export function clearAuth() {
 export function isAuthenticated(): boolean {
   return !!getToken()
 }
+
+export function getRole(): string | null {
+  const user = getUser()
+  return user ? user.role : null
+}
+
+export function isAdmin(): boolean {
+  const role = getRole()
+  return role === 'admin' || role === 'operator'
+}
+
+export function isCustomer(): boolean {
+  return getRole() === 'customer'
+}

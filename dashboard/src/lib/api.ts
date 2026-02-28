@@ -90,6 +90,25 @@ export interface Customer {
   name: string
   email: string
   active: boolean
+  email_verified: boolean
+  created_at: string
+  last_login: string | null
+}
+
+export interface CustomerDetail extends Customer {
+  device_count: number
+  share_count: number
+  total_bandwidth: number
+}
+
+export interface DeviceShare {
+  id: string
+  device_id: string
+  shared_with: string
+  can_rename: boolean
+  can_manage_ports: boolean
+  can_download_configs: boolean
+  can_rotate_ip: boolean
   created_at: string
 }
 
@@ -286,6 +305,22 @@ export const api = {
       request<{ customers: Customer[] }>('/customers', { token }),
     create: (token: string, data: { name: string; email: string }) =>
       request<Customer>('/customers', { method: 'POST', token, body: data }),
+    getDetail: (token: string, id: string) =>
+      request<CustomerDetail>(`/customers/${id}`, { token }),
+    suspend: (token: string, id: string) =>
+      request<{ ok: boolean }>(`/customers/${id}/suspend`, { method: 'POST', token }),
+    activate: (token: string, id: string) =>
+      request<{ ok: boolean }>(`/customers/${id}/activate`, { method: 'POST', token }),
+  },
+  deviceShares: {
+    list: (token: string, deviceId: string) =>
+      request<{ shares: DeviceShare[] }>(`/device-shares?device_id=${deviceId}`, { token }),
+    create: (token: string, data: { device_id: string; shared_with: string; can_rename: boolean; can_manage_ports: boolean; can_download_configs: boolean; can_rotate_ip: boolean }) =>
+      request<DeviceShare>('/device-shares', { method: 'POST', token, body: data }),
+    update: (token: string, id: string, data: { can_rename: boolean; can_manage_ports: boolean; can_download_configs: boolean; can_rotate_ip: boolean }) =>
+      request<DeviceShare>(`/device-shares/${id}`, { method: 'PUT', token, body: data }),
+    delete: (token: string, id: string) =>
+      request(`/device-shares/${id}`, { method: 'DELETE', token }),
   },
   rotationLinks: {
     list: (token: string, deviceId: string) =>
@@ -298,12 +333,13 @@ export const api = {
   pairingCodes: {
     list: (token: string) =>
       request<{ pairing_codes: PairingCode[] }>('/pairing-codes', { token }),
-    create: (token: string, expiresInMinutes?: number, relayServerId?: string, reassignDeviceId?: string) =>
-      request<{ id: string; code: string; expires_at: string }>('/pairing-codes', {
+    create: (token: string, expiresInMinutes?: number, relayServerId?: string, reassignDeviceId?: string, customerId?: string) =>
+      request<{ id: string; code: string; expires_at: string; customer_id?: string }>('/pairing-codes', {
         method: 'POST', token, body: {
           expires_in_minutes: expiresInMinutes || 5,
           ...(relayServerId ? { relay_server_id: relayServerId } : {}),
           ...(reassignDeviceId ? { reassign_device_id: reassignDeviceId } : {}),
+          ...(customerId ? { customer_id: customerId } : {}),
         }
       }),
     delete: (token: string, id: string) =>

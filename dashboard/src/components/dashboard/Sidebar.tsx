@@ -3,13 +3,18 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
-import { Smartphone, ChevronLeft, ChevronRight, LogOut } from 'lucide-react'
+import { Smartphone, ChevronLeft, ChevronRight, LogOut, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { clearAuth } from '@/lib/auth'
+import { clearAuth, isAdmin } from '@/lib/auth'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 
-const navItems = [
+const adminNavItems = [
+  { href: '/devices', label: 'Devices', icon: Smartphone },
+  { href: '/admin/customers', label: 'Customers', icon: Users },
+]
+
+const customerNavItems = [
   { href: '/devices', label: 'Devices', icon: Smartphone },
 ]
 
@@ -17,6 +22,7 @@ export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const [collapsed, setCollapsed] = useState(false)
+  const [navItems, setNavItems] = useState(customerNavItems)
 
   // Read localStorage only in useEffect to avoid hydration mismatch
   useEffect(() => {
@@ -29,6 +35,7 @@ export default function Sidebar() {
         setCollapsed(stored === 'true')
       }
     }
+    setNavItems(isAdmin() ? adminNavItems : customerNavItems)
   }, [])
 
   function toggleCollapsed() {
