@@ -1,108 +1,41 @@
 'use client'
 
-import { useState, useEffect, FormEvent } from 'react'
+import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { Turnstile } from '@marsidev/react-turnstile'
 import { api } from '@/lib/api'
-import { setAuth } from '@/lib/auth'
 
-export default function LoginPage() {
+export default function SignupPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [turnstileToken, setTurnstileToken] = useState('')
-  const [showResend, setShowResend] = useState(false)
-  const [resendLoading, setResendLoading] = useState(false)
-  const [resendMessage, setResendMessage] = useState('')
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-
-    // Handle Google OAuth callback
-    const token = params.get('token')
-    const isGoogle = params.get('google')
-    if (token && isGoogle) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]))
-        setAuth(token, {
-          id: payload.user_id,
-          email: payload.email,
-          name: payload.email.split('@')[0],
-          role: payload.role,
-        })
-        router.push('/devices')
-      } catch {
-        // ignore invalid tokens
-      }
-    }
-
-    // Handle password_updated redirect
-    const message = params.get('message')
-    if (message === 'password_updated') {
-      setSuccessMessage('Password updated successfully. Please sign in with your new password.')
-      // Clear the query param from URL without page reload
-      const newUrl = window.location.pathname
-      window.history.replaceState({}, '', newUrl)
-    }
-  }, [router])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
-    setSuccessMessage('')
-    setShowResend(false)
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.')
+      return
+    }
+
     setLoading(true)
-
     try {
-      // Try customer login first
-      try {
-        const res = await api.customerAuth.login(email, password, turnstileToken)
-        setAuth(res.token, {
-          id: res.customer.id,
-          email: res.customer.email,
-          name: res.customer.name || res.customer.email.split('@')[0],
-          role: res.customer.role,
-        })
-        router.push('/devices')
-        return
-      } catch (customerErr) {
-        const msg = customerErr instanceof Error ? customerErr.message : ''
-        if (msg === 'email_not_verified') {
-          setError('Please verify your email before signing in.')
-          setShowResend(true)
-          return
-        }
-        // Fall through to admin login if customer login returned 401
-        if (!msg.includes('401') && !msg.includes('Invalid credentials') && !msg.includes('not found')) {
-          // Not a "wrong credentials" error — re-throw for operator fallback
-        }
-      }
-
-      // Fallback to admin/operator login (no turnstile token needed)
-      const res = await api.auth.login(email, password)
-      setAuth(res.token, res.user)
-      router.push('/devices')
+      await api.customerAuth.signup(email, password, turnstileToken)
+      router.push(`/signup/verify?email=${encodeURIComponent(email)}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed')
+      const msg = err instanceof Error ? err.message : 'Signup failed'
+      if (msg.includes('409') || msg.toLowerCase().includes('already exists') || msg.toLowerCase().includes('conflict')) {
+        setError('An account with this email already exists.')
+      } else {
+        setError(msg)
+      }
     } finally {
       setLoading(false)
-    }
-  }
-
-  async function handleResend() {
-    setResendLoading(true)
-    setResendMessage('')
-    try {
-      await api.customerAuth.resendVerification(email)
-      setResendMessage('Verification email sent! Check your inbox.')
-    } catch {
-      setResendMessage('Failed to resend. Please try again.')
-    } finally {
-      setResendLoading(false)
     }
   }
 
@@ -121,29 +54,12 @@ export default function LoginPage() {
           </h1>
         </div>
 
-        {successMessage && (
-          <div className="bg-green-900/50 border border-green-800 text-green-200 px-4 py-2 rounded text-sm mb-4">
-            {successMessage}
-          </div>
-        )}
+        <h2 className="text-lg font-semibold text-white mb-4">Create Account</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="bg-red-900/50 border border-red-800 text-red-200 px-4 py-2 rounded text-sm">
               {error}
-              {showResend && (
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    onClick={handleResend}
-                    disabled={resendLoading}
-                    className="underline text-red-300 hover:text-red-100 disabled:opacity-50"
-                  >
-                    {resendLoading ? 'Sending...' : 'Resend verification email'}
-                  </button>
-                  {resendMessage && <span className="ml-2 text-sm">{resendMessage}</span>}
-                </div>
-              )}
             </div>
           )}
           <div>
@@ -157,13 +73,14 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">Password</label>
+            <label className="block text-sm text-zinc-400 mb-1">Password (min. 8 characters)</label>
             <input
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/50"
               required
+              minLength={8}
             />
           </div>
           {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
@@ -179,7 +96,7 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full py-2 bg-brand-600 hover:bg-brand-500 disabled:bg-brand-800 text-white rounded font-medium"
           >
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? 'Creating account...' : 'Create Account'}
           </button>
         </form>
 
@@ -193,7 +110,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Google sign-in */}
+        {/* Google sign-up */}
         <a
           href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'}/auth/customer/google`}
           className="w-full py-2 bg-white hover:bg-gray-100 text-gray-800 rounded font-medium flex items-center justify-center gap-2 border border-gray-300"
@@ -204,18 +121,13 @@ export default function LoginPage() {
             <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
           </svg>
-          Sign in with Google
+          Sign up with Google
         </a>
 
-        {/* Forgot password */}
-        <div className="mt-4 text-center text-sm">
-          <a href="/forgot-password" className="text-brand-400 hover:text-brand-300">Forgot password?</a>
-        </div>
-
-        {/* Sign up link */}
-        <div className="mt-2 text-center text-sm text-zinc-400">
-          Don&apos;t have an account?{' '}
-          <a href="/signup" className="text-brand-400 hover:text-brand-300">Sign up</a>
+        {/* Login link */}
+        <div className="mt-4 text-center text-sm text-zinc-400">
+          Already have an account?{' '}
+          <a href="/login" className="text-brand-400 hover:text-brand-300">Log in</a>
         </div>
       </div>
     </div>

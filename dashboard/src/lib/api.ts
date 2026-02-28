@@ -93,6 +93,13 @@ export interface Customer {
   created_at: string
 }
 
+export interface AuthCustomer {
+  id: string
+  email: string
+  name: string
+  role: string
+}
+
 export interface IPHistoryEntry {
   id: string
   device_id: string
@@ -168,6 +175,40 @@ export const api = {
       request<{ token: string; user: { id: string; email: string; name: string; role: string } }>(
         '/auth/login', { method: 'POST', body: { email, password } }
       ),
+  },
+  customerAuth: {
+    signup: (email: string, password: string, turnstileToken: string) =>
+      request<{ message: string }>('/auth/customer/signup', {
+        method: 'POST',
+        body: { email, password, turnstile_token: turnstileToken }
+      }),
+    login: (email: string, password: string, turnstileToken: string) =>
+      request<{ token: string; customer: AuthCustomer }>('/auth/customer/login', {
+        method: 'POST',
+        body: { email, password, turnstile_token: turnstileToken }
+      }),
+    verifyEmailCheck: (token: string) =>
+      request<{ valid: boolean; reason?: string }>(`/auth/customer/verify-email?token=${encodeURIComponent(token)}`),
+    verifyEmail: (token: string) =>
+      request<{ token: string; customer: AuthCustomer }>('/auth/customer/verify-email', {
+        method: 'POST',
+        body: { token }
+      }),
+    resendVerification: (email: string) =>
+      request<{ message: string }>('/auth/customer/resend-verification', {
+        method: 'POST',
+        body: { email }
+      }),
+    forgotPassword: (email: string, turnstileToken: string) =>
+      request<{ message: string }>('/auth/customer/forgot-password', {
+        method: 'POST',
+        body: { email, turnstile_token: turnstileToken }
+      }),
+    resetPassword: (token: string, password: string, confirmPassword: string) =>
+      request<{ message: string }>('/auth/customer/reset-password', {
+        method: 'POST',
+        body: { token, password, confirm_password: confirmPassword }
+      }),
   },
   devices: {
     list: (token: string) =>
