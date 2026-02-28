@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: Phases
+milestone: v1.0
+milestone_name: SaaS Platform
 status: unknown
-last_updated: "2026-02-28T06:40:13.886Z"
+last_updated: "2026-02-28T08:10:28.796Z"
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 5
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 15
+  completed_plans: 13
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 5 of 9 (Phase 5: Auth Foundation)
-Plan: 3 of 3 in current phase (05-03 complete — checkpoint:human-verify approved)
-Status: Phase 5 complete, ready for Phase 6
-Last activity: 2026-02-28 — 05-03-PLAN.md complete: All 3 tasks done. Six customer-facing auth pages (login extended, signup, verify-confirm, verify-email, forgot-password, reset-password) with Turnstile and Google OAuth. User visual verification approved.
+Phase: 6 of 9 (Phase 6: Multi-Tenant Isolation)
+Plan: 1 of 3 in current phase (06-01 complete)
+Status: Phase 6 in progress — plan 1 (data layer) complete, plans 2-3 remaining
+Last activity: 2026-02-28 — 06-01-PLAN.md complete: 2 tasks done. Migration 012 adds customer_id to devices/pairing_codes, device_shares table, operator seed, data backfill. Domain models and customer-scoped repository methods implemented.
 
-Progress: [████░░░░░░] 40% (v2.0 phases — Phase 5 complete, 2 of 5 phases done)
+Progress: [████░░░░░░] 44% (v2.0 phases — Phase 5 complete, Phase 6 plan 1 of 3 done)
 
 ## Accumulated Context
 
@@ -51,6 +51,10 @@ Progress: [████░░░░░░] 40% (v2.0 phases — Phase 5 complete
 - Single login form with customer-first fallback to admin login — no separate operator login URL needed
 - Two-step email verification: GET check on mount, user clicks Verify button, POST confirms — prevents link scanner token consumption
 - Generic forgot-password success regardless of error type (except 429) — email enumeration prevention
+- [Phase 06-01]: Customer_id nullable on devices/pairing_codes — backfill from admin user email match
+- [Phase 06-01]: UNION query for ListByCustomer avoids duplicate rows when device is both owned and shared
+- [Phase 06-01]: device_shares UNIQUE(device_id, shared_with) enforces one share record per device-customer pair at DB level
+- [Phase 06-01]: OR EXISTS sub-select in GetByIDForCustomer keeps scan arity consistent — avoids JOIN-induced column count changes
 
 ### Blockers/Concerns
 
@@ -66,5 +70,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 05-03-PLAN.md — Phase 5 Auth Foundation complete (all 3 plans done)
+Stopped at: Completed 06-01-PLAN.md — Phase 6 plan 1 (data layer) done. 2 plans remain in Phase 6.
 Resume file: None

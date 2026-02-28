@@ -108,7 +108,7 @@ v2.0 phases: 5 → 6 → 7 → 8 → 9
 | 3. Security and Monitoring | v1.0 | 2/2 | Complete | 2026-02-27 |
 | 4. Bug Fixes and Polish | v1.0 | 2/2 | Complete | 2026-02-27 |
 | 5. Auth Foundation | v2.0 | 3/3 | Complete | 2026-02-28 |
-| 6. Multi-Tenant Isolation | v2.0 | 0/3 | Not started | - |
+| 6. Multi-Tenant Isolation | 1/3 | In Progress|  | - |
 | 7. Customer Portal | v2.0 | 0/TBD | Not started | - |
 | 8. Landing Page and IP Whitelist | v2.0 | 0/TBD | Not started | - |
 | 9. Device Grouping, API Docs, and Traffic Logs | v2.0 | 0/TBD | Not started | - |

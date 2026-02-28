@@ -40,9 +40,9 @@ Requirements for v2.0 SaaS Platform milestone. Each maps to roadmap phases.
 
 ### Multi-Tenant Access
 
-- [ ] **TENANT-01**: Customer sees only their own assigned devices and connections
-- [ ] **TENANT-02**: Operator (admin) can assign devices to customers
-- [ ] **TENANT-03**: Customer JWT carries customer_id; all portal queries filter by it
+- [x] **TENANT-01**: Customer sees only their own assigned devices and connections
+- [x] **TENANT-02**: Operator (admin) can assign devices to customers
+- [x] **TENANT-03**: Customer JWT carries customer_id; all portal queries filter by it
 
 ### Customer Portal
 
@@ -139,9 +139,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-03 | Phase 5 | Complete |
 | AUTH-04 | Phase 5 | Complete |
 | AUTH-05 | Phase 5 | Complete |
-| TENANT-01 | Phase 6 | Pending |
-| TENANT-02 | Phase 6 | Pending |
-| TENANT-03 | Phase 6 | Pending |
+| TENANT-01 | Phase 6 | Complete |
+| TENANT-02 | Phase 6 | Complete |
+| TENANT-03 | Phase 6 | Complete |
 | PORTAL-01 | Phase 7 | Pending |
 | PORTAL-02 | Phase 7 | Pending |
 | PORTAL-03 | Phase 7 | Pending |
