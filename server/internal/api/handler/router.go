@@ -28,6 +28,7 @@ func SetupRouter(
 	openvpnHandler *OpenVPNHandler,
 	syncHandler *SyncHandler,
 	userRepo *repository.UserRepository,
+	customerAuthHandler *CustomerAuthHandler,
 ) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.CORSMiddleware())
@@ -44,6 +45,20 @@ func SetupRouter(
 
 	// Public routes
 	r.POST("/api/auth/login", authHandler.Login)
+
+	// Customer auth routes (public — no JWT required)
+	customerAuth := r.Group("/api/auth/customer")
+	{
+		customerAuth.POST("/signup", customerAuthHandler.Signup)
+		customerAuth.POST("/login", customerAuthHandler.Login)
+		customerAuth.GET("/verify-email", customerAuthHandler.VerifyEmailCheck)
+		customerAuth.POST("/verify-email", customerAuthHandler.VerifyEmail)
+		customerAuth.POST("/resend-verification", customerAuthHandler.ResendVerification)
+		customerAuth.POST("/forgot-password", customerAuthHandler.ForgotPassword)
+		customerAuth.POST("/reset-password", customerAuthHandler.ResetPassword)
+		customerAuth.GET("/google", customerAuthHandler.GoogleLogin)
+		customerAuth.GET("/google/callback", customerAuthHandler.GoogleCallback)
+	}
 
 	// Public endpoints (no auth)
 	r.GET("/api/public/rotate/:token", rotationLinkHandler.Rotate)

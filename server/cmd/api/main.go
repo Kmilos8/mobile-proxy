@@ -29,6 +29,7 @@ func main() {
 	commandRepo := repository.NewCommandRepository(db)
 	ipHistRepo := repository.NewIPHistoryRepository(db)
 	customerRepo := repository.NewCustomerRepository(db)
+	customerTokenRepo := repository.NewCustomerTokenRepository(db)
 	rotationLinkRepo := repository.NewRotationLinkRepository(db)
 	pairingRepo := repository.NewPairingCodeRepository(db)
 	relayServerRepo := repository.NewRelayServerRepository(db)
@@ -76,8 +77,16 @@ func main() {
 	// WebSocket hub
 	wsHub := handler.NewWSHub()
 
+	// Customer auth services
+	emailService := service.NewEmailService(cfg.Resend)
+	customerAuthService := service.NewCustomerAuthService(
+		customerRepo, customerTokenRepo, emailService,
+		cfg.JWT, cfg.Google, cfg.Turnstile,
+	)
+
 	// Handlers
 	customerHandler := handler.NewCustomerHandler(customerRepo)
+	customerAuthHandler := handler.NewCustomerAuthHandler(customerAuthService)
 	vpnHandler := handler.NewVPNHandler(deviceService, vpnService, connService)
 	statsHandler := handler.NewStatsHandler(deviceRepo, connRepo, bwService)
 	rotationLinkHandler := handler.NewRotationLinkHandler(rotationLinkRepo, deviceService)
@@ -87,7 +96,7 @@ func main() {
 	syncHandler := handler.NewSyncHandler(deviceRepo, connRepo)
 
 	// Router
-	router := handler.SetupRouter(authService, deviceService, connService, bwService, customerHandler, vpnHandler, statsHandler, rotationLinkHandler, pairingHandler, relayServerHandler, wsHub, openvpnHandler, syncHandler, userRepo)
+	router := handler.SetupRouter(authService, deviceService, connService, bwService, customerHandler, vpnHandler, statsHandler, rotationLinkHandler, pairingHandler, relayServerHandler, wsHub, openvpnHandler, syncHandler, userRepo, customerAuthHandler)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -127,6 +136,36 @@ func loadConfig() domain.Config {
 	}
 	if v := os.Getenv("VPN_CCD_DIR"); v != "" {
 		cfg.VPN.CCDDir = v
+	}
+
+	// Google OAuth
+	if v := os.Getenv("GOOGLE_CLIENT_ID"); v != "" {
+		cfg.Google.ClientID = v
+	}
+	if v := os.Getenv("GOOGLE_CLIENT_SECRET"); v != "" {
+		cfg.Google.ClientSecret = v
+	}
+	if v := os.Getenv("GOOGLE_REDIRECT_URL"); v != "" {
+		cfg.Google.RedirectURL = v
+	}
+
+	// Resend email
+	if v := os.Getenv("RESEND_API_KEY"); v != "" {
+		cfg.Resend.APIKey = v
+	}
+	if v := os.Getenv("RESEND_FROM_EMAIL"); v != "" {
+		cfg.Resend.FromEmail = v
+	}
+	if v := os.Getenv("DASHBOARD_BASE_URL"); v != "" {
+		cfg.Resend.BaseURL = v
+	}
+
+	// Cloudflare Turnstile
+	if v := os.Getenv("TURNSTILE_SITE_KEY"); v != "" {
+		cfg.Turnstile.SiteKey = v
+	}
+	if v := os.Getenv("TURNSTILE_SECRET_KEY"); v != "" {
+		cfg.Turnstile.SecretKey = v
 	}
 
 	return cfg
