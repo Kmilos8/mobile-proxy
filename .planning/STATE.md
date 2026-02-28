@@ -7,8 +7,8 @@ last_updated: "2026-02-28"
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 1
-  completed_plans: 1
+  total_plans: 2
+  completed_plans: 2
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 5 of 9 (Phase 5: Auth Foundation)
-Plan: 1 of TBD in current phase (05-01 complete)
+Plan: 2 of TBD in current phase (05-02 complete)
 Status: In progress
-Last activity: 2026-02-28 — 05-01-PLAN.md executed: DB schema + repository layer for customer auth
+Last activity: 2026-02-28 — 05-02-PLAN.md executed: Service layer, HTTP handlers, and route wiring for all customer auth flows
 
-Progress: [█░░░░░░░░░] 10% (v2.0 phases)
+Progress: [██░░░░░░░░] 20% (v2.0 phases)
 
 ## Accumulated Context
 
@@ -44,6 +44,9 @@ Progress: [█░░░░░░░░░] 10% (v2.0 phases)
 - Token validity enforced in SQL (used_at IS NULL AND expires_at > NOW()) rather than application layer
 - Case-insensitive email lookup via LOWER() to prevent duplicate accounts
 - LinkGoogleAccount also sets email_verified=true (Google confirms email ownership)
+- Error sentinel string "email_not_verified" drives 403 vs 401 in Login handler — avoids custom error types for a single case
+- Dev-mode fallbacks for EmailService (no API key) and Turnstile (no secret key) allow local testing without external credentials
+- GoogleCallback redirect pattern: returns JWT via /login?token=X&google=true so frontend can store token then navigate
 
 ### Blockers/Concerns
 
@@ -59,5 +62,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 05-01-PLAN.md (DB schema + data access layer for customer auth)
+Stopped at: Completed 05-02-PLAN.md (service layer, HTTP handlers, and route wiring for customer auth)
 Resume file: None

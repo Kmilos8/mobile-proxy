@@ -36,7 +36,7 @@ Requirements for v2.0 SaaS Platform milestone. Each maps to roadmap phases.
 - [x] **AUTH-02**: Customer receives email verification after signup and must verify before accessing portal
 - [x] **AUTH-03**: Customer can sign up and log in with Google account (OAuth)
 - [x] **AUTH-04**: Customer can reset password via email link
-- [ ] **AUTH-05**: Signup and login forms are protected by Cloudflare Turnstile bot protection
+- [x] **AUTH-05**: Signup and login forms are protected by Cloudflare Turnstile bot protection
 
 ### Multi-Tenant Access
 
@@ -138,7 +138,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-02 | Phase 5 | Complete |
 | AUTH-03 | Phase 5 | Complete |
 | AUTH-04 | Phase 5 | Complete |
-| AUTH-05 | Phase 5 | Pending |
+| AUTH-05 | Phase 5 | Complete |
 | TENANT-01 | Phase 6 | Pending |
 | TENANT-02 | Phase 6 | Pending |
 | TENANT-03 | Phase 6 | Pending |
