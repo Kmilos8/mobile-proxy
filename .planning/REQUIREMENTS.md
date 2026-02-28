@@ -138,37 +138,37 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BUG-01 | — | Pending |
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
-| AUTH-03 | — | Pending |
-| AUTH-04 | — | Pending |
-| AUTH-05 | — | Pending |
-| TENANT-01 | — | Pending |
-| TENANT-02 | — | Pending |
-| TENANT-03 | — | Pending |
-| PORTAL-01 | — | Pending |
-| PORTAL-02 | — | Pending |
-| PORTAL-03 | — | Pending |
-| PORTAL-04 | — | Pending |
-| LAND-01 | — | Pending |
-| LAND-02 | — | Pending |
-| IPWL-01 | — | Pending |
-| IPWL-02 | — | Pending |
-| IPWL-03 | — | Pending |
-| APIDOC-01 | — | Pending |
-| APIDOC-02 | — | Pending |
-| GROUP-01 | — | Pending |
-| GROUP-02 | — | Pending |
-| GROUP-03 | — | Pending |
-| TLOG-01 | — | Pending |
-| TLOG-02 | — | Pending |
+| BUG-01 | Phase 5 | Pending |
+| AUTH-01 | Phase 6 | Pending |
+| AUTH-02 | Phase 6 | Pending |
+| AUTH-03 | Phase 6 | Pending |
+| AUTH-04 | Phase 6 | Pending |
+| AUTH-05 | Phase 6 | Pending |
+| TENANT-01 | Phase 7 | Pending |
+| TENANT-02 | Phase 7 | Pending |
+| TENANT-03 | Phase 7 | Pending |
+| PORTAL-01 | Phase 8 | Pending |
+| PORTAL-02 | Phase 8 | Pending |
+| PORTAL-03 | Phase 8 | Pending |
+| PORTAL-04 | Phase 8 | Pending |
+| LAND-01 | Phase 9 | Pending |
+| LAND-02 | Phase 9 | Pending |
+| IPWL-01 | Phase 9 | Pending |
+| IPWL-02 | Phase 9 | Pending |
+| IPWL-03 | Phase 9 | Pending |
+| APIDOC-01 | Phase 10 | Pending |
+| APIDOC-02 | Phase 10 | Pending |
+| GROUP-01 | Phase 10 | Pending |
+| GROUP-02 | Phase 10 | Pending |
+| GROUP-03 | Phase 10 | Pending |
+| TLOG-01 | Phase 10 | Pending |
+| TLOG-02 | Phase 10 | Pending |
 
 **Coverage:**
-- v2 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20
+- v2 requirements: 25 total
+- Mapped to phases: 25
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-25*
-*Last updated: 2026-02-27 after v2.0 milestone requirements definition*
+*Last updated: 2026-02-27 after v2.0 roadmap creation*
