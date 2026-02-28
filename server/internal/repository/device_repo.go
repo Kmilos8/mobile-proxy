@@ -236,3 +236,36 @@ func (r *DeviceRepository) GetAuthToken(ctx context.Context, id uuid.UUID) (stri
 	}
 	return token, nil
 }
+
+// ListByCustomer returns devices the customer owns OR has been shared with, ordered by name.
+func (r *DeviceRepository) ListByCustomer(ctx context.Context, customerID uuid.UUID) ([]domain.Device, error) {
+	query := `SELECT ` + deviceSelectColumns + ` ` + deviceFromJoin + ` WHERE d.customer_id = $1
+		UNION
+		SELECT ` + deviceSelectColumns + ` ` + deviceFromJoin + `
+		INNER JOIN device_shares ds ON ds.device_id = d.id WHERE ds.shared_with = $1
+		ORDER BY name ASC`
+	rows, err := r.db.Pool.Query(ctx, query, customerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var devices []domain.Device
+	for rows.Next() {
+		d, err := r.scanDeviceRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		devices = append(devices, *d)
+	}
+	return devices, nil
+}
+
+// GetByIDForCustomer gets a device by ID only if the customer owns it or has a share on it.
+func (r *DeviceRepository) GetByIDForCustomer(ctx context.Context, deviceID uuid.UUID, customerID uuid.UUID) (*domain.Device, error) {
+	query := `SELECT ` + deviceSelectColumns + ` ` + deviceFromJoin + `
+		WHERE d.id = $1 AND (d.customer_id = $2 OR EXISTS (
+			SELECT 1 FROM device_shares ds WHERE ds.device_id = d.id AND ds.shared_with = $2
+		))`
+	return r.scanDevice(r.db.Pool.QueryRow(ctx, query, deviceID, customerID))
+}

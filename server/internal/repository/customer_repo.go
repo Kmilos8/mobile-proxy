@@ -123,3 +123,36 @@ func (r *CustomerRepository) LinkGoogleAccount(ctx context.Context, id uuid.UUID
 	_, err := r.db.Pool.Exec(ctx, query, id, googleID, googleEmail)
 	return err
 }
+
+// UpdateActive sets the active flag for a customer account.
+func (r *CustomerRepository) UpdateActive(ctx context.Context, id uuid.UUID, active bool) error {
+	query := `UPDATE customers SET active = $2, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, id, active)
+	return err
+}
+
+// GetStats returns aggregate metrics for a customer: owned device count, outgoing share count, and total bandwidth used.
+func (r *CustomerRepository) GetStats(ctx context.Context, id uuid.UUID) (deviceCount int, shareCount int, totalBandwidth int64, err error) {
+	err = r.db.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM devices WHERE customer_id = $1`, id).Scan(&deviceCount)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("get customer device count: %w", err)
+	}
+
+	err = r.db.Pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM device_shares WHERE owner_id = $1`, id).Scan(&shareCount)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("get customer share count: %w", err)
+	}
+
+	err = r.db.Pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(pc.bandwidth_used), 0)
+		 FROM proxy_connections pc
+		 JOIN devices d ON pc.device_id = d.id
+		 WHERE d.customer_id = $1`, id).Scan(&totalBandwidth)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("get customer bandwidth: %w", err)
+	}
+
+	return deviceCount, shareCount, totalBandwidth, nil
+}

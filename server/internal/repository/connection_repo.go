@@ -158,3 +158,32 @@ func (r *ConnectionRepository) scanConnections(ctx context.Context, query string
 	}
 	return conns, nil
 }
+
+// ListByCustomer returns connections where the customer_id matches.
+func (r *ConnectionRepository) ListByCustomer(ctx context.Context, customerID uuid.UUID) ([]domain.ProxyConnection, error) {
+	query := `SELECT ` + connSelectCols + ` FROM proxy_connections WHERE customer_id = $1 ORDER BY created_at DESC`
+	return r.scanConnections(ctx, query, customerID)
+}
+
+// GetByIDForCustomer returns a connection by ID but only if customer_id matches OR the device is owned/shared with the customer.
+func (r *ConnectionRepository) GetByIDForCustomer(ctx context.Context, connID uuid.UUID, customerID uuid.UUID) (*domain.ProxyConnection, error) {
+	query := `SELECT ` + connSelectCols + ` FROM proxy_connections pc
+		WHERE pc.id = $1 AND (pc.customer_id = $2 OR EXISTS (
+			SELECT 1 FROM devices d WHERE d.id = pc.device_id AND d.customer_id = $2
+		) OR EXISTS (
+			SELECT 1 FROM device_shares ds WHERE ds.device_id = pc.device_id AND ds.shared_with = $2
+		))`
+	return r.scanConnection(r.db.Pool.QueryRow(ctx, query, connID, customerID))
+}
+
+// ListByDeviceForCustomer returns connections for a device, but only if the customer owns or has access to that device.
+func (r *ConnectionRepository) ListByDeviceForCustomer(ctx context.Context, deviceID uuid.UUID, customerID uuid.UUID) ([]domain.ProxyConnection, error) {
+	query := `SELECT ` + connSelectCols + ` FROM proxy_connections pc
+		WHERE pc.device_id = $1 AND (EXISTS (
+			SELECT 1 FROM devices d WHERE d.id = $1 AND d.customer_id = $2
+		) OR EXISTS (
+			SELECT 1 FROM device_shares ds WHERE ds.device_id = $1 AND ds.shared_with = $2
+		))
+		ORDER BY created_at DESC`
+	return r.scanConnections(ctx, query, deviceID, customerID)
+}
