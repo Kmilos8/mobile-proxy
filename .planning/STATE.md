@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: SaaS Platform
 status: unknown
-last_updated: "2026-02-28T08:10:28.796Z"
+last_updated: "2026-02-28T09:03:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 6 of 9 (Phase 6: Multi-Tenant Isolation)
-Plan: 1 of 3 in current phase (06-01 complete)
-Status: Phase 6 in progress — plan 1 (data layer) complete, plans 2-3 remaining
-Last activity: 2026-02-28 — 06-01-PLAN.md complete: 2 tasks done. Migration 012 adds customer_id to devices/pairing_codes, device_shares table, operator seed, data backfill. Domain models and customer-scoped repository methods implemented.
+Plan: 2 of 3 in current phase (06-02 complete)
+Status: Phase 6 in progress — plans 1-2 (data layer + handler isolation) complete, plan 3 remaining
+Last activity: 2026-02-28 — 06-02-PLAN.md complete: 2 tasks done. AdminOnlyMiddleware, CustomerSuspensionCheck, DeviceShareService, role-branching handlers, DeviceShareHandler CRUD, route restructure, pairing flow stamps customer_id.
 
-Progress: [████░░░░░░] 44% (v2.0 phases — Phase 5 complete, Phase 6 plan 1 of 3 done)
+Progress: [█████░░░░░] 47% (v2.0 phases — Phase 5 complete, Phase 6 plans 1-2 of 3 done)
 
 ## Accumulated Context
 
@@ -55,6 +55,10 @@ Progress: [████░░░░░░] 44% (v2.0 phases — Phase 5 complete
 - [Phase 06-01]: UNION query for ListByCustomer avoids duplicate rows when device is both owned and shared
 - [Phase 06-01]: device_shares UNIQUE(device_id, shared_with) enforces one share record per device-customer pair at DB level
 - [Phase 06-01]: OR EXISTS sub-select in GetByIDForCustomer keeps scan arity consistent — avoids JOIN-induced column count changes
+- [Phase 06-02]: AdminOnlyMiddleware applied to sub-group within dashboard group — keeps device/connection routes in parent group for customer access via role-branching
+- [Phase 06-02]: CanAccess vs CanDo separation in DeviceShareService — read-only endpoints use CanAccess, write endpoints use CanDo with specific permission booleans
+- [Phase 06-02]: Customer SendCommand restricted to rotate_ip/rotate_ip_airplane only — all other commands are admin-only to prevent device disruption
+- [Phase 06-02]: PairingService.CreateCode customerID parameter is nullable — maintains backward compatibility with admin callers that don't specify a customer
 
 ### Blockers/Concerns
 
@@ -70,5 +74,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 06-01-PLAN.md — Phase 6 plan 1 (data layer) done. 2 plans remain in Phase 6.
+Stopped at: Completed 06-02-PLAN.md — Phase 6 plan 2 (handler isolation) done. 1 plan remains in Phase 6.
 Resume file: None
