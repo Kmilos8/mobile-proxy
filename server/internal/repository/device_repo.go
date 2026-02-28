@@ -19,12 +19,12 @@ func NewDeviceRepository(db *DB) *DeviceRepository {
 }
 
 func (r *DeviceRepository) Create(ctx context.Context, d *domain.Device) error {
-	query := `INSERT INTO devices (id, name, android_id, status, base_port, http_port, socks5_port, udp_relay_port, ovpn_port, device_model, android_version, app_version, relay_server_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
+	query := `INSERT INTO devices (id, name, android_id, status, base_port, http_port, socks5_port, udp_relay_port, ovpn_port, device_model, android_version, app_version, relay_server_id, customer_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
 	_, err := r.db.Pool.Exec(ctx, query,
 		d.ID, d.Name, d.AndroidID, d.Status, d.BasePort,
 		d.HTTPPort, d.SOCKS5Port, d.UDPRelayPort, d.OVPNPort,
-		d.DeviceModel, d.AndroidVersion, d.AppVersion, d.RelayServerID)
+		d.DeviceModel, d.AndroidVersion, d.AppVersion, d.RelayServerID, d.CustomerID)
 	return err
 }
 
@@ -36,7 +36,7 @@ const deviceSelectColumns = `d.id, d.name, d.description, d.android_id, d.status
 		d.base_port, d.http_port, d.socks5_port, d.udp_relay_port, d.ovpn_port,
 		d.last_heartbeat, d.app_version, d.device_model, d.android_version,
 		d.relay_server_id, COALESCE(rs.ip, '') as relay_server_ip,
-		d.auto_rotate_minutes,
+		d.auto_rotate_minutes, d.customer_id,
 		d.created_at, d.updated_at`
 
 const deviceFromJoin = `FROM devices d LEFT JOIN relay_servers rs ON d.relay_server_id = rs.id`
@@ -175,7 +175,7 @@ func (r *DeviceRepository) scanDevice(row pgx.Row) (*domain.Device, error) {
 		&d.BasePort, &d.HTTPPort, &d.SOCKS5Port, &d.UDPRelayPort, &d.OVPNPort,
 		&d.LastHeartbeat, &d.AppVersion, &d.DeviceModel, &d.AndroidVersion,
 		&d.RelayServerID, &d.RelayServerIP,
-		&d.AutoRotateMinutes,
+		&d.AutoRotateMinutes, &d.CustomerID,
 		&d.CreatedAt, &d.UpdatedAt,
 	)
 	if err != nil {
@@ -193,7 +193,7 @@ func (r *DeviceRepository) scanDeviceRow(rows pgx.Rows) (*domain.Device, error) 
 		&d.BasePort, &d.HTTPPort, &d.SOCKS5Port, &d.UDPRelayPort, &d.OVPNPort,
 		&d.LastHeartbeat, &d.AppVersion, &d.DeviceModel, &d.AndroidVersion,
 		&d.RelayServerID, &d.RelayServerIP,
-		&d.AutoRotateMinutes,
+		&d.AutoRotateMinutes, &d.CustomerID,
 		&d.CreatedAt, &d.UpdatedAt,
 	)
 	if err != nil {

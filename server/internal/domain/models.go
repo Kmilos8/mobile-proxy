@@ -83,8 +83,22 @@ type Device struct {
 	RelayServerID   *uuid.UUID   `json:"relay_server_id" db:"relay_server_id"`
 	RelayServerIP     string       `json:"relay_server_ip" db:"-"`
 	AutoRotateMinutes int          `json:"auto_rotate_minutes" db:"auto_rotate_minutes"`
+	CustomerID        *uuid.UUID   `json:"customer_id" db:"customer_id"`
 	CreatedAt         time.Time    `json:"created_at" db:"created_at"`
 	UpdatedAt         time.Time    `json:"updated_at" db:"updated_at"`
+}
+
+type DeviceShare struct {
+	ID                 uuid.UUID `json:"id" db:"id"`
+	DeviceID           uuid.UUID `json:"device_id" db:"device_id"`
+	OwnerID            uuid.UUID `json:"owner_id" db:"owner_id"`
+	SharedWith         uuid.UUID `json:"shared_with" db:"shared_with"`
+	CanRename          bool      `json:"can_rename" db:"can_rename"`
+	CanManagePorts     bool      `json:"can_manage_ports" db:"can_manage_ports"`
+	CanDownloadConfigs bool      `json:"can_download_configs" db:"can_download_configs"`
+	CanRotateIP        bool      `json:"can_rotate_ip" db:"can_rotate_ip"`
+	CreatedAt          time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type Customer struct {
@@ -179,6 +193,7 @@ type PairingCode struct {
 	CreatedBy         *uuid.UUID `json:"created_by" db:"created_by"`
 	RelayServerID     *uuid.UUID `json:"relay_server_id" db:"relay_server_id"`
 	ReassignDeviceID  *uuid.UUID `json:"reassign_device_id" db:"reassign_device_id"`
+	CustomerID        *uuid.UUID `json:"customer_id" db:"customer_id"`
 	CreatedAt         time.Time  `json:"created_at" db:"created_at"`
 }
 
@@ -270,6 +285,7 @@ type CreatePairingCodeRequest struct {
 	ExpiresInMinutes int        `json:"expires_in_minutes"`
 	RelayServerID    *uuid.UUID `json:"relay_server_id"`
 	ReassignDeviceID *uuid.UUID `json:"reassign_device_id"`
+	CustomerID       *uuid.UUID `json:"customer_id"`
 }
 
 type CreatePairingCodeResponse struct {
