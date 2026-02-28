@@ -56,8 +56,15 @@ key-decisions:
   - "verify-email uses two-step pattern: GET check on mount shows state, user clicks Verify button to POST — prevents link scanners from consuming token"
   - "forgot-password shows generic success even on errors (except 429) to prevent email enumeration"
 
+patterns-established:
+  - "Conditional Turnstile render: check process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY before mounting widget"
+  - "Google OAuth redirect: /login?token=X&google=true with JWT decoded via atob() on client"
+  - "Two-step token verification: GET check validity first, POST to consume — prevents scanners"
+
+requirements-completed: [AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05]
+
 # Metrics
-duration: 5min
+duration: 20min
 completed: 2026-02-28
 ---
 
@@ -67,10 +74,10 @@ completed: 2026-02-28
 
 ## Performance
 
-- **Duration:** ~5 min
+- **Duration:** ~20 min
 - **Started:** 2026-02-28T06:06:46Z
-- **Completed:** 2026-02-28T06:17:30Z
-- **Tasks:** 2 complete (Task 3 is checkpoint:human-verify — awaiting user verification)
+- **Completed:** 2026-02-28T06:26:00Z
+- **Tasks:** 3 complete (Tasks 1+2 auto, Task 3 checkpoint:human-verify — approved by user)
 - **Files modified:** 8 (5 created, 3 modified)
 
 ## Accomplishments
@@ -84,6 +91,7 @@ completed: 2026-02-28
 - Created forgot-password page: email + Turnstile form, generic success message (prevents email enumeration even on unexpected errors)
 - Created reset-password page: password + confirm fields, client-side length and match validation, redirects to /login?message=password_updated on success, inline "request new link" prompt on expired token errors
 - `npm run build` passes: all 6 auth routes compile successfully (15 pages total)
+- User visually confirmed all auth pages render correctly on localhost:3001 (Task 3 checkpoint approved)
 
 ## Task Commits
 
@@ -91,8 +99,9 @@ Each task was committed atomically:
 
 1. **Task 1: Install Turnstile, extend API client, build signup + login pages** - `8d0b5f6` (feat)
 2. **Task 2: Verify-email, forgot-password, and reset-password pages** - `65c0026` (feat)
+3. **Task 3: Verify complete auth flow end-to-end** - checkpoint:human-verify approved
 
-**Plan metadata:** (docs commit pending)
+**Plan metadata:** `ab42431` (docs: complete frontend auth pages plan)
 
 ## Files Created/Modified
 
@@ -117,9 +126,28 @@ Each task was committed atomically:
 
 None — plan executed exactly as written.
 
-## Next Steps (Task 3 Checkpoint)
+## Issues Encountered
 
-Task 3 is `checkpoint:human-verify` — user must visually confirm the auth pages render correctly and flows work end-to-end. See checkpoint details below.
+None
+
+## User Setup Required
+
+External services require manual configuration before the full auth flow can be tested in production:
+
+- **Cloudflare Turnstile**: Create widget in Cloudflare Dashboard, add `NEXT_PUBLIC_TURNSTILE_SITE_KEY` env var
+- **Google OAuth**: Create OAuth credentials in Google Cloud Console, add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+- **Resend**: Verify sending domain, add `RESEND_API_KEY`
+
+All three services have dev-mode fallbacks: pages work without env vars set (Turnstile hidden, emails logged to console, Google button links to backend which handles missing credentials gracefully).
+
+## Next Phase Readiness
+
+Phase 5 (Auth Foundation) is complete. All three plans delivered:
+- 05-01: DB schema (customer_accounts, email_verification_tokens, password_reset_tokens tables)
+- 05-02: Go backend auth service layer and API handlers for all 9 auth endpoints
+- 05-03: Next.js frontend auth pages (6 pages), Turnstile integration, Google OAuth
+
+Ready for Phase 6: Tenant Isolation (customer scoping on proxy resources, devices, traffic). The auth foundation provides JWT tokens with customer_id claims that Phase 6 will use for row-level authorization.
 
 ---
 *Phase: 05-auth-foundation*
@@ -137,3 +165,5 @@ Created files verified:
 - dashboard/src/lib/api.ts: Modified (git: 8d0b5f6)
 
 npm run build: PASSED (15 routes compiled, 0 errors)
+Task commits: 8d0b5f6 (Task 1), 65c0026 (Task 2) — verified in git log
+Checkpoint Task 3: approved by user 2026-02-28
