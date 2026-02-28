@@ -237,6 +237,13 @@ func (r *DeviceRepository) GetAuthToken(ctx context.Context, id uuid.UUID) (stri
 	return token, nil
 }
 
+// SetCustomerID sets or clears the customer_id on a device.
+func (r *DeviceRepository) SetCustomerID(ctx context.Context, id uuid.UUID, customerID *uuid.UUID) error {
+	query := `UPDATE devices SET customer_id = $2, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, id, customerID)
+	return err
+}
+
 // ListByCustomer returns devices the customer owns OR has been shared with, ordered by name.
 func (r *DeviceRepository) ListByCustomer(ctx context.Context, customerID uuid.UUID) ([]domain.Device, error) {
 	query := `SELECT ` + deviceSelectColumns + ` ` + deviceFromJoin + ` WHERE d.customer_id = $1

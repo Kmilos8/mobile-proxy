@@ -17,7 +17,8 @@ func NewPairingHandler(pairingService *service.PairingService) *PairingHandler {
 	return &PairingHandler{pairingService: pairingService}
 }
 
-// CreateCode creates a new pairing code (JWT auth required)
+// CreateCode creates a new pairing code (JWT auth required, admin only).
+// Accepts optional customer_id to stamp device ownership on claim.
 func (h *PairingHandler) CreateCode(c *gin.Context) {
 	var req domain.CreatePairingCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -33,7 +34,7 @@ func (h *PairingHandler) CreateCode(c *gin.Context) {
 		}
 	}
 
-	resp, err := h.pairingService.CreateCode(c.Request.Context(), req.ExpiresInMinutes, createdBy, req.RelayServerID, req.ReassignDeviceID)
+	resp, err := h.pairingService.CreateCode(c.Request.Context(), req.ExpiresInMinutes, createdBy, req.RelayServerID, req.ReassignDeviceID, req.CustomerID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

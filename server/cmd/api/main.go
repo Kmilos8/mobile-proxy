@@ -33,6 +33,7 @@ func main() {
 	rotationLinkRepo := repository.NewRotationLinkRepository(db)
 	pairingRepo := repository.NewPairingCodeRepository(db)
 	relayServerRepo := repository.NewRelayServerRepository(db)
+	deviceShareRepo := repository.NewDeviceShareRepository(db)
 
 	// Services
 	iptablesService := service.NewIPTablesService()
@@ -57,6 +58,9 @@ func main() {
 	bwRepo := repository.NewBandwidthRepository(db)
 	bwService := service.NewBandwidthService(bwRepo)
 	relayServerService := service.NewRelayServerService(relayServerRepo)
+
+	// Device share service (multi-tenant permission layer)
+	deviceShareService := service.NewDeviceShareService(deviceShareRepo, deviceRepo)
 
 	// Build server URL for pairing responses
 	serverURL := fmt.Sprintf("http://%s:%d", cfg.VPN.ServerIP, cfg.Server.Port)
@@ -93,10 +97,18 @@ func main() {
 	pairingHandler := handler.NewPairingHandler(pairingService)
 	relayServerHandler := handler.NewRelayServerHandler(relayServerService)
 	openvpnHandler := handler.NewOpenVPNHandler(connRepo, deviceService)
+	openvpnHandler.SetShareService(deviceShareService)
 	syncHandler := handler.NewSyncHandler(deviceRepo, connRepo)
+	deviceShareHandler := handler.NewDeviceShareHandler(deviceShareService)
 
 	// Router
-	router := handler.SetupRouter(authService, deviceService, connService, bwService, customerHandler, vpnHandler, statsHandler, rotationLinkHandler, pairingHandler, relayServerHandler, wsHub, openvpnHandler, syncHandler, userRepo, customerAuthHandler)
+	router := handler.SetupRouter(
+		authService, deviceService, connService, bwService,
+		customerHandler, vpnHandler, statsHandler, rotationLinkHandler,
+		pairingHandler, relayServerHandler, wsHub, openvpnHandler, syncHandler,
+		userRepo, customerAuthHandler,
+		deviceShareHandler, customerRepo, deviceShareService,
+	)
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

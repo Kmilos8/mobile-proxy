@@ -63,7 +63,7 @@ func generateAuthToken() string {
 	return hex.EncodeToString(b)
 }
 
-func (s *PairingService) CreateCode(ctx context.Context, expiresInMinutes int, createdBy *uuid.UUID, relayServerID *uuid.UUID, reassignDeviceID *uuid.UUID) (*domain.CreatePairingCodeResponse, error) {
+func (s *PairingService) CreateCode(ctx context.Context, expiresInMinutes int, createdBy *uuid.UUID, relayServerID *uuid.UUID, reassignDeviceID *uuid.UUID, customerID *uuid.UUID) (*domain.CreatePairingCodeResponse, error) {
 	if expiresInMinutes <= 0 {
 		expiresInMinutes = 5
 	}
@@ -92,6 +92,7 @@ func (s *PairingService) CreateCode(ctx context.Context, expiresInMinutes int, c
 		CreatedBy:        createdBy,
 		RelayServerID:    relayServerID,
 		ReassignDeviceID: reassignDeviceID,
+		CustomerID:       customerID,
 	}
 
 	if err := s.pairingRepo.Create(ctx, pc); err != nil {
@@ -128,6 +129,13 @@ func (s *PairingService) ClaimCode(ctx context.Context, req *domain.ClaimPairing
 	// Set the auth token on the device
 	if err := s.deviceRepo.SetAuthToken(ctx, regResp.DeviceID, pc.DeviceAuthToken); err != nil {
 		return nil, fmt.Errorf("set auth token: %w", err)
+	}
+
+	// Stamp customer_id on the device if the pairing code has one
+	if pc.CustomerID != nil {
+		if err := s.deviceRepo.SetCustomerID(ctx, regResp.DeviceID, pc.CustomerID); err != nil {
+			return nil, fmt.Errorf("set customer id: %w", err)
+		}
 	}
 
 	// Set relay server on the device

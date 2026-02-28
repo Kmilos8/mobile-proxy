@@ -19,6 +19,7 @@ import (
 type OpenVPNHandler struct {
 	connRepo      *repository.ConnectionRepository
 	deviceService *service.DeviceService
+	shareService  *service.DeviceShareService
 	tunnelPushURL string // e.g. http://127.0.0.1:8081
 }
 
@@ -32,6 +33,10 @@ func NewOpenVPNHandler(connRepo *repository.ConnectionRepository, deviceService 
 		deviceService: deviceService,
 		tunnelPushURL: tunnelPushURL,
 	}
+}
+
+func (h *OpenVPNHandler) SetShareService(ss *service.DeviceShareService) {
+	h.shareService = ss
 }
 
 // Auth handles POST /api/internal/openvpn/auth
@@ -176,6 +181,19 @@ func (h *OpenVPNHandler) DownloadOVPN(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "connection not found"})
 		return
+	}
+
+	// Customer role: check download_configs permission on the device
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+	if roleStr == "customer" && h.shareService != nil {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		allowed, err := h.shareService.CanDo(c.Request.Context(), conn.DeviceID, customerID, "download_configs")
+		if err != nil || !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
 	}
 
 	// Look up device to get relay server IP

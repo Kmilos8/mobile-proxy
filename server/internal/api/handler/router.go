@@ -29,14 +29,18 @@ func SetupRouter(
 	syncHandler *SyncHandler,
 	userRepo *repository.UserRepository,
 	customerAuthHandler *CustomerAuthHandler,
+	deviceShareHandler *DeviceShareHandler,
+	customerRepo *repository.CustomerRepository,
+	shareService *service.DeviceShareService,
 ) *gin.Engine {
 	r := gin.Default()
 	r.Use(middleware.CORSMiddleware())
 
 	authHandler := NewAuthHandler(authService)
-	deviceHandler := NewDeviceHandler(deviceService, bwService, wsHub)
+	deviceHandler := NewDeviceHandler(deviceService, bwService, wsHub, shareService)
 	deviceHandler.SetConnectionService(connService)
 	connHandler := NewConnectionHandler(connService)
+	connHandler.SetShareService(shareService)
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
@@ -72,49 +76,38 @@ func SetupRouter(
 		deviceAPI.POST("/:id/commands/:commandId/result", deviceHandler.CommandResult)
 	}
 
-	// Dashboard routes (JWT protected)
+	// Dashboard routes (JWT protected) — all authenticated users pass here
 	dashboard := r.Group("/api")
 	dashboard.Use(middleware.AuthMiddleware(authService))
+	dashboard.Use(middleware.CustomerSuspensionCheck(customerRepo))
+
+	// Admin-only sub-group: blocks customer tokens with 403
+	adminOnly := dashboard.Group("")
+	adminOnly.Use(middleware.AdminOnlyMiddleware())
 	{
-		dashboard.GET("/stats/overview", statsHandler.Overview)
+		adminOnly.GET("/stats/overview", statsHandler.Overview)
 
-		dashboard.GET("/devices", deviceHandler.List)
-		dashboard.GET("/devices/:id", deviceHandler.GetByID)
-		dashboard.PATCH("/devices/:id", deviceHandler.Update)
-		dashboard.POST("/devices/:id/commands", deviceHandler.SendCommand)
-		dashboard.GET("/devices/:id/ip-history", deviceHandler.GetIPHistory)
-		dashboard.GET("/devices/:id/bandwidth", deviceHandler.GetBandwidth)
-		dashboard.GET("/devices/:id/bandwidth/hourly", deviceHandler.GetBandwidthHourly)
-		dashboard.GET("/devices/:id/uptime", deviceHandler.GetUptime)
-		dashboard.GET("/devices/:id/commands", deviceHandler.GetCommands)
+		adminOnly.GET("/customers", customerHandler.List)
+		adminOnly.POST("/customers", customerHandler.Create)
+		adminOnly.GET("/customers/:id", customerHandler.GetDetail)
+		adminOnly.PUT("/customers/:id", customerHandler.Update)
+		adminOnly.POST("/customers/:id/suspend", customerHandler.Suspend)
+		adminOnly.POST("/customers/:id/activate", customerHandler.Activate)
 
-		dashboard.GET("/connections", connHandler.List)
-		dashboard.POST("/connections", connHandler.Create)
-		dashboard.GET("/connections/:id", connHandler.GetByID)
-		dashboard.PATCH("/connections/:id", connHandler.SetActive)
-		dashboard.DELETE("/connections/:id", connHandler.Delete)
-		dashboard.POST("/connections/:id/regenerate-password", connHandler.RegeneratePassword)
-		dashboard.POST("/connections/:id/reset-bandwidth", connHandler.ResetBandwidth)
+		adminOnly.GET("/rotation-links", rotationLinkHandler.List)
+		adminOnly.POST("/rotation-links", rotationLinkHandler.Create)
+		adminOnly.DELETE("/rotation-links/:id", rotationLinkHandler.Delete)
 
-		dashboard.GET("/customers", customerHandler.List)
-		dashboard.POST("/customers", customerHandler.Create)
-		dashboard.GET("/customers/:id", customerHandler.GetByID)
-		dashboard.PUT("/customers/:id", customerHandler.Update)
+		adminOnly.GET("/pairing-codes", pairingHandler.ListCodes)
+		adminOnly.POST("/pairing-codes", pairingHandler.CreateCode)
+		adminOnly.DELETE("/pairing-codes/:id", pairingHandler.DeleteCode)
 
-		dashboard.GET("/rotation-links", rotationLinkHandler.List)
-		dashboard.POST("/rotation-links", rotationLinkHandler.Create)
-		dashboard.DELETE("/rotation-links/:id", rotationLinkHandler.Delete)
+		adminOnly.GET("/relay-servers", relayServerHandler.List)
+		adminOnly.GET("/relay-servers/active", relayServerHandler.ListActive)
+		adminOnly.POST("/relay-servers", relayServerHandler.Create)
 
-		dashboard.GET("/pairing-codes", pairingHandler.ListCodes)
-		dashboard.POST("/pairing-codes", pairingHandler.CreateCode)
-		dashboard.DELETE("/pairing-codes/:id", pairingHandler.DeleteCode)
-
-		dashboard.GET("/relay-servers", relayServerHandler.List)
-		dashboard.GET("/relay-servers/active", relayServerHandler.ListActive)
-		dashboard.POST("/relay-servers", relayServerHandler.Create)
-
-		// Settings: webhook URL management
-		dashboard.GET("/settings/webhook", func(c *gin.Context) {
+		// Settings: webhook URL management (admin only)
+		adminOnly.GET("/settings/webhook", func(c *gin.Context) {
 			userIDVal, _ := c.Get("user_id")
 			uid := userIDVal.(uuid.UUID)
 			user, err := userRepo.GetByID(c.Request.Context(), uid)
@@ -125,7 +118,7 @@ func SetupRouter(
 			c.JSON(http.StatusOK, gin.H{"webhook_url": user.WebhookURL})
 		})
 
-		dashboard.PUT("/settings/webhook", func(c *gin.Context) {
+		adminOnly.PUT("/settings/webhook", func(c *gin.Context) {
 			var body struct {
 				WebhookURL string `json:"webhook_url"`
 			}
@@ -146,7 +139,7 @@ func SetupRouter(
 			c.JSON(http.StatusOK, gin.H{"ok": true})
 		})
 
-		dashboard.POST("/settings/webhook/test", func(c *gin.Context) {
+		adminOnly.POST("/settings/webhook/test", func(c *gin.Context) {
 			var body struct {
 				WebhookURL string `json:"webhook_url"`
 			}
@@ -168,6 +161,33 @@ func SetupRouter(
 			resp.Body.Close()
 			c.JSON(http.StatusOK, gin.H{"ok": true, "status": resp.StatusCode})
 		})
+	}
+
+	// Mixed-access routes: device and connection endpoints (handlers branch internally by role)
+	{
+		dashboard.GET("/devices", deviceHandler.List)
+		dashboard.GET("/devices/:id", deviceHandler.GetByID)
+		dashboard.PATCH("/devices/:id", deviceHandler.Update)
+		dashboard.POST("/devices/:id/commands", deviceHandler.SendCommand)
+		dashboard.GET("/devices/:id/ip-history", deviceHandler.GetIPHistory)
+		dashboard.GET("/devices/:id/bandwidth", deviceHandler.GetBandwidth)
+		dashboard.GET("/devices/:id/bandwidth/hourly", deviceHandler.GetBandwidthHourly)
+		dashboard.GET("/devices/:id/uptime", deviceHandler.GetUptime)
+		dashboard.GET("/devices/:id/commands", deviceHandler.GetCommands)
+
+		dashboard.GET("/connections", connHandler.List)
+		dashboard.POST("/connections", connHandler.Create)
+		dashboard.GET("/connections/:id", connHandler.GetByID)
+		dashboard.PATCH("/connections/:id", connHandler.SetActive)
+		dashboard.DELETE("/connections/:id", connHandler.Delete)
+		dashboard.POST("/connections/:id/regenerate-password", connHandler.RegeneratePassword)
+		dashboard.POST("/connections/:id/reset-bandwidth", connHandler.ResetBandwidth)
+
+		// Device shares (accessible to authenticated users — handler checks ownership)
+		dashboard.GET("/device-shares", deviceShareHandler.ListShares)
+		dashboard.POST("/device-shares", deviceShareHandler.CreateShare)
+		dashboard.PUT("/device-shares/:id", deviceShareHandler.UpdateShare)
+		dashboard.DELETE("/device-shares/:id", deviceShareHandler.DeleteShare)
 	}
 
 	// Internal VPN routes (called by OpenVPN scripts)
@@ -199,7 +219,7 @@ func SetupRouter(
 			ovpnInternal.POST("/connect", openvpnHandler.Connect)
 			ovpnInternal.POST("/disconnect", openvpnHandler.Disconnect)
 		}
-		// Dashboard route for .ovpn download (JWT protected)
+		// Dashboard route for .ovpn download (JWT protected, customer needs download_configs permission)
 		dashboard.GET("/connections/:id/ovpn", openvpnHandler.DownloadOVPN)
 	}
 
