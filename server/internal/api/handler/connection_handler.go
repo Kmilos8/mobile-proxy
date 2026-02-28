@@ -12,11 +12,16 @@ import (
 )
 
 type ConnectionHandler struct {
-	connService *service.ConnectionService
+	connService  *service.ConnectionService
+	shareService *service.DeviceShareService
 }
 
 func NewConnectionHandler(connService *service.ConnectionService) *ConnectionHandler {
 	return &ConnectionHandler{connService: connService}
+}
+
+func (h *ConnectionHandler) SetShareService(ss *service.DeviceShareService) {
+	h.shareService = ss
 }
 
 func (h *ConnectionHandler) Create(c *gin.Context) {
@@ -24,6 +29,20 @@ func (h *ConnectionHandler) Create(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		allowed, err := h.shareService.CanDo(c.Request.Context(), req.DeviceID, customerID, "manage_ports")
+		if err != nil || !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		req.CustomerID = &customerID
 	}
 
 	conn, err := h.connService.Create(c.Request.Context(), &req)
@@ -40,7 +59,39 @@ func (h *ConnectionHandler) Create(c *gin.Context) {
 }
 
 func (h *ConnectionHandler) List(c *gin.Context) {
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
 	deviceIDStr := c.Query("device_id")
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+
+		if deviceIDStr != "" {
+			deviceID, err := uuid.Parse(deviceIDStr)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device_id"})
+				return
+			}
+			conns, err := h.connService.ListByDeviceForCustomer(c.Request.Context(), deviceID, customerID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"connections": conns})
+			return
+		}
+
+		conns, err := h.connService.ListByCustomer(c.Request.Context(), customerID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"connections": conns})
+		return
+	}
+
 	if deviceIDStr != "" {
 		deviceID, err := uuid.Parse(deviceIDStr)
 		if err != nil {
@@ -68,6 +119,21 @@ func (h *ConnectionHandler) GetByID(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid connection id"})
+		return
+	}
+
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		conn, err := h.connService.GetByIDForCustomer(c.Request.Context(), id, customerID)
+		if err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		c.JSON(http.StatusOK, conn)
 		return
 	}
 
@@ -110,6 +176,25 @@ func (h *ConnectionHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		// Fetch connection to get device ID for permission check
+		conn, err := h.connService.GetByIDForCustomer(c.Request.Context(), id, customerID)
+		if err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		allowed, err := h.shareService.CanDo(c.Request.Context(), conn.DeviceID, customerID, "manage_ports")
+		if err != nil || !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+	}
+
 	if err := h.connService.Delete(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -123,6 +208,24 @@ func (h *ConnectionHandler) RegeneratePassword(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid connection id"})
 		return
+	}
+
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		conn, err := h.connService.GetByIDForCustomer(c.Request.Context(), id, customerID)
+		if err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		allowed, err := h.shareService.CanDo(c.Request.Context(), conn.DeviceID, customerID, "manage_ports")
+		if err != nil || !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
 	}
 
 	newPass, err := h.connService.RegeneratePassword(c.Request.Context(), id)
@@ -155,7 +258,16 @@ func (h *ConnectionHandler) BandwidthFlush(c *gin.Context) {
 }
 
 // ResetBandwidth resets bandwidth_used to 0 for a connection (DB and tunnel in-memory counter).
+// This is admin-only: customers get 403.
 func (h *ConnectionHandler) ResetBandwidth(c *gin.Context) {
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid connection id"})

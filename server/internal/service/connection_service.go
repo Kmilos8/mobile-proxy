@@ -170,6 +170,21 @@ func (s *ConnectionService) List(ctx context.Context) ([]domain.ProxyConnection,
 	return conns, nil
 }
 
+// ListByCustomer returns connections where customer_id matches the given customer.
+func (s *ConnectionService) ListByCustomer(ctx context.Context, customerID uuid.UUID) ([]domain.ProxyConnection, error) {
+	return s.connRepo.ListByCustomer(ctx, customerID)
+}
+
+// GetByIDForCustomer returns a connection by ID only if the customer has access.
+func (s *ConnectionService) GetByIDForCustomer(ctx context.Context, connID uuid.UUID, customerID uuid.UUID) (*domain.ProxyConnection, error) {
+	return s.connRepo.GetByIDForCustomer(ctx, connID, customerID)
+}
+
+// ListByDeviceForCustomer returns connections for a device only if the customer has access to that device.
+func (s *ConnectionService) ListByDeviceForCustomer(ctx context.Context, deviceID uuid.UUID, customerID uuid.UUID) ([]domain.ProxyConnection, error) {
+	return s.connRepo.ListByDeviceForCustomer(ctx, deviceID, customerID)
+}
+
 func (s *ConnectionService) SetActive(ctx context.Context, id uuid.UUID, active bool) error {
 	return s.connRepo.UpdateActive(ctx, id, active)
 }

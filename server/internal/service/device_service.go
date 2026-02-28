@@ -204,6 +204,16 @@ func (s *DeviceService) List(ctx context.Context) ([]domain.Device, error) {
 	return s.deviceRepo.List(ctx)
 }
 
+// ListByCustomer returns devices owned by or shared with the given customer.
+func (s *DeviceService) ListByCustomer(ctx context.Context, customerID uuid.UUID) ([]domain.Device, error) {
+	return s.deviceRepo.ListByCustomer(ctx, customerID)
+}
+
+// GetByIDForCustomer returns a device only if the customer owns it or has shared access.
+func (s *DeviceService) GetByIDForCustomer(ctx context.Context, deviceID uuid.UUID, customerID uuid.UUID) (*domain.Device, error) {
+	return s.deviceRepo.GetByIDForCustomer(ctx, deviceID, customerID)
+}
+
 func (s *DeviceService) SendCommand(ctx context.Context, deviceID uuid.UUID, req *domain.CommandRequest) (*domain.DeviceCommand, error) {
 	cmd := &domain.DeviceCommand{
 		ID:       uuid.New(),

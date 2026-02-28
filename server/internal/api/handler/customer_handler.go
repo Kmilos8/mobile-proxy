@@ -28,9 +28,9 @@ func (h *CustomerHandler) Create(c *gin.Context) {
 	}
 
 	customer := &domain.Customer{
-		ID:    uuid.New(),
-		Name:  body.Name,
-		Email: body.Email,
+		ID:     uuid.New(),
+		Name:   body.Name,
+		Email:  body.Email,
 		Active: true,
 	}
 
@@ -65,6 +65,34 @@ func (h *CustomerHandler) GetByID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, customer)
+}
+
+// GetDetail returns a customer plus aggregate stats (device count, share count, total bandwidth).
+func (h *CustomerHandler) GetDetail(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid customer id"})
+		return
+	}
+
+	customer, err := h.customerRepo.GetByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "customer not found"})
+		return
+	}
+
+	deviceCount, shareCount, totalBandwidth, err := h.customerRepo.GetStats(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"customer":        customer,
+		"device_count":    deviceCount,
+		"share_count":     shareCount,
+		"total_bandwidth": totalBandwidth,
+	})
 }
 
 func (h *CustomerHandler) Update(c *gin.Context) {
@@ -106,4 +134,36 @@ func (h *CustomerHandler) Update(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, customer)
+}
+
+// Suspend deactivates a customer account (admin only).
+func (h *CustomerHandler) Suspend(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid customer id"})
+		return
+	}
+
+	if err := h.customerRepo.UpdateActive(c.Request.Context(), id, false); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// Activate reactivates a suspended customer account (admin only).
+func (h *CustomerHandler) Activate(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid customer id"})
+		return
+	}
+
+	if err := h.customerRepo.UpdateActive(c.Request.Context(), id, true); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

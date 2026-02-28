@@ -21,16 +21,18 @@ type DeviceHandler struct {
 	deviceService *service.DeviceService
 	connService   *service.ConnectionService
 	bwService     *service.BandwidthService
+	shareService  *service.DeviceShareService
 	wsHub         *WSHub
 	lastBytesMu   sync.Mutex
 	lastBytesMap  map[uuid.UUID]lastBytes
 }
 
-func NewDeviceHandler(deviceService *service.DeviceService, bwService *service.BandwidthService, wsHub *WSHub) *DeviceHandler {
+func NewDeviceHandler(deviceService *service.DeviceService, bwService *service.BandwidthService, wsHub *WSHub, shareService *service.DeviceShareService) *DeviceHandler {
 	return &DeviceHandler{
 		deviceService: deviceService,
 		bwService:     bwService,
 		wsHub:         wsHub,
+		shareService:  shareService,
 		lastBytesMap:  make(map[uuid.UUID]lastBytes),
 	}
 }
@@ -56,6 +58,21 @@ func (h *DeviceHandler) Register(c *gin.Context) {
 }
 
 func (h *DeviceHandler) List(c *gin.Context) {
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		devices, err := h.deviceService.ListByCustomer(c.Request.Context(), customerID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"devices": devices})
+		return
+	}
+
 	devices, err := h.deviceService.List(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -72,10 +89,23 @@ func (h *DeviceHandler) Update(c *gin.Context) {
 		return
 	}
 
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		allowed, err := h.shareService.CanDo(c.Request.Context(), id, customerID, "rename")
+		if err != nil || !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+	}
+
 	var body struct {
-		Name               *string `json:"name"`
-		Description        *string `json:"description"`
-		AutoRotateMinutes  *int    `json:"auto_rotate_minutes"`
+		Name              *string `json:"name"`
+		Description       *string `json:"description"`
+		AutoRotateMinutes *int    `json:"auto_rotate_minutes"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -123,6 +153,21 @@ func (h *DeviceHandler) GetByID(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device id"})
+		return
+	}
+
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		device, err := h.deviceService.GetByIDForCustomer(c.Request.Context(), id, customerID)
+		if err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+		c.JSON(http.StatusOK, device)
 		return
 	}
 
@@ -219,6 +264,26 @@ func (h *DeviceHandler) SendCommand(c *gin.Context) {
 		return
 	}
 
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		// Customers can only send rotate_ip command, and only if they have the permission
+		if req.Type == "rotate_ip" || req.Type == "rotate_ip_airplane" {
+			allowed, err := h.shareService.CanDo(c.Request.Context(), id, customerID, "rotate_ip")
+			if err != nil || !allowed {
+				c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+				return
+			}
+		} else {
+			// All other commands (reboot, find_phone, etc.) are admin-only
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+	}
+
 	cmd, err := h.deviceService.SendCommand(c.Request.Context(), id, &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -260,6 +325,19 @@ func (h *DeviceHandler) GetIPHistory(c *gin.Context) {
 		return
 	}
 
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		allowed, err := h.shareService.CanAccess(c.Request.Context(), id, customerID)
+		if err != nil || !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+	}
+
 	history, err := h.deviceService.GetIPHistory(c.Request.Context(), id, 50)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -274,6 +352,19 @@ func (h *DeviceHandler) GetBandwidth(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device id"})
 		return
+	}
+
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		allowed, err := h.shareService.CanAccess(c.Request.Context(), id, customerID)
+		if err != nil || !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
 	}
 
 	todayIn, todayOut, err := h.bwService.GetDeviceTodayTotal(c.Request.Context(), id)
@@ -303,6 +394,19 @@ func (h *DeviceHandler) GetCommands(c *gin.Context) {
 		return
 	}
 
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		allowed, err := h.shareService.CanAccess(c.Request.Context(), id, customerID)
+		if err != nil || !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
+	}
+
 	commands, err := h.deviceService.GetCommandHistory(c.Request.Context(), id, 50)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -317,6 +421,19 @@ func (h *DeviceHandler) GetBandwidthHourly(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device id"})
 		return
+	}
+
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		allowed, err := h.shareService.CanAccess(c.Request.Context(), id, customerID)
+		if err != nil || !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
 	}
 
 	dateStr := c.DefaultQuery("date", time.Now().UTC().Format("2006-01-02"))
@@ -345,6 +462,19 @@ func (h *DeviceHandler) GetUptime(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid device id"})
 		return
+	}
+
+	role, _ := c.Get("user_role")
+	roleStr, _ := role.(string)
+
+	if roleStr == "customer" {
+		userIDVal, _ := c.Get("user_id")
+		customerID, _ := userIDVal.(uuid.UUID)
+		allowed, err := h.shareService.CanAccess(c.Request.Context(), id, customerID)
+		if err != nil || !allowed {
+			c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+			return
+		}
 	}
 
 	dateStr := c.DefaultQuery("date", time.Now().UTC().Format("2006-01-02"))
