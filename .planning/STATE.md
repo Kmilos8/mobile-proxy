@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: SaaS Platform
-status: roadmap_complete
-last_updated: "2026-02-27"
+status: in_progress
+last_updated: "2026-02-28"
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 1
+  completed_plans: 1
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Customers can reliably route traffic through real mobile devices via HTTP, SOCKS5, or OpenVPN, managed through a clean dashboard.
-**Current focus:** Phase 5 — Auto-Rotation Bug Fix (first phase of v2.0)
+**Current focus:** Phase 5 — Auth Foundation (v2.0)
 
 ## Current Position
 
-Phase: 5 of 10 (Phase 5: Auto-Rotation Bug Fix)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-02-27 — v2.0 roadmap created (phases 5-10)
+Phase: 5 of 9 (Phase 5: Auth Foundation)
+Plan: 1 of TBD in current phase (05-01 complete)
+Status: In progress
+Last activity: 2026-02-28 — 05-01-PLAN.md executed: DB schema + repository layer for customer auth
 
-Progress: [░░░░░░░░░░] 0% (v2.0 phases)
+Progress: [█░░░░░░░░░] 10% (v2.0 phases)
 
 ## Accumulated Context
 
@@ -40,6 +40,10 @@ Progress: [░░░░░░░░░░] 0% (v2.0 phases)
 - NextAuth.js explicitly excluded — Go backend owns all auth via JWT
 - PostgreSQL RLS excluded — app-level WHERE customer_id scoping at this scale
 - White-label theming deferred to v2.1 (WL-01, WL-02, WL-03)
+- Nullable password_hash (*string) allows Google-only users with no password
+- Token validity enforced in SQL (used_at IS NULL AND expires_at > NOW()) rather than application layer
+- Case-insensitive email lookup via LOWER() to prevent duplicate accounts
+- LinkGoogleAccount also sets email_verified=true (Google confirms email ownership)
 
 ### Blockers/Concerns
 
@@ -54,6 +58,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-27
-Stopped at: v2.0 roadmap created — ready to plan Phase 5
+Last session: 2026-02-28
+Stopped at: Completed 05-01-PLAN.md (DB schema + data access layer for customer auth)
 Resume file: None
