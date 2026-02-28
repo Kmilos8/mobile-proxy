@@ -23,12 +23,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### v2.0 Phases (Current Milestone)
 
-- [ ] **Phase 5: Auto-Rotation Bug Fix** - Fix the auto-rotation interval not firing so IP history shows rotations at the configured time
-- [ ] **Phase 6: Auth Foundation** - Enable customer self-signup with email/password, Google OAuth, email verification, password reset, and Turnstile bot protection
-- [ ] **Phase 7: Multi-Tenant Isolation** - Scope all data access by customer_id so each customer sees only their own devices and connections
-- [ ] **Phase 8: Customer Portal** - Give customers a self-service portal to view credentials, rotate IPs, download .ovpn configs, and see bandwidth usage
-- [ ] **Phase 9: Landing Page and IP Whitelist** - Ship the public marketing page and server-side CIDR-based IP whitelist auth per proxy port
-- [ ] **Phase 10: Device Grouping, API Docs, and Traffic Logs** - Add operator bulk tools (device groups, bulk rotation), public Swagger UI, and per-port traffic history for customers
+- [ ] **Phase 5: Auth Foundation** - Enable customer self-signup with email/password, Google OAuth, email verification, password reset, and Turnstile bot protection
+- [ ] **Phase 6: Multi-Tenant Isolation** - Scope all data access by customer_id so each customer sees only their own devices and connections
+- [ ] **Phase 7: Customer Portal** - Give customers a self-service portal to view credentials, rotate IPs, download .ovpn configs, and see bandwidth usage
+- [ ] **Phase 8: Landing Page and IP Whitelist** - Ship the public marketing page and server-side CIDR-based IP whitelist auth per proxy port
+- [ ] **Phase 9: Device Grouping, API Docs, and Traffic Logs** - Add operator bulk tools (device groups, bulk rotation), public Swagger UI, and per-port traffic history for customers
 
 ## Phase Details
 
@@ -96,19 +95,9 @@ Plans:
 - [ ] 04-01-PLAN.md — Wire recovery webhook, propagate bandwidth reset to tunnel, add OpenVPN to Add Connection modal
 - [ ] 04-02-PLAN.md — Add device search bar, auto-rotation column, and connection ID column to dashboard
 
-### Phase 5: Auto-Rotation Bug Fix
-**Goal**: Auto-rotation fires at the configured interval so IP history reflects rotations on schedule
-**Depends on**: Phase 4
-**Requirements**: BUG-01
-**Success Criteria** (what must be TRUE):
-  1. Setting a 5-minute auto-rotation interval on a device results in a new IP appearing in the device's IP history within 5-6 minutes without any manual action
-  2. The rotation interval continues firing across multiple cycles without stopping after the first rotation
-  3. After a device reconnects to the tunnel, its configured rotation interval resumes firing on schedule
-**Plans**: TBD
-
-### Phase 6: Auth Foundation
+### Phase 5: Auth Foundation
 **Goal**: Customers can self-register and log in securely using email/password or Google, with email verification and bot protection on all public forms
-**Depends on**: Phase 5
+**Depends on**: Phase 4
 **Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05
 **Success Criteria** (what must be TRUE):
   1. A new customer can create an account with email and password and receives a verification email; they cannot access the portal until they click verify
@@ -117,9 +106,9 @@ Plans:
   4. The signup and login forms display a Cloudflare Turnstile challenge and the Go backend rejects requests where the Turnstile token fails server-side verification
 **Plans**: TBD
 
-### Phase 7: Multi-Tenant Isolation
+### Phase 6: Multi-Tenant Isolation
 **Goal**: Every customer sees only their own assigned devices and connections; no cross-customer data is accessible through any portal endpoint
-**Depends on**: Phase 6
+**Depends on**: Phase 5
 **Requirements**: TENANT-01, TENANT-02, TENANT-03
 **Success Criteria** (what must be TRUE):
   1. Logging in as Customer A returns only Customer A's devices and connections — Customer B's data does not appear in any portal response
@@ -127,9 +116,9 @@ Plans:
   3. All customer portal API responses are filtered by the customer_id embedded in the JWT; manually crafting a request with another customer's device ID returns 403
 **Plans**: TBD
 
-### Phase 8: Customer Portal
+### Phase 7: Customer Portal
 **Goal**: Customers can manage their assigned proxies end-to-end through a self-service portal without contacting the operator
-**Depends on**: Phase 7
+**Depends on**: Phase 6
 **Requirements**: PORTAL-01, PORTAL-02, PORTAL-03, PORTAL-04
 **Success Criteria** (what must be TRUE):
   1. A logged-in customer can see all their assigned devices and the proxy credentials (host, port, username, password) for each connection
@@ -138,9 +127,9 @@ Plans:
   4. A customer can view the current bandwidth usage for each of their connections in the portal
 **Plans**: TBD
 
-### Phase 9: Landing Page and IP Whitelist
+### Phase 8: Landing Page and IP Whitelist
 **Goal**: The product has a public-facing marketing page and proxy connections support CIDR-based IP authentication as an alternative to username/password
-**Depends on**: Phase 5 (landing page is independent of auth; IP whitelist depends on Phase 7 for operator access)
+**Depends on**: Phase 5 (landing page is independent of auth; IP whitelist depends on Phase 6 for operator access)
 **Requirements**: LAND-01, LAND-02, IPWL-01, IPWL-02, IPWL-03
 **Success Criteria** (what must be TRUE):
   1. Visiting the root URL shows a marketing page with a hero section, feature highlights, and a signup call-to-action button that links to the signup flow
@@ -150,9 +139,9 @@ Plans:
   5. A client connecting from a non-whitelisted IP is rejected at the server using proper CIDR parsing, not string comparison
 **Plans**: TBD
 
-### Phase 10: Device Grouping, API Docs, and Traffic Logs
+### Phase 9: Device Grouping, API Docs, and Traffic Logs
 **Goal**: Operators can manage devices in bulk using named groups, all API endpoints are publicly documented with a live Swagger UI, and customers can view per-connection traffic history
-**Depends on**: Phase 8 (traffic logs require customer portal to exist; groups and docs are independent)
+**Depends on**: Phase 7 (traffic logs require customer portal to exist; groups and docs are independent)
 **Requirements**: GROUP-01, GROUP-02, GROUP-03, APIDOC-01, APIDOC-02, TLOG-01, TLOG-02
 **Success Criteria** (what must be TRUE):
   1. An operator can create a named device group, add devices to it, and bulk-rotate IPs for all devices in the group with a single action
@@ -166,7 +155,7 @@ Plans:
 
 **Execution Order:**
 v1.0 phases execute in numeric order: 1 → 2 → 3 → 4
-v2.0 phases execute in numeric order: 5 → 6 → 7 → 8 → 9 → 10
+v2.0 phases execute in numeric order: 5 → 6 → 7 → 8 → 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -174,9 +163,8 @@ v2.0 phases execute in numeric order: 5 → 6 → 7 → 8 → 9 → 10
 | 2. Dashboard | 3/3 | Complete | 2026-02-26 |
 | 3. Security and Monitoring | 2/2 | Complete | 2026-02-27 |
 | 4. Bug Fixes and Polish | 2/2 | Complete | 2026-02-27 |
-| 5. Auto-Rotation Bug Fix | 0/TBD | Not started | - |
-| 6. Auth Foundation | 0/TBD | Not started | - |
-| 7. Multi-Tenant Isolation | 0/TBD | Not started | - |
-| 8. Customer Portal | 0/TBD | Not started | - |
-| 9. Landing Page and IP Whitelist | 0/TBD | Not started | - |
-| 10. Device Grouping, API Docs, and Traffic Logs | 0/TBD | Not started | - |
+| 5. Auth Foundation | 0/TBD | Not started | - |
+| 6. Multi-Tenant Isolation | 0/TBD | Not started | - |
+| 7. Customer Portal | 0/TBD | Not started | - |
+| 8. Landing Page and IP Whitelist | 0/TBD | Not started | - |
+| 9. Device Grouping, API Docs, and Traffic Logs | 0/TBD | Not started | - |

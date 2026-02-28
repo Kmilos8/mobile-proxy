@@ -30,10 +30,6 @@
 
 Requirements for v2.0 SaaS Platform milestone. Each maps to roadmap phases.
 
-### Bug Fix
-
-- [ ] **BUG-01**: Auto-rotation fires at the configured interval and rotations appear in IP history
-
 ### Authentication & Signup
 
 - [ ] **AUTH-01**: Customer can sign up with email and password
@@ -138,36 +134,35 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BUG-01 | Phase 5 | Pending |
-| AUTH-01 | Phase 6 | Pending |
-| AUTH-02 | Phase 6 | Pending |
-| AUTH-03 | Phase 6 | Pending |
-| AUTH-04 | Phase 6 | Pending |
-| AUTH-05 | Phase 6 | Pending |
-| TENANT-01 | Phase 7 | Pending |
-| TENANT-02 | Phase 7 | Pending |
-| TENANT-03 | Phase 7 | Pending |
-| PORTAL-01 | Phase 8 | Pending |
-| PORTAL-02 | Phase 8 | Pending |
-| PORTAL-03 | Phase 8 | Pending |
-| PORTAL-04 | Phase 8 | Pending |
-| LAND-01 | Phase 9 | Pending |
-| LAND-02 | Phase 9 | Pending |
-| IPWL-01 | Phase 9 | Pending |
-| IPWL-02 | Phase 9 | Pending |
-| IPWL-03 | Phase 9 | Pending |
-| APIDOC-01 | Phase 10 | Pending |
-| APIDOC-02 | Phase 10 | Pending |
-| GROUP-01 | Phase 10 | Pending |
-| GROUP-02 | Phase 10 | Pending |
-| GROUP-03 | Phase 10 | Pending |
-| TLOG-01 | Phase 10 | Pending |
-| TLOG-02 | Phase 10 | Pending |
+| AUTH-01 | Phase 5 | Pending |
+| AUTH-02 | Phase 5 | Pending |
+| AUTH-03 | Phase 5 | Pending |
+| AUTH-04 | Phase 5 | Pending |
+| AUTH-05 | Phase 5 | Pending |
+| TENANT-01 | Phase 6 | Pending |
+| TENANT-02 | Phase 6 | Pending |
+| TENANT-03 | Phase 6 | Pending |
+| PORTAL-01 | Phase 7 | Pending |
+| PORTAL-02 | Phase 7 | Pending |
+| PORTAL-03 | Phase 7 | Pending |
+| PORTAL-04 | Phase 7 | Pending |
+| LAND-01 | Phase 8 | Pending |
+| LAND-02 | Phase 8 | Pending |
+| IPWL-01 | Phase 8 | Pending |
+| IPWL-02 | Phase 8 | Pending |
+| IPWL-03 | Phase 8 | Pending |
+| APIDOC-01 | Phase 9 | Pending |
+| APIDOC-02 | Phase 9 | Pending |
+| GROUP-01 | Phase 9 | Pending |
+| GROUP-02 | Phase 9 | Pending |
+| GROUP-03 | Phase 9 | Pending |
+| TLOG-01 | Phase 9 | Pending |
+| TLOG-02 | Phase 9 | Pending |
 
 **Coverage:**
-- v2 requirements: 25 total
-- Mapped to phases: 25
-- Unmapped: 0
+- v2 requirements: 24 total
+- Mapped to phases: 24
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-02-25*

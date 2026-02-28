@@ -13,7 +13,6 @@ Customers can reliably route traffic through real mobile devices via any of the 
 **Goal:** Transform PocketProxy from operator-only to a customer-facing SaaS product with self-signup, multi-tenant access, and a public landing page.
 
 **Target features:**
-- Fix auto-rotation bug (interval not firing)
 - Marketing/sales landing page
 - Customer self-signup (email + Google OAuth)
 - Email verification on signup
@@ -45,7 +44,6 @@ Customers can reliably route traffic through real mobile devices via any of the 
 
 ### Active
 
-- [ ] Auto-rotation bug fix (interval not firing at configured time)
 - [ ] Marketing/sales landing page
 - [ ] Customer self-signup with email and Google OAuth
 - [ ] Email verification on signup
