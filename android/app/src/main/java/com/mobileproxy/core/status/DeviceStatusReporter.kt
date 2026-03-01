@@ -59,6 +59,11 @@ class DeviceStatusReporter @Inject constructor(
     private var deviceId: String = ""
     private var authToken: String = ""
 
+    // Track executed command IDs to prevent duplicate execution (tunnel push + heartbeat)
+    private val executedCommands = java.util.Collections.synchronizedSet(
+        java.util.LinkedHashSet<String>()
+    )
+
     fun start(serverUrl: String, deviceId: String, authToken: String) {
         this.serverUrl = serverUrl
         this.deviceId = deviceId
@@ -126,9 +131,17 @@ class DeviceStatusReporter @Inject constructor(
 
                 val heartbeatResponse = gson.fromJson(response, HeartbeatResponse::class.java)
                 heartbeatResponse?.commands?.forEach { command ->
-                    scope?.launch {
-                        val result = commandExecutor.execute(command)
-                        reportCommandResult(command.id, result)
+                    if (executedCommands.add(command.id)) {
+                        scope?.launch {
+                            val result = commandExecutor.execute(command)
+                            reportCommandResult(command.id, result)
+                        }
+                        // Cap the set size to prevent unbounded growth
+                        while (executedCommands.size > 100) {
+                            executedCommands.iterator().let { it.next(); it.remove() }
+                        }
+                    } else {
+                        Log.d(TAG, "Skipping duplicate command: ${command.id}")
                     }
                 }
 
@@ -148,41 +161,52 @@ class DeviceStatusReporter @Inject constructor(
     }
 
     private suspend fun reportCommandResult(commandId: String, result: Result<String>) {
-        try {
-            val status = if (result.isSuccess) "completed" else "failed"
-            val message = result.getOrElse { it.message ?: "Unknown error" }
-            val body = gson.toJson(mapOf("status" to status, "result" to message))
+        val status = if (result.isSuccess) "completed" else "failed"
+        val message = result.getOrElse { it.message ?: "Unknown error" }
+        val body = gson.toJson(mapOf("status" to status, "result" to message))
+        val url = URL("$serverUrl/api/devices/$deviceId/commands/$commandId/result")
 
-            val url = URL("$serverUrl/api/devices/$deviceId/commands/$commandId/result")
+        // Retry with backoff — network may be recovering after airplane mode toggle
+        val maxRetries = 4
+        val retryDelays = longArrayOf(5_000, 10_000, 15_000, 30_000)
 
-            val wifiNetwork = networkManager.getWifiNetwork()
-            val connection = if (wifiNetwork != null) {
-                wifiNetwork.openConnection(url) as HttpURLConnection
-            } else {
-                url.openConnection() as HttpURLConnection
-            }
-            connection.apply {
-                requestMethod = "POST"
-                setRequestProperty("Content-Type", "application/json")
-                setRequestProperty("Authorization", "Bearer $authToken")
-                doOutput = true
-                connectTimeout = 10000
-                readTimeout = 10000
+        for (attempt in 0..maxRetries) {
+            try {
+                val wifiNetwork = networkManager.getWifiNetwork()
+                val connection = if (wifiNetwork != null) {
+                    wifiNetwork.openConnection(url) as HttpURLConnection
+                } else {
+                    url.openConnection() as HttpURLConnection
+                }
+                connection.apply {
+                    requestMethod = "POST"
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Authorization", "Bearer $authToken")
+                    doOutput = true
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                }
+
+                OutputStreamWriter(connection.outputStream).use { writer ->
+                    writer.write(body)
+                }
+
+                val responseCode = connection.responseCode
+                if (responseCode == 200) {
+                    Log.d(TAG, "Command result reported: $commandId -> $status")
+                    return
+                } else {
+                    Log.w(TAG, "Failed to report command result: $responseCode (attempt ${attempt + 1})")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error reporting command result for $commandId (attempt ${attempt + 1}): ${e.message}")
             }
 
-            OutputStreamWriter(connection.outputStream).use { writer ->
-                writer.write(body)
+            if (attempt < maxRetries) {
+                delay(retryDelays[attempt])
             }
-
-            val responseCode = connection.responseCode
-            if (responseCode == 200) {
-                Log.d(TAG, "Command result reported: $commandId -> $status")
-            } else {
-                Log.w(TAG, "Failed to report command result: $responseCode")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error reporting command result for $commandId", e)
         }
+        Log.e(TAG, "Giving up reporting command result for $commandId after ${maxRetries + 1} attempts")
     }
 
     /**
@@ -192,10 +216,18 @@ class DeviceStatusReporter @Inject constructor(
     fun handlePushedCommand(commandJson: String) {
         try {
             val command = gson.fromJson(commandJson, DeviceCommand::class.java)
+            if (!executedCommands.add(command.id)) {
+                Log.d(TAG, "Skipping duplicate pushed command: ${command.id}")
+                return
+            }
             Log.i(TAG, "Executing pushed command: ${command.type} (${command.id})")
             scope?.launch {
                 val result = commandExecutor.execute(command)
                 reportCommandResult(command.id, result)
+            }
+            // Cap the set size
+            while (executedCommands.size > 100) {
+                executedCommands.iterator().let { it.next(); it.remove() }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to handle pushed command", e)
