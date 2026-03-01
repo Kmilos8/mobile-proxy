@@ -188,7 +188,7 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
             {connections.map(conn => {
               const port = getPort(conn)
               const copyAllUrl = conn.proxy_type !== 'openvpn'
-                ? `${conn.proxy_type}://${conn.username}:${conn.password ?? ''}@${serverHost}:${port}`
+                ? `${serverHost}:${port}:${conn.username}:${conn.password ?? ''}`
                 : null
 
               return (
@@ -291,7 +291,7 @@ export default function ConnectionTable({ connections, device, serverHost, onDel
         {connections.map(conn => {
           const port = getPort(conn)
           const copyAllUrl = conn.proxy_type !== 'openvpn'
-            ? `${conn.proxy_type}://${conn.username}:${conn.password ?? ''}@${serverHost}:${port}`
+            ? `${serverHost}:${port}:${conn.username}:${conn.password ?? ''}`
             : null
 
           return (

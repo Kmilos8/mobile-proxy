@@ -416,8 +416,7 @@ function PrimaryTab({ device, connections, bandwidth, serverHost, copyToClipboar
 
   function getCopyAllString(conn: ProxyConnection): string {
     const port = getPort(conn)
-    const type = conn.proxy_type === 'socks5' ? 'socks5' : 'http'
-    return `${type}:${serverHost}:${port}:${conn.username}:${conn.password || ''}`
+    return `${serverHost}:${port}:${conn.username}:${conn.password || ''}`
   }
 
   return (
